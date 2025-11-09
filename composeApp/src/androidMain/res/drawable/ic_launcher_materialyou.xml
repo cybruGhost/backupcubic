@@ -1,0 +1,23 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:viewportWidth="200"
+    android:viewportHeight="200"
+    android:width="200dp"
+    android:height="200dp">
+
+  <!-- Groupe centré -->
+  <group
+      android:rotation="5.063086"
+      android:scaleX="0.13"
+      android:scaleY="0.13"
+      android:translateX="30"
+      android:translateY="155"
+      android:pivotX="0"
+      android:pivotY="0">
+
+    <group android:rotation="5.063086">
+      <path
+          android:fillColor="#FFFFFF"
+          android:pathData="M411.5625 -172.03125c-37.64063 0 -69.86328 -13.40234 -96.66797 -40.20703 -26.80469 -26.80469 -40.20703 -59.02734 -40.20703 -96.66797 0 -37.64063 13.40234 -69.86328 40.20703 -96.66797 26.80469 -26.80469 59.02734 -40.20703 96.66797 -40.20703 13.11719 0 25.23633 1.56836 36.35742 4.70508 11.12109 3.13672 21.81445 7.8418 32.08008 14.11523v-320.74984a40.257973 40.257973 135 0 1 40.25797 -40.25797H647.25a38.0625 38.0625 45 0 1 38.0625 38.0625v60.75a38.0625 38.0625 135 0 1 -38.0625 38.0625H571.40625A22.96875 22.96875 135 0 0 548.4375 -628.125v319.21875c0 37.64063 -13.40234 69.86328 -40.20703 96.66797 -26.80469 26.80469 -59.02734 40.20703 -96.66797 40.20703z"/>
+    </group>
+  </group>
+</vector>

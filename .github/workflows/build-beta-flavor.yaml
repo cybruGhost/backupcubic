@@ -1,0 +1,234 @@
+name: Build Beta
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: 'beta-deploy'
+  cancel-in-progress: false
+
+jobs:
+  build_time:
+    name: Capture current time
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.date.outputs.date }}
+    steps:
+      - name: Get date
+        id: date
+        run: echo "date=$(date +'%Y%m%d')" >> $GITHUB_OUTPUT
+
+  versioning:
+    name: Extract version
+    runs-on: ubuntu-latest
+    outputs:
+      downstream: ${{ steps.downstream.outputs.version }}
+      code: ${{ steps.downstream.outputs.code }}
+      upstream: ${{ steps.upstream.outputs.version }}
+    env:
+      GITHUB_REPOSITORY: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+  
+      - name: Get downstream (local) version
+        id: downstream
+        run: |
+          # Affiche le build.gradle pour debug
+          echo "Contents of build.gradle.kts:"
+          cat composeApp/build.gradle.kts
+  
+          # Récupération versionCode
+          versionCode=$(grep -E '^\s*versionCode\s*=' composeApp/build.gradle.kts | sed 's/[^0-9]*//g')
+          # Récupération versionName
+          versionName=$(grep -E '^\s*versionName\s*=' composeApp/build.gradle.kts | sed -E 's/.*"(.+)".*/\1/')
+  
+          echo "version=$versionName" >> $GITHUB_OUTPUT
+          echo "code=$versionCode" >> $GITHUB_OUTPUT
+  
+      - name: Get upstream version
+        id: upstream
+        run: |
+          tag_name="$(curl -s https://api.github.com/repos/$GITHUB_REPOSITORY/releases/latest | jq -r .tag_name)"
+          echo "version=${tag_name#v}" >> $GITHUB_OUTPUT
+
+
+  verify-version:
+    needs: [versioning]
+    name: Verify versions
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check if build can proceed
+        run: |
+          if [ "${{ needs.versioning.outputs.downstream }}" = "${{ needs.versioning.outputs.upstream }}" ]; then
+            echo "Versions are equal. Skipping build."
+            exit 1
+          fi
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+      - name: Check if changelog exists
+        run: |
+          if [ ! -f "fastlane/metadata/android/en-US/changelogs/${{ needs.versioning.outputs.code }}.txt" ]; then
+            echo "Changelog not found. Exiting."
+            exit 1
+          fi
+
+  build-beta:
+    needs: [versioning, verify-version]
+    name: Build Full Beta
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          submodules: true
+
+      - name: Copy changelogs into res/raw
+        run: cp "fastlane/metadata/android/en-US/changelogs/${{ needs.versioning.outputs.code }}.txt" "composeApp/src/androidMain/res/raw/release_notes.txt"
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: "21"
+          distribution: "corretto"
+
+      - name: Restore Gradle dependencies & build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+            ./build
+            ./composeApp/build
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Build with Gradle
+        run: ./gradlew assembleBeta
+
+      - name: Upload artifacts for signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: unsigned-release
+          path: composeApp/build/outputs/apk/beta/*.apk
+
+
+  sign-apks:
+    name: Sign APK
+    needs: [build-beta]
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v5
+        with:
+          path: upstream/unsigned
+          merge-multiple: true
+
+      - name: Sign APK
+        uses: Tlaster/android-sign@v1.2.2
+        with:
+          releaseDirectory: upstream/unsigned
+          signingKeyBase64: "${{ secrets.RELEASE_KEYSTORE }}"
+          keyStorePassword: "${{ secrets.RELEASE_KEYSTORE_PASSWD }}"
+          alias: "${{ secrets.RELEASE_KEY_ALIAS }}"
+          keyPassword: "${{ secrets.RELEASE_KEY_PASSWD }}"
+          output: signed
+        env:
+          BUILD_TOOLS_VERSION: "34.0.0"
+
+      - name: Remove trails
+        run: |
+          for filename in signed/*.apk; do mv "$filename" "${filename//-signed}"; done
+
+      - name: Upload for release
+        uses: actions/upload-artifact@v4
+        with:
+          name: signed-apk
+          path: signed/*.apk
+
+  upload-to-release:
+    needs: [build_time, versioning, sign-apks]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download signed APK
+        uses: actions/download-artifact@v5
+        with:
+          name: signed-apk
+      - name: Upload built APK to pre-release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: '*.apk'
+          name: v${{ needs.versioning.outputs.downstream }}-b-${{ needs.build_time.outputs.date }} | 🚀 BETA Build
+          tag_name: v${{ needs.versioning.outputs.downstream }}-b
+          prerelease: true
+          make_latest: false
+          body: |
+            ## ⚠️ Beta Release v${{ needs.versioning.outputs.downstream }}-b
+            ---
+            <div align="center">
+              <img alt="N-Zik Logo" src="https://github.com/NEVARLeVrai/N-Zik/blob/main/assets/design/ic_banner2.png?raw=true" width="1000" />
+              <p><b>N-Zik</b> - by @NEVARLeVrai</p>
+              <p><i>This is a <b>BETA build</b>, intended for testing only.</i></p>
+            </div>
+
+            ## 🔎 Verification
+            
+            > Always verify the signature before installing any APK downloaded from GitHub or other distributors.
+            
+            ### Public key hashes
+            
+            | Algorithm | Hash digest                                                        |
+            |-----------|--------------------------------------------------------------------|
+            | SHA-256   | 504cdeb65e52070f0515f9ad295a288a4894d0924e9ef5d6080fdea5bdf841d6 |
+            | SHA-1     | 16e766c566e511c7d83f40e30850be27b7040a43                         |
+            | MD5       | 16e2bdf083316967c6a2dd5a0391bb76                                 |
+            
+            ### Certificate hashes
+            
+            | Algorithm | Hash digest                                                        |
+            |-----------|--------------------------------------------------------------------|
+            | SHA-256   | b473991ec08a17996a9ef2405934ce35d333ea38135ebfc1b6f4d2ab953132aa |
+            | SHA-1     | ec57f7d61cf2382aecff7444e815e37a601cb1f1                         |
+            | MD5       | 5ae0045983899ab7ca5db38ef785d6ab                                 |
+
+            ## 📲 Installation
+            
+            ⚠️ This is a **BETA release**, not a stable version.  
+            It is intended **only for testing and feedback**.
+            
+            1. Download the **Full BETA build** below.  
+            2. Verify its signature using the hashes provided.  
+            3. Install on your device (you may need to allow installation from outside the Play Store).  
+            
+            Please report any crashes, bugs, or unexpected behavior.
+            
+            ## 📦 Available Build
+            
+            - **Full (BETA)** – Complete build with all components.  
+              ⚠️ May contain bugs or experimental features.
+            
+            ## 🔄 Update Policy
+            
+            - 🟡 **Beta Build (-b)**  
+              - **Default:** Update notifications for **Beta** are **enabled by default**.  
+              - **User options:**  
+                - You can **disable Beta updates** in **Settings > About > Beta update disabled**.  
+                - You can **enable or disable auto update** in **Settings > About > Auto update enabled**.  
+              - **Behavior:**  
+                - Without Beta enabled → automatically upgrades to the latest **Stable** release.  
+                - With Beta enabled → stays on the **Beta channel** and receives **Stable updates** as well.  
+              - ⚠️ **Note:** This build may contain experimental features and bugs. Only enable Beta updates if you want to test new features.
+
+            This lets you decide whether to test new experimental updates or stick with the stable ones.
+
+            ## 🔗 Changelog & Downloads
+
+            - Full changelog: [Compare v${{ needs.versioning.outputs.upstream }}...v${{ needs.versioning.outputs.downstream }}](https://github.com/NEVARLeVrai/N-Zik/compare/v${{ needs.versioning.outputs.upstream }}...v${{ needs.versioning.outputs.downstream }})  
+            - [Changelog text file](https://github.com/NEVARLeVrai/N-Zik/blob/main/fastlane/metadata/android/en-US/changelogs/${{ needs.versioning.outputs.code }}.txt)
+
+          token: ${{ secrets.GITHUB_TOKEN }}
+          generate_release_notes: true
