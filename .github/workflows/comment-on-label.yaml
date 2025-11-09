@@ -1,0 +1,96 @@
+name: Comment or close on label
+
+on:
+  issues:
+    types:
+      - labeled
+  pull_request:
+    types:
+      - labeled
+
+env:
+  GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  GH_REPO: ${{ github.repository }}
+  NUMBER: "${{ github.event.pull_request.number || github.event.issue.number }}"
+
+jobs:
+  # Explicitly for issue either opened after the commits were made
+  # but before the realease. Or when it's not closed by mention in
+  # commit message.
+  patched:
+    if: github.event.label.name == 'patched'
+    
+    runs-on: ubuntu-latest
+    
+    permissions:
+      # Allows GITHUB_TOKEN to modify issue tickets
+      issues: write
+      
+    steps:
+      - name: Add comment
+        run: gh issue comment "$NUMBER" --body "$BODY"
+        env:
+          BODY: >
+            This issue is patched in recent commits, please wait for next release.
+
+            > Please DO NOT close this issue, a bot will handle this automatically when new release drops.
+
+  # Handle PR that contains implemented code
+  pr-implemented:
+    if: github.event.label.name == 'implemented' && github.event_name == 'pull_request'
+    
+    runs-on: ubuntu-latest
+    
+    permissions:
+      # Allows GITHUB_TOKEN to modify pull requests
+      pull-requests: write  
+      
+    steps:
+      - name: Add comment
+        run: gh pr comment "$NUMBER" --body "$BODY"
+        env:
+          BODY: >
+            This feature is already existed in codebase.
+
+            > Ticket will be closed. If you have any further question, feel free to comment below
+
+      - name: Close pull request
+        run: gh pr close "$NUMBER"
+
+  # Handle feature quests that are implented
+  issue-implemented:
+    if: github.event.label.name == 'implemented' && github.event_name == 'issues'
+    
+    runs-on: ubuntu-latest
+    
+    permissions:
+      # Allows GITHUB_TOKEN to modify pull requests
+      issues: write  
+      
+    steps:
+      - name: Add comment
+        run: gh issue comment "$NUMBER" --body "$BODY"
+        env:
+          BODY: >
+            This feature is already existed in codebase.
+
+            > Ticket will be closed. If you have any further question, feel free to comment below
+
+      - name: Close request
+        run: gh issue close "$NUMBER"
+  
+
+  # Borked PR is when if implemented, the app will fail to compile
+  # or will have some feature run in unexpected behavior
+  borked:
+    if: github.event.label.name == 'borked'
+    
+    runs-on: ubuntu-latest
+    
+    permissions:
+      # Allows GITHUB_TOKEN to modify pull requests
+      pull-requests: write      
+      
+    steps:
+      - name: Close pull request
+        run: gh pr close "$NUMBER"
