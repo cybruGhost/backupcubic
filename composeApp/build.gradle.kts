@@ -130,7 +130,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.nevar.nzik"
+        applicationId = "com.Cubic.music"
         minSdk = 23
         targetSdk = 36
         versionCode = 108
