@@ -25,129 +25,386 @@ import me.knighthat.component.ImportFromFile
 import me.knighthat.utils.DurationUtils
 import me.knighthat.utils.Toaster
 import me.knighthat.utils.csv.SongCSV
+import org.json.JSONArray
 import java.io.InputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 
-/**
- * Import songs from custom CSV file.
- *
- * If song is assigned to a playlist,
- * this will handle adding that song
- * to corresponding playlist upon process.
- *
- * This is the template of CSV file:
- *
- * | PlaylistBrowseId | PlaylistName | MediaId | Title | Artists | Duration | ThumbnailUrl |
- * | --- | --- | --- | --- | --- | --- | --- |
- * | 1 | Awesome Playlist | dQw4w9WgXcQ | A song | Anonymous | 212 | https://... |
- * | 2 | Summer | fNFzfwLM72c | Lovely | Anonymous | 250 | https://... |
- * | 3 | New Songs | kPa7bsKwL-c | DWAS | Anonymous | 253 | https://... |
- */
 class ImportSongsFromCSV(
     launcher: ManagedActivityResultLauncher<Array<String>, Uri?>
 ) : ImportFromFile(launcher), MenuIcon, Descriptive {
 
     companion object {
-        private fun parseFromCsvFile( inputStream: InputStream ): List<SongCSV> =
-            csvReader { skipEmptyLine = true }
-                      .readAllWithHeader(inputStream)
-                      .also { rows ->       // Verify all headers
-                          val validHeaders = setOf( "PlaylistBrowseId", "Duration", "PlaylistName", "MediaId", "Title", "Artists", "ThumbnailUrl" )
-                          // Check if headers in this CSV file contains at least all [validHeaders]
-                          if( !rows.firstOrNull()?.keys.orEmpty().containsAll( validHeaders ) )
-                              throw InvalidHeaderException( "Unsupported format" )
-                      }
-                      .fastMap { row ->      // Experimental, revert back to [map] if needed
 
-                          // Previous version of Kreate uses "PlaylistBrowseId" as playlistId,
-                          // this is wrong and must be correct to empty string before inserting
-                          // to the database
-                          var browseId = row["PlaylistBrowseId"].orEmpty()
-                          if( browseId.toLongOrNull() != null )
-                              browseId = ""
+        /** 🔹 Check internet connection */
+        private fun hasInternetConnection(): Boolean {
+            return try {
+                val connection = URL("https://www.google.com").openConnection() as HttpURLConnection
+                connection.connectTimeout = 5000
+                connection.readTimeout = 5000
+                connection.requestMethod = "HEAD"
+                connection.connect()
+                connection.responseCode == HttpURLConnection.HTTP_OK
+            } catch (e: Exception) {
+                false
+            }
+        }
 
-                          // For backward compatibility, RiMusic exports duration
-                          // in human-readable format "00:00" while Kreate exports
-                          // in seconds.
-                          val rawDuration = row["Duration"].orEmpty()
-                          val convertedDuration =
-                              if( rawDuration.isBlank() )
-                                  "0"
-                              else if( !DurationUtils.isHumanReadable( rawDuration ) )
-                                  formatAsDuration( rawDuration.toLong().times( 1000 ) )
-                              else
-                                  rawDuration
+        /** 🔹 Fetch YouTube video ID with retry mechanism - USING WORKING API */
+        private suspend fun fetchYoutubeVideoId(query: String, maxRetries: Int = 3): String? {
+            // Check internet first
+            if (!hasInternetConnection()) {
+                throw Exception("No internet connection")
+            }
 
-                          SongCSV(
-                              playlistBrowseId = browseId,
-                              playlistName = row["PlaylistName"].orEmpty(),
-                              songId = row["MediaId"].orEmpty(),
-                              title = row["Title"].orEmpty(),
-                              artists = row["Artists"].orEmpty(),
-                              thumbnailUrl = row["ThumbnailUrl"].orEmpty(),
-                              duration = convertedDuration
-                          )
-                      }
-                      .toList()        // Make it immutable
+            var lastException: Exception? = null
+            
+            for (attempt in 1..maxRetries) {
+                try {
+                    val encoded = URLEncoder.encode(query, "UTF-8")
+                    // Use the same API endpoint that works in your web app
+                    val url = URL("https://inv.perditum.com/api/v1/search?q=$encoded&type=video")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 15000
+                    connection.readTimeout = 15000
+                    
+                    val code = connection.responseCode
+                    if (code != HttpURLConnection.HTTP_OK) {
+                        throw Exception("HTTP $code - API unavailable")
+                    }
 
-        private fun processSongs( songs: List<SongCSV> ): Map<Pair<String, String>, List<Song>> =
+                    connection.inputStream.bufferedReader().use { reader ->
+                        val json = reader.readText()
+                        val array = JSONArray(json)
+                        if (array.length() == 0) {
+                            throw Exception("No video found for: $query")
+                        }
+                        val video = array.getJSONObject(0)
+                        return video.getString("videoId")
+                    }
+                } catch (e: Exception) {
+                    lastException = e
+                    if (attempt < maxRetries) {
+                        kotlinx.coroutines.delay(2000L * attempt)
+                    }
+                }
+            }
+            
+            throw lastException ?: Exception("Failed to convert: $query")
+        }
+
+        /** 🔹 Parse CSV and convert songs one by one with YouTube conversion */
+        private suspend fun parseFromCsvFile(inputStream: InputStream, fileName: String): List<SongCSV> {
+            val rows = csvReader { skipEmptyLine = true }.readAllWithHeader(inputStream)
+            
+            // Check CSV format
+            val headers = rows.firstOrNull()?.keys.orEmpty()
+            val hasCustomFormat = headers.containsAll(
+                setOf("PlaylistBrowseId", "PlaylistName", "MediaId", "Title", "Artists", "Duration")
+            )
+            val hasSpotifyFormat = headers.containsAll(
+                setOf("Track Name", "Artist Name(s)")
+            )
+            val hasExportifyFormat = headers.containsAll(
+                setOf("Track URI", "Track Name", "Artist Name(s)", "Album Name")
+            )
+            val hasYourFormat = headers.containsAll(
+                setOf("PlaylistBrowseId", "PlaylistName", "MediaId", "Title", "Artists", "Duration", "ThumbnailUrl", "AlbumId", "AlbumTitle", "ArtistIds")
+            )
+            
+            if (!hasCustomFormat && !hasSpotifyFormat && !hasExportifyFormat && !hasYourFormat) {
+                throw InvalidHeaderException("Unsupported CSV format")
+            }
+
+            val converted = mutableListOf<SongCSV>()
+            var successCount = 0
+            var failCount = 0
+
+            // Get playlist name from CSV - use PlaylistName from CSV if available, otherwise use filename
+            val csvPlaylistName = rows.firstOrNull()?.get("PlaylistName") ?: ""
+            val playlistName = if (csvPlaylistName.isNotBlank()) {
+                csvPlaylistName
+            } else {
+                fileName.replace(".csv", "").replace("_", " ").trim()
+            }
+
+            // Process rows one by one
+            for ((index, row) in rows.withIndex()) {
+                try {
+                    val isSpotifyFormat = row.containsKey("Track Name") && row.containsKey("Artist Name(s)")
+                    val isExportifyFormat = row.containsKey("Track URI") && row.containsKey("Track Name")
+                    val isYourFormat = row.containsKey("PlaylistBrowseId") && row.containsKey("PlaylistName") && 
+                                      row.containsKey("MediaId") && row.containsKey("Title") && 
+                                      row.containsKey("Artists") && row.containsKey("Duration") &&
+                                      row.containsKey("ThumbnailUrl") && row.containsKey("AlbumId") &&
+                                      row.containsKey("AlbumTitle") && row.containsKey("ArtistIds")
+                    val isCustomFormat = row.containsKey("PlaylistBrowseId") && row.containsKey("PlaylistName") && 
+                                       row.containsKey("MediaId") && row.containsKey("Title") && 
+                                       row.containsKey("Artists") && row.containsKey("Duration")
+
+                    if (isExportifyFormat || isSpotifyFormat) {
+                        // Handle Spotify/Exportify formats with YouTube conversion
+                        val explicitPrefix = if (row["Explicit"] == "true") "e:" else ""
+                        val title = row["Track Name"].orEmpty()
+                        val artists = row["Artist Name(s)"].orEmpty()
+                        
+                        // Clean up artist names (remove Spotify URIs if present)
+                        val cleanArtists = artists.split(", ")
+                            .joinToString(", ") { artist ->
+                                artist.split("spotify:artist:").last().trim()
+                            }
+                        
+                        val query = "$title $cleanArtists".trim()
+
+                        if (query.isNotBlank() && title.isNotBlank()) {
+                            // Show progress
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toaster.i("Converting ${index + 1}/${rows.size}: $title")
+                            }
+
+                            try {
+                                // Convert to YouTube URL
+                                val videoId = fetchYoutubeVideoId(query)
+                                
+                                // Use the videoId as MediaId (no YouTube: prefix)
+                                val mediaId = videoId ?: ""
+                                val songId = mediaId // Use raw video ID as song ID
+
+                                // Convert duration from ms to proper format
+                                val rawDurationMs = row["Track Duration (ms)"]?.toLongOrNull() ?: 0L
+                                val convertedDuration = if (rawDurationMs > 0) {
+                                    formatAsDuration(rawDurationMs)
+                                } else {
+                                    "0"
+                                }
+
+                                // Create proper thumbnail URL
+                                val thumbnailUrl = "https://inv.perditum.com/vi/$videoId/hqdefault.jpg"
+
+                                converted.add(
+                                    SongCSV(
+                                        songId = songId,
+                                        playlistBrowseId = "",
+                                        playlistName = playlistName,
+                                        title = explicitPrefix + title,
+                                        artists = cleanArtists,
+                                        duration = convertedDuration,
+                                        thumbnailUrl = thumbnailUrl
+                                    )
+                                )
+                                successCount++
+                                
+                                // Update progress
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    Toaster.i("✅ $title converted")
+                                }
+                                
+                            } catch (e: Exception) {
+                                failCount++
+                                // Fallback to search format if YouTube conversion fails
+                                val encodedSearch = URLEncoder.encode(query, "UTF-8")
+                                val fallbackSongId = "search:$encodedSearch"
+                                
+                                val rawDurationMs = row["Track Duration (ms)"]?.toLongOrNull() ?: 0L
+                                val convertedDuration = if (rawDurationMs > 0) {
+                                    formatAsDuration(rawDurationMs)
+                                } else {
+                                    "0"
+                                }
+                                
+                                converted.add(
+                                    SongCSV(
+                                        songId = fallbackSongId,
+                                        playlistBrowseId = "",
+                                        playlistName = playlistName,
+                                        title = explicitPrefix + title,
+                                        artists = cleanArtists,
+                                        duration = convertedDuration,
+                                        thumbnailUrl = row["Album Image URL"].orEmpty()
+                                    )
+                                )
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    Toaster.e("❌ YouTube failed: $title - using search fallback")
+                                }
+                            }
+                        }
+
+                        // Add delay between API calls
+                        kotlinx.coroutines.delay(1000)
+
+                    } else if (isYourFormat || isCustomFormat) {
+                        // Handle compatible CSV formats (no conversion needed) - USE EXACT MEDIAID FROM CSV
+                        var browseId = row["PlaylistBrowseId"].orEmpty()
+                        if (browseId.toLongOrNull() != null)
+                            browseId = ""
+
+                        val rawDuration = row["Duration"].orEmpty()
+                        val convertedDuration =
+                            if (rawDuration.isBlank())
+                                "0"
+                            else if (!DurationUtils.isHumanReadable(rawDuration))
+                                formatAsDuration(rawDuration.toLong().times(1000))
+                            else
+                                rawDuration
+
+                        // Use the EXACT MediaId from the CSV - don't modify it!
+                        val mediaId = row["MediaId"].orEmpty()
+                        val songId = mediaId // Use the MediaId exactly as it appears in CSV
+
+                        // Skip empty MediaIds
+                        if (mediaId.isNotBlank()) {
+                            converted.add(
+                                SongCSV(
+                                    songId = songId,
+                                    playlistBrowseId = browseId,
+                                    playlistName = playlistName,
+                                    title = row["Title"].orEmpty(),
+                                    artists = row["Artists"].orEmpty(),
+                                    duration = convertedDuration,
+                                    thumbnailUrl = row["ThumbnailUrl"].orEmpty()
+                                )
+                            )
+                            successCount++
+                            
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toaster.i("✅ Added: ${row["Title"].orEmpty()}")
+                            }
+                        } else {
+                            failCount++
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toaster.e("❌ Skipped: ${row["Title"].orEmpty()} - No MediaId")
+                            }
+                        }
+                    }
+                    
+                } catch (e: Exception) {
+                    failCount++
+                    println("Error processing row $index: ${e.message}")
+                }
+            }
+
+            // Final result
+            CoroutineScope(Dispatchers.Main).launch {
+                if (successCount > 0) {
+                    Toaster.i("✅ Successfully processed $successCount songs for '$playlistName'")
+                    if (failCount > 0) {
+                        Toaster.i("⚠️ $failCount songs had issues")
+                    }
+                } else {
+                    Toaster.e("❌ No songs could be processed")
+                }
+            }
+            return converted
+        }
+
+        private fun processSongs(songs: List<SongCSV>): Map<Pair<String, String>, List<Song>> =
             songs.fastFilter { it.songId.isNotBlank() }
-                 .groupBy { it.playlistName to it.playlistBrowseId }
-                 .mapValues { (_, songs) ->
-                     songs.fastMap {
-                         Song(
-                             id = it.songId,
-                             title = it.title,
-                             artistsText = it.artists,
-                             thumbnailUrl = it.thumbnailUrl,
-                             durationText = it.duration,
-                             totalPlayTimeMs = 1L       // Bypass hidden song checker
-                         )
-                     }
-                 }
+                .groupBy { it.playlistName to it.playlistBrowseId }
+                .mapValues { (_, songs) ->
+                    songs.fastMap {
+                        // Create proper Song objects - use MediaId exactly as provided
+                        Song(
+                            id = it.songId, // This should be the raw MediaId like "1pEe7-tWv2M"
+                            title = it.title,
+                            artistsText = it.artists,
+                            thumbnailUrl = it.thumbnailUrl,
+                            durationText = it.duration,
+                            totalPlayTimeMs = 1L
+                        )
+                    }
+                }
 
         @Composable
         operator fun invoke() = ImportSongsFromCSV(
             rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument()
             ) { uri ->
-                // [uri] must be non-null (meaning path exists) in order to work
                 uri ?: return@rememberLauncherForActivityResult
 
-                // Run in background to prevent UI thread
-                // from freezing due to large file.
-                CoroutineScope( Dispatchers.IO ).launch {
-                    // Songs with no playlist
+                CoroutineScope(Dispatchers.IO).launch {
                     val straySongs = mutableListOf<Song>()
                     val combos = mutableMapOf<Playlist, List<Song>>()
 
                     try {
-                        appContext().contentResolver
-                                    .openInputStream( uri )
-                                    ?.use( ::parseFromCsvFile )       // Use [use] because it closes stream on exit
-                                    ?.let( ::processSongs )
-                                    ?.forEach { (playlist, songs) ->
-                                        if( playlist.first.isNotBlank() ) {
-                                            val realPlaylist = Playlist(name = playlist.first, browseId = playlist.second)
-                                            combos[realPlaylist] = songs
-                                        } else
-                                            straySongs.addAll( songs )
-                                    }
+                        // Get filename from URI - handle null case
+                        val fileName = uri.lastPathSegment ?: "imported_playlist"
+
+                        // Check internet before starting conversion
+                        if (!hasInternetConnection()) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toaster.e("❌ No internet connection. Required for YouTube conversion.")
+                            }
+                            return@launch
+                        }
+
+                        CoroutineScope(Dispatchers.Main).launch {
+                            Toaster.i("📥 Starting CSV import for '$fileName'...")
+                        }
+
+                        val csvSongs = appContext().contentResolver
+                            .openInputStream(uri)
+                            ?.use { stream ->
+                                // Call the suspend function with filename
+                                parseFromCsvFile(stream, fileName)
+                            }
+                            ?: emptyList()
+
+                        if (csvSongs.isEmpty()) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toaster.e("❌ No valid songs found in CSV")
+                            }
+                            return@launch
+                        }
+
+                        val processedSongs = processSongs(csvSongs)
+                        
+                        processedSongs.forEach { (playlist, songs) ->
+                            if (playlist.first.isNotBlank()) {
+                                val realPlaylist = Playlist(name = playlist.first, browseId = playlist.second)
+                                combos[realPlaylist] = songs
+                            } else {
+                                straySongs.addAll(songs)
+                            }
+                        }
+
+                        if (combos.isEmpty() && straySongs.isEmpty()) {
+                            CoroutineScope(Dispatchers.Main).launch {
+                                Toaster.e("❌ No valid songs could be processed")
+                            }
+                            return@launch
+                        }
 
                         Database.asyncTransaction {
-                            songTable.upsert( straySongs )
+                            // Insert all songs first
+                            val allSongs = straySongs + combos.values.flatten()
+                            songTable.upsert(allSongs)
 
+                            // Then map songs to playlists using the original mapIgnore function
                             combos.forEach { (playlist, songs) ->
-                                songTable.upsert( songs )       // Upsert first to override existing songs
-                                mapIgnore( playlist, *songs.toTypedArray() )
+                                mapIgnore(playlist, *songs.toTypedArray())
                             }
 
-                            // Show message when it's done
-                            Toaster.done()
+                            CoroutineScope(Dispatchers.Main).launch {
+                                val playableSongs = allSongs.count { it.id.isNotBlank() && !it.id.startsWith("search:") }
+                                val totalSongs = allSongs.size
+                                val playlistName = combos.keys.firstOrNull()?.name ?: fileName.replace(".csv", "")
+                                Toaster.i("🎉 Created playlist '$playlistName' with $playableSongs/$totalSongs playable songs")
+                            }
                         }
-                    } catch ( e: Exception ) {
-                        when( e ) {
-                            is InvalidHeaderException   -> Toaster.e( R.string.error_message_unsupported_local_playlist )
-                            else                        -> Toaster.e( R.string.error_message_import_local_playlist_failed )
+                    } catch (e: Exception) {
+                        when (e) {
+                            is InvalidHeaderException -> {
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    Toaster.e(R.string.error_message_unsupported_local_playlist)
+                                }
+                            }
+                            else -> {
+                                CoroutineScope(Dispatchers.Main).launch {
+                                    Toaster.e("❌ Import failed: ${e.message ?: "Unknown error"}")
+                                }
+                            }
                         }
                     }
                 }
@@ -160,5 +417,5 @@ class ImportSongsFromCSV(
     override val messageId: Int = R.string.import_playlist
     override val menuIconTitle: String
         @Composable
-        get() = stringResource( messageId )
+        get() = stringResource(messageId)
 }
