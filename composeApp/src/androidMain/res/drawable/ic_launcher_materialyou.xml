@@ -1,23 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:viewportWidth="200"
-    android:viewportHeight="200"
-    android:width="200dp"
-    android:height="200dp">
-
-  <!-- Groupe centré -->
-  <group
-      android:rotation="5.063086"
-      android:scaleX="0.13"
-      android:scaleY="0.13"
-      android:translateX="30"
-      android:translateY="155"
-      android:pivotX="0"
-      android:pivotY="0">
-
-    <group android:rotation="5.063086">
-      <path
-          android:fillColor="#FFFFFF"
-          android:pathData="M411.5625 -172.03125c-37.64063 0 -69.86328 -13.40234 -96.66797 -40.20703 -26.80469 -26.80469 -40.20703 -59.02734 -40.20703 -96.66797 0 -37.64063 13.40234 -69.86328 40.20703 -96.66797 26.80469 -26.80469 59.02734 -40.20703 96.66797 -40.20703 13.11719 0 25.23633 1.56836 36.35742 4.70508 11.12109 3.13672 21.81445 7.8418 32.08008 14.11523v-320.74984a40.257973 40.257973 135 0 1 40.25797 -40.25797H647.25a38.0625 38.0625 45 0 1 38.0625 38.0625v60.75a38.0625 38.0625 135 0 1 -38.0625 38.0625H571.40625A22.96875 22.96875 135 0 0 548.4375 -628.125v319.21875c0 37.64063 -13.40234 69.86328 -40.20703 96.66797 -26.80469 26.80469 -59.02734 40.20703 -96.66797 40.20703z"/>
+    android:height="108.0dip"
+    android:width="108.0dip"
+    android:viewportWidth="512.0"
+    android:viewportHeight="512.0">
+    <group
+        android:scaleX="0.52"
+        android:scaleY="0.52"
+        android:translateX="123.0"
+        android:translateY="118.0">
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M292,305.38a31.73,31.73 0,1 0,18.61 28.95A33.24,33.24 0,0 0,304 315,31.93 31.93,0 0,0 292,305.38Z"/>
+        <path
+            android:fillColor="#FFFFFFFF"
+            android:pathData="M250,400 C200,350 150,300 150,250 C150,200 200,150 250,200 C300,150 350,200 350,250 C350,300 300,350 250,400 Z
+M200,150 C190,180 220,200 250,180 C280,200 310,180 300,150 C290,120 240,130 230,160 Z
+M230,160 C220,170 230,180 250,190 C270,200 270,180 260,170 C250,160 240,170 230,160 Z
+M250,200 C260,210 270,230 250,240 C230,230 220,210 250,200 Z"/>
     </group>
-  </group>
 </vector>

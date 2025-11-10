@@ -3,7 +3,7 @@ import org.jetbrains.compose.desktop.application.dsl.TargetFormat
 import org.jetbrains.kotlin.gradle.ExperimentalKotlinGradlePluginApi
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
-val APP_NAME = "N-Zik"
+val APP_NAME = "Cubic-Music"
 
 plugins {
     // Multiplatform
@@ -133,8 +133,8 @@ android {
         applicationId = "com.nevar.nzik"
         minSdk = 23
         targetSdk = 36
-        versionCode = 23
-        versionName = "2.6.5"
+        versionCode = 108
+        versionName = "1.7.4"
 
         /*
                 UNIVERSAL VARIABLES
