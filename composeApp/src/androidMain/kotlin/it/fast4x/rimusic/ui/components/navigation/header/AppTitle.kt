@@ -1,12 +1,17 @@
 package it.fast4x.rimusic.ui.components.navigation.header
 
 import android.content.Context
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.widget.Toast
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
@@ -15,8 +20,15 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.MutableIntState
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
@@ -41,7 +53,7 @@ private fun appIconClickAction(
         when( countToReveal.intValue ) {
             10 -> {
                 countToReveal.intValue = 0
-                navController.navigate( NavRoutes.gamePacman.name )
+                navController.navigate( NavRoutes.gameSnake.name )
                 ""
             }
             3 -> context.getString(R.string.easter_egg_click_message)
@@ -58,7 +70,7 @@ private fun appIconLongClickAction(
     context: Context
 ) {
     Toaster.n( context.getString(R.string.easter_egg_last), Toast.LENGTH_LONG )
-    navController.navigate( NavRoutes.gameSnake.name )
+    navController.navigate( NavRoutes.gamePacman.name )
 }
 
 @OptIn(ExperimentalFoundationApi::class)
@@ -88,7 +100,7 @@ private fun AppLogoText( navController: NavController ) {
     }
 
     BasicText(
-        text = "N-ZIK",
+        text = "Cubic-Music",
         style = TextStyle(
             fontSize = typography().xl.semiBold.fontSize,
             fontWeight = typography().xl.semiBold.fontWeight,
@@ -97,22 +109,96 @@ private fun AppLogoText( navController: NavController ) {
         ),
         modifier = Modifier
             .clickable { iconTextClick() }
-            .padding(horizontal = 8.dp)
     )
 }
 
-// START
+@Composable
+private fun NetworkStatusIcon() {
+    val context = LocalContext.current
+    var networkIcon by remember { mutableStateOf(R.drawable.explicit) }
+    
+    DisposableEffect(Unit) {
+        val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
+        
+        // Update initial state
+        updateNetworkIcon(connectivityManager) { iconRes ->
+            networkIcon = iconRes
+        }
+        
+        // Register network callback for real-time updates
+        val networkRequest = NetworkRequest.Builder()
+            .addTransportType(NetworkCapabilities.TRANSPORT_WIFI)
+            .addTransportType(NetworkCapabilities.TRANSPORT_CELLULAR)
+            .build()
+            
+        val networkCallback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                updateNetworkIcon(connectivityManager) { iconRes ->
+                    networkIcon = iconRes
+                }
+            }
+            
+            override fun onLost(network: Network) {
+                updateNetworkIcon(connectivityManager) { iconRes ->
+                    networkIcon = iconRes
+                }
+            }
+            
+            override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+                updateNetworkIcon(connectivityManager) { iconRes ->
+                    networkIcon = iconRes
+                }
+            }
+        }
+        
+        connectivityManager.registerNetworkCallback(networkRequest, networkCallback)
+        
+        onDispose {
+            connectivityManager.unregisterNetworkCallback(networkCallback)
+        }
+    }
+
+    Image(
+        painter = painterResource(id = networkIcon),
+        contentDescription = "Network status",
+        modifier = Modifier.size(16.dp),
+        colorFilter = ColorFilter.tint(AppBar.contentColor())
+    )
+}
+
+private fun updateNetworkIcon(
+    connectivityManager: ConnectivityManager,
+    onIconUpdate: (Int) -> Unit
+) {
+    val network = connectivityManager.activeNetwork
+    val capabilities = connectivityManager.getNetworkCapabilities(network)
+    
+    val iconRes = when {
+        capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> 
+            R.drawable.datawifi
+        capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true -> 
+            R.drawable.datamobile
+        else -> R.drawable.explicit
+    }
+    
+    onIconUpdate(iconRes)
+}
+
 @Composable
 fun AppTitle(
     navController: NavController,
     context: Context
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy( 5.dp ),
-        verticalAlignment = Alignment.CenterVertically
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.padding(vertical = 0.dp)
     ) {
-        AppLogo( navController, context )
-        AppLogoText( navController )
+        AppLogo(navController, context)
+        AppLogoText(navController)
+        
+        // Network icon positioned NEXT TO the title (not overlapping)
+        NetworkStatusIcon()
 
         if(Preference.parentalControl())
             Button(
@@ -126,17 +212,16 @@ fun AppTitle(
             BasicText(
                 text = stringResource(R.string.info_debug_mode_enabled),
                 style = TextStyle(
-                    fontSize = typography().xxs.semiBold.fontSize,
-                    fontWeight = typography().xxs.semiBold.fontWeight,
-                    fontFamily = typography().xxs.semiBold.fontFamily,
+                    fontSize = typography().xxxs.semiBold.fontSize,
+                    fontWeight = typography().xxxs.semiBold.fontWeight,
+                    fontFamily = typography().xxxs.semiBold.fontFamily,
                     color = colorPalette().red
                 ),
                 modifier = Modifier
                     .clickable {
-                        Toaster.s( R.string.info_debug_mode_is_enabled )
+                        Toaster.s(R.string.info_debug_mode_is_enabled)
                         navController.navigate(NavRoutes.settings.name)
                     }
             )
     }
-// END
 }
