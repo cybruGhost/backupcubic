@@ -51,13 +51,6 @@ private fun HamburgerMenu(
         ) { onItemClick(NavRoutes.history) }
     )
     
-    // Rewind button
-    menu.add(
-        DropdownMenu.Item(
-            R.drawable.rewind,
-            R.string.rewind  // Make sure this exists in strings.xml
-        ) { onItemClick(NavRoutes.rewind) }
-    )
     
     // Statistics button
     menu.add(
@@ -65,6 +58,14 @@ private fun HamburgerMenu(
             R.drawable.stats_chart,
             R.string.statistics
         ) { onItemClick(NavRoutes.statistics) }
+    )
+    
+        // Rewind button
+    menu.add(
+        DropdownMenu.Item(
+            R.drawable.rewind,
+            R.string.rewind  // Make sure this exists in strings.xml
+        ) { onItemClick(NavRoutes.rewind) }
     )
     
     // Picture in picture button
