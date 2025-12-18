@@ -4,7 +4,29 @@
     android:height="24dp"
     android:viewportWidth="24"
     android:viewportHeight="24">
+    
+    <!-- Trophy Cup Base -->
     <path
-        android:fillColor="#FFFFFFFF"
-        android:pathData="M11.99,5V1l-5,5l5,5V7c3.31,0 6,2.69 6,6s-2.69,6-6,6s-6,-2.69-6,-6h-2c0,4.42 3.58,8 8,8s8,-3.58 8,-8s-3.58,-8-8,-8z" />
+        android:fillColor="#FFFFD700"
+        android:pathData="M12,22L6,3h12L12,22z" />
+    
+    <!-- Trophy Handle Left -->
+    <path
+        android:fillColor="#FFFFC107"
+        android:pathData="M7,2C7,2 4,5 4,8s3,6 3,6h1V2z" />
+    
+    <!-- Trophy Handle Right -->
+    <path
+        android:fillColor="#FFFFC107"
+        android:pathData="M17,2C17,2 20,5 20,8s-3,6-3,6h-1V2z" />
+    
+    <!-- Trophy Cup Rim -->
+    <path
+        android:fillColor="#FFFFEB3B"
+        android:pathData="M12,18c3.31,0 6-2.69 6-6s-2.69-6-6-6s-6,2.69-6,6s2.69,6 6,6z" />
+    
+    <!-- Trophy Star (Optional - for extra sparkle) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M12,7l1.2,3.6h3.8l-3.1,2.3l1.2,3.6l-3.1-2.3l-3.1,2.3l1.2-3.6L7,10.6h3.8z" />
 </vector>
