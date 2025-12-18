@@ -1414,7 +1414,7 @@ private fun encodeRewindDataForUrl(data: RewindData?, username: String): String 
             append("\"uniqueSongs\":${data.totalUniqueSongs},")
             
             append("\"topSongs\":[")
-            data.topSongs.take(5).forEachIndexed { index, song ->
+            data.topSongs.take(10).forEachIndexed { index, song ->
                 if (index > 0) append(",")
                 append("{")
                 append("\"title\":\"${escapeJsonString(song.title)}\",")
@@ -1425,7 +1425,7 @@ private fun encodeRewindDataForUrl(data: RewindData?, username: String): String 
             append("],")
             
             append("\"topArtists\":[")
-            data.topArtists.take(5).forEachIndexed { index, artist ->
+            data.topArtists.take(10).forEachIndexed { index, artist ->
                 if (index > 0) append(",")
                 append("{")
                 append("\"name\":\"${escapeJsonString(artist.name)}\",")
