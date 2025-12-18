@@ -23,6 +23,7 @@ enum class NavRoutes {
     settings,
     statistics,
     newAlbums,
+    rewind,
     moodsPage,
     podcast,
     artistAlbums;
