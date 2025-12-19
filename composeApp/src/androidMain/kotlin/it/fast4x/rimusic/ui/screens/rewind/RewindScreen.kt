@@ -243,7 +243,6 @@ fun LoadingScreen() {
         }
     }
 }
-
 @Composable
 fun WelcomeScreen(
     username: String,
@@ -256,154 +255,176 @@ fun WelcomeScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Enhanced App Logo/Icon with animation
+        // App Icon with subtle gradient
         Box(
             modifier = Modifier
-                .size(140.dp)
+                .size(120.dp)
                 .clip(CircleShape)
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF9C27B0),
-                            Color(0xFF673AB7),
-                            Color(0xFF4527A0)
+                            Color(0xFF7C4DFF),
+                            Color(0xFF512DA8),
+                            Color(0xFF311B92)
                         )
                     )
                 ),
             contentAlignment = Alignment.Center
         ) {
+            // Using Text as a fallback since painterResource might not be available
+            // Replace with actual icon when you have the resources
             Text(
-                text = "🎵",
-                fontSize = 64.sp
+                text = "♪", // Simple music note character
+                fontSize = 48.sp,
+                color = Color.White,
+                fontWeight = FontWeight.Bold
             )
         }
-        
+
         Spacer(modifier = Modifier.height(40.dp))
-        
-        // Animated Welcome Title
-        Text(
-            text = "REWIND ${LocalDate.now().year}",
-            fontSize = 36.sp,
-            fontWeight = FontWeight.Bold,
-            color = Color.White,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color(0xFFE040FB),
-                            Color(0xFF7E57C2),
-                            Color(0xFFE040FB)
-                        )
-                    )
-                )
-                .padding(horizontal = 32.dp, vertical = 8.dp)
-                .clip(RoundedCornerShape(20.dp))
-        )
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Enhanced welcome message
-        Text(
-            buildAnnotatedString {
-                withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
-                    append("Welcome back, ")
-                }
-                withStyle(style = SpanStyle(
-                    color = Color(0xFFE040FB),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 24.sp
-                )) {
-                    append(username)
-                }
-                withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
-                    append("!")
-                }
-            },
-            fontSize = 22.sp,
-            textAlign = TextAlign.Center
-        )
-        
-        Spacer(modifier = Modifier.height(32.dp))
-        
-        // Enhanced description
-        Text(
-            text = "Your personal music journey for ${LocalDate.now().year}",
-            color = Color(0xFFCE93D8),
-            fontSize = 18.sp,
-            lineHeight = 26.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
-        )
-        
-        Spacer(modifier = Modifier.height(40.dp))
-        
-        // Enhanced Feature highlights with cards
+
+        // Welcome Header
         Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.padding(horizontal = 16.dp)
         ) {
-            FeatureCard(icon = "📊", text = "Detailed listening statistics")
-            FeatureCard(icon = "🔥", text = "Top songs & artists")
-            FeatureCard(icon = "⭐", text = "Personal ranking")
-            FeatureCard(icon = "💿", text = "Top albums & playlists")
-            FeatureCard(icon = "🔒", text = "100% private & secure")
-        }
-        
-        Spacer(modifier = Modifier.height(48.dp))
-        
-        // Enhanced privacy note
-        Card(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF2A1F3A)
-            )
-        ) {
             Text(
-                text = "Your privacy is respected.\nAll data is stored only on your device.",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
+                text = "REWIND ${LocalDate.now().year}",
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White,
                 textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(16.dp)
+                letterSpacing = 1.2.sp
+            )
+
+            Spacer(modifier = Modifier.height(8.dp))
+
+            Text(
+                buildAnnotatedString {
+                    withStyle(
+                        style = SpanStyle(
+                            color = Color.White.copy(alpha = 0.9f),
+                            fontSize = 20.sp
+                        )
+                    ) {
+                        append("Welcome back, ")
+                    }
+                    withStyle(
+                        style = SpanStyle(
+                            color = Color(0xFF7C4DFF),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 22.sp
+                        )
+                    ) {
+                        append(username)
+                    }
+                },
+                textAlign = TextAlign.Center
             )
         }
-        
-        Spacer(modifier = Modifier.height(40.dp))
-        
-        // Enhanced Get Started button
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // App Description
+        Text(
+            text = "Your personal music journey for ${LocalDate.now().year}. " +
+                   "Discover insights about your listening habits and favorite artists.",
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 16.sp,
+            lineHeight = 24.sp,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(horizontal = 20.dp)
+        )
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        // Privacy Note Section
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF1E1B26)
+            ),
+            border = BorderStroke(1.dp, Color(0xFF7C4DFF).copy(alpha = 0.3f))
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Privacy icon using text
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color(0xFF7C4DFF).copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "🔒", // Simple lock emoji as fallback
+                        fontSize = 16.sp,
+                        color = Color(0xFF7C4DFF)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "Privacy First",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White,
+                    textAlign = TextAlign.Center
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Your data never leaves your device. " +
+                           "All analytics are processed locally with complete privacy.",
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontSize = 14.sp,
+                    lineHeight = 20.sp,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(48.dp))
+
+        // Get Started Button
         Button(
             onClick = onGetStarted,
             colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF9C27B0)
+                containerColor = Color(0xFF7C4DFF),
+                contentColor = Color.White
             ),
             shape = RoundedCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
-                .height(60.dp)
+                .height(56.dp)
                 .padding(horizontal = 32.dp),
-            contentPadding = PaddingValues(horizontal = 32.dp),
+            contentPadding = PaddingValues(horizontal = 24.dp),
             elevation = ButtonDefaults.buttonElevation(
-                defaultElevation = 8.dp,
-                pressedElevation = 4.dp
+                defaultElevation = 4.dp,
+                pressedElevation = 2.dp
             )
         ) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.Center,
+                modifier = Modifier.fillMaxWidth()
             ) {
                 Text(
-                    text = "🎵",
-                    fontSize = 20.sp
-                )
-                Text(
-                    text = "Get Started",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold
+                    text = "Continue",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium
                 )
             }
         }
+
+        Spacer(modifier = Modifier.height(40.dp))
     }
 }
 
@@ -454,7 +475,6 @@ fun FeatureCard(icon: String, text: String) {
         }
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun RewindContentScreen(
@@ -474,7 +494,7 @@ fun RewindContentScreen(
 ) {
     val data = rewindData ?: return
     val stats = loadedStats ?: data.stats
-    val scope = rememberCoroutineScope() // FIXED: Added missing scope
+    val scope = rememberCoroutineScope()
     
     // Separate pager for top songs/artists
     val topItemsPagerState = rememberPagerState(pageCount = { 2 })
@@ -489,37 +509,83 @@ fun RewindContentScreen(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 24.dp),
+                    .padding(horizontal = 24.dp, vertical = 32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                // Main Title with Icon
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center,
+                    modifier = Modifier.padding(bottom = 4.dp)
+                ) {
+                    Text(
+                        text = "♫",
+                        fontSize = 22.sp,
+                        color = Color(0xFFE040FB),
+                        modifier = Modifier.padding(end = 8.dp)
+                    )
+                    Text(
+                        text = "REWIND",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "♫",
+                        fontSize = 22.sp,
+                        color = Color(0xFFE040FB),
+                        modifier = Modifier.padding(start = 8.dp)
+                    )
+                }
+                
+                // Year Display
                 Text(
-                    text = "🎵 REWIND ${data.year}",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
+                    text = data.year.toString(),
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFFE040FB),
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(vertical = 4.dp)
                 )
                 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(12.dp))
                 
+                // Personalized Greeting
                 Text(
                     buildAnnotatedString {
-                        withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
+                        withStyle(
+                            style = SpanStyle(
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 16.sp
+                            )
+                        ) {
                             append("For ")
                         }
-                        withStyle(style = SpanStyle(
-                            color = Color(0xFFE040FB),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )) {
+                        withStyle(
+                            style = SpanStyle(
+                                color = Color(0xFFE040FB),
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 18.sp
+                            )
+                        ) {
                             append(username)
+                        }
+                        withStyle(
+                            style = SpanStyle(
+                                color = Color.White.copy(alpha = 0.9f),
+                                fontSize = 16.sp
+                            )
+                        ) {
+                            append("'s musical journey")
                         }
                     },
                     fontSize = 18.sp,
-                    color = Color.White
+                    color = Color.White,
+                    textAlign = TextAlign.Center
                 )
             }
         }
-        
         // Enhanced User Ranking Card
         item {
             EnhancedUserRankingCard(userRanking, userPercentile)
@@ -685,24 +751,6 @@ fun RewindContentScreen(
             EnhancedListeningPatternsCard(stats)
         }
         
-        // Enhanced Monthly Stats
-        item {
-            if (data.monthlyStats.isNotEmpty()) {
-                EnhancedMonthlyStatsCard(data.monthlyStats, showMinutesInHours)
-            }
-        }
-        
-        // Enhanced Time Stats
-        item {
-            if (data.dailyStats.isNotEmpty() || data.hourlyStats.isNotEmpty()) {
-                EnhancedTimeStatsCard(
-                    dailyStats = data.dailyStats,
-                    hourlyStats = data.hourlyStats,
-                    showMinutesInHours = showMinutesInHours
-                )
-            }
-        }
-        
         // More Insights
         item {
             MoreInsightsCard(data, showMinutesInHours)
@@ -723,44 +771,89 @@ fun RewindContentScreen(
     }
 }
 
-// FIXED: Added missing ActionButtonsCard function
 @Composable
-fun ActionButtonsCard(onOpenDetailedRewind: () -> Unit, onShareRewind: () -> Unit) {
+fun ActionButtonsCard(
+    onOpenDetailedRewind: () -> Unit,
+    onShareRewind: () -> Unit
+) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        OutlinedButton(
+        // Detailed Rewind Button
+        Card(
             onClick = onOpenDetailedRewind,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .height(56.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color(0xFFE040FB)
+            colors = CardDefaults.cardColors(
+                containerColor = Color.Transparent
             ),
-            border = BorderStroke(1.5.dp, Color(0xFFE040FB))
-        ) {
-            Text(
-                text = "🌐 Detailed Rewind",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+            border = BorderStroke(
+                width = 1.dp,
+                color = Color(0xFF7C4DFF).copy(alpha = 0.6f)
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 2.dp
             )
+        ) {
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Icon using text character
+                Text(
+                    text = "📊",
+                    fontSize = 18.sp,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    text = "Detailed Analysis",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color(0xFF7C4DFF)
+                )
+            }
         }
-        
-        Button(
+
+        // Share Button
+        Card(
             onClick = onShareRewind,
-            modifier = Modifier.weight(1f),
+            modifier = Modifier
+                .weight(1f)
+                .height(56.dp),
             shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF9C27B0)
+            colors = CardDefaults.cardColors(
+                containerColor = Color(0xFF7C4DFF)
+            ),
+            elevation = CardDefaults.cardElevation(
+                defaultElevation = 4.dp,
+                pressedElevation = 2.dp
             )
         ) {
-            Text(
-                text = "📤 Share",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
+            Row(
+                modifier = Modifier.fillMaxSize(),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                // Icon using text character
+                Text(
+                    text = "↗",
+                    fontSize = 18.sp,
+                    color = Color.White,
+                    modifier = Modifier.padding(end = 8.dp)
+                )
+                Text(
+                    text = "Share",
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = Color.White
+                )
+            }
         }
     }
 }
@@ -771,25 +864,83 @@ fun TabButton(
     isSelected: Boolean,
     onClick: () -> Unit
 ) {
-    Text(
-        text = text,
-        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f),
-        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-        fontSize = 14.sp,
+    Card(
+        onClick = onClick,
         modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (isSelected) Color(0xFF9C27B0) else Color.Transparent
+            .height(40.dp)
+            .padding(horizontal = 4.dp),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isSelected) Color(0xFF7C4DFF) else Color.Transparent
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isSelected) 2.dp else 0.dp
+        ),
+        border = if (!isSelected) BorderStroke(
+            width = 1.dp,
+            color = Color.White.copy(alpha = 0.2f)
+        ) else null
+    ) {
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = text,
+                color = if (isSelected) Color.White else Color.White.copy(alpha = 0.8f),
+                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                fontSize = 13.sp,
+                letterSpacing = 0.5.sp
             )
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .pointerInput(Unit) {
-                detectTapGestures {
-                    onClick()
-                }
+            
+            if (isSelected) {
+                Spacer(modifier = Modifier.width(6.dp))
+                // Small indicator dot
+                Box(
+                    modifier = Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.9f))
+                )
             }
-    )
+        }
+    }
 }
 
+// Optional: Tab Bar Container for better organization
+@Composable
+fun TabBar(
+    tabs: List<String>,
+    selectedTabIndex: Int,
+    onTabSelected: (Int) -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color(0xFF1E1B26)
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            tabs.forEachIndexed { index, tab ->
+                TabButton(
+                    text = tab,
+                    isSelected = selectedTabIndex == index,
+                    onClick = { onTabSelected(index) }
+                )
+            }
+        }
+    }
+}
 @Composable
 fun EnhancedUserRankingCard(userRanking: String, userPercentile: String) {
     Card(
@@ -1726,233 +1877,6 @@ fun EnhancedPatternItem(
     }
 }
 
-@Composable
-fun EnhancedMonthlyStatsCard(monthlyStats: List<MonthlyStat>, showMinutesInHours: Boolean) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "📈 Monthly Listening Breakdown",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Total: ${monthlyStats.sumOf { it.minutes }} min",
-                    fontSize = 12.sp,
-                    color = Color(0xFFE040FB),
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                monthlyStats.forEachIndexed { index, monthStat ->
-                    EnhancedMonthlyStatItem(
-                        monthStat = monthStat,
-                        showMinutesInHours = showMinutesInHours,
-                        isPeak = index == monthlyStats.indexOf(
-                            monthlyStats.maxByOrNull { it.minutes }
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EnhancedMonthlyStatItem(monthStat: MonthlyStat, showMinutesInHours: Boolean, isPeak: Boolean) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isPeak) Color(0xFF4A1F7A) else Color(0xFF3D2E54)
-        ),
-        border = if (isPeak) BorderStroke(2.dp, Color(0xFFE040FB)) else null
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (isPeak) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFE040FB)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "👑",
-                            fontSize = 12.sp
-                        )
-                    }
-                }
-                
-                Column {
-                    Text(
-                        text = monthStat.month,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Text(
-                        text = "${monthStat.plays} plays",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                }
-            }
-            
-            Column(
-                horizontalAlignment = Alignment.End
-            ) {
-                Text(
-                    text = if (showMinutesInHours) {
-                        val hours = monthStat.minutes / 60
-                        val minutes = monthStat.minutes % 60
-                        if (hours > 0) "$hours h $minutes m" else "$minutes m"
-                    } else {
-                        "${monthStat.minutes} min"
-                    },
-                    fontSize = 16.sp,
-                    color = Color.White,
-                    fontWeight = FontWeight.Bold
-                )
-                if (isPeak) {
-                    Text(
-                        text = "Peak Month",
-                        fontSize = 10.sp,
-                        color = Color(0xFFE040FB),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EnhancedTimeStatsCard(
-    dailyStats: List<DailyStat>,
-    hourlyStats: List<HourlyStat>,
-    showMinutesInHours: Boolean
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Text(
-                text = "🕐 Detailed Time Patterns",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Daily Stats Section
-            Text(
-                text = "📅 Daily Activity",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            if (dailyStats.isNotEmpty()) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    dailyStats.sortedByDescending { it.minutes }.forEach { dayStat ->
-                        EnhancedTimeStatItem(
-                            label = dayStat.dayOfWeek,
-                            minutes = dayStat.minutes,
-                            plays = dayStat.plays,
-                            showMinutesInHours = showMinutesInHours
-                        )
-                    }
-                }
-            } else {
-                Text(
-                    text = "No daily data available",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // Hourly Stats Section
-            Text(
-                text = "⏰ Hourly Listening Peaks",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            if (hourlyStats.isNotEmpty()) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    hourlyStats.sortedByDescending { it.minutes }
-                        .take(8)
-                        .forEach { hourStat ->
-                            EnhancedTimeStatItem(
-                                label = hourStat.hour,
-                                minutes = hourStat.minutes,
-                                plays = hourStat.plays,
-                                showMinutesInHours = showMinutesInHours
-                            )
-                        }
-                }
-            } else {
-                Text(
-                    text = "No hourly data available",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            }
-        }
-    }
-}
 
 @Composable
 fun EnhancedTimeStatItem(
