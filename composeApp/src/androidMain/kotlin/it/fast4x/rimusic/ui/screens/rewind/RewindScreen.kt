@@ -3,7 +3,6 @@ package it.fast4x.rimusic.ui.screens.rewind
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.pager.HorizontalPager
@@ -36,6 +35,8 @@ import kotlinx.coroutines.withContext
 import java.net.URL
 import java.net.URLEncoder
 import java.time.LocalDate
+import java.time.YearMonth
+import java.time.format.DateTimeFormatter
 import android.content.Intent
 import android.content.Context
 import android.graphics.BitmapFactory
@@ -46,18 +47,47 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
 import kotlinx.coroutines.runBlocking
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.foundation.clickable
 
-// Import the data classes and fetcher from your original code
-import it.fast4x.rimusic.ui.screens.rewind.RewindDataFetcher
-import it.fast4x.rimusic.ui.screens.rewind.RewindData
-import it.fast4x.rimusic.ui.screens.rewind.ListeningStats
-import it.fast4x.rimusic.ui.screens.rewind.TopSong
-import it.fast4x.rimusic.ui.screens.rewind.TopArtist
-import it.fast4x.rimusic.ui.screens.rewind.TopAlbum
-import it.fast4x.rimusic.ui.screens.rewind.TopPlaylist
-import it.fast4x.rimusic.ui.screens.rewind.MonthlyStat
-import it.fast4x.rimusic.ui.screens.rewind.DailyStat
-import it.fast4x.rimusic.ui.screens.rewind.HourlyStat
+// Color palettes for background gradients
+val colorPalettes = listOf(
+    listOf(Color(0xFFE91E63), Color(0xFF9C27B0), Color(0xFF3F51B5)),  // Pink/Purple/Blue
+    listOf(Color(0xFFE7D858), Color(0xFF733B81)),                      // Yellow/Purple
+    listOf(Color(0xFF5A6CD2), Color(0xFF1DB954)),                      // Blue/Green
+    listOf(Color(0xFF2196F3), Color(0xFF3F51B5)),                      // Blue/Indigo
+    listOf(Color(0xFFFF9800), Color(0xFFFF5722)),                      // Orange/Deep Orange
+    listOf(Color(0xFFE91E63), Color(0xFF9C27B0)),                      // Pink/Purple
+    listOf(Color(0xFF1DB954), Color(0xFFBBA0A0))                       // Green/Gray
+)
+
+// Month names for display
+val monthNames = mapOf(
+    1 to "January", 2 to "February", 3 to "March", 4 to "April",
+    5 to "May", 6 to "June", 7 to "July", 8 to "August",
+    9 to "September", 10 to "October", 11 to "November", 12 to "December"
+)
+
+// Day names for display
+val dayNames = mapOf(
+    "MON" to "Monday", "TUE" to "Tuesday", "WED" to "Wednesday", 
+    "THU" to "Thursday", "FRI" to "Friday", "SAT" to "Saturday", "SUN" to "Sunday"
+)
+
+// Hour labels with descriptions
+val hourDescriptions = mapOf(
+    "00:00" to "Midnight", "01:00" to "Early Night", "02:00" to "Late Night",
+    "03:00" to "Late Night", "04:00" to "Early Morning", "05:00" to "Dawn",
+    "06:00" to "Morning", "07:00" to "Morning", "08:00" to "Morning Commute",
+    "09:00" to "Morning", "10:00" to "Mid-morning", "11:00" to "Late Morning",
+    "12:00" to "Noon", "13:00" to "Early Afternoon", "14:00" to "Afternoon",
+    "15:00" to "Mid-afternoon", "16:00" to "Late Afternoon", "17:00" to "Evening Start",
+    "18:00" to "Evening", "19:00" to "Evening", "20:00" to "Night",
+    "21:00" to "Late Evening", "22:00" to "Late Evening", "23:00" to "Late Night"
+)
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -72,10 +102,12 @@ fun RewindScreen(
     var userPercentile by remember { mutableStateOf("Top 50%") }
     var showMinutesInHours by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    val pagerState = rememberPagerState(pageCount = { 2 })
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val currentYear = LocalDate.now().year
+    
+    // Main pager state for slides (10 slides total)
+    val mainPagerState = rememberPagerState(pageCount = { 10 })
     
     // Loading optimization - load data in chunks
     var loadedTopSongs by remember { mutableStateOf<List<TopSong>?>(null) }
@@ -83,6 +115,9 @@ fun RewindScreen(
     var loadedTopAlbums by remember { mutableStateOf<List<TopAlbum>?>(null) }
     var loadedTopPlaylists by remember { mutableStateOf<List<TopPlaylist>?>(null) }
     var loadedStats by remember { mutableStateOf<ListeningStats?>(null) }
+    var loadedMonthlyStats by remember { mutableStateOf<List<MonthlyStat>?>(null) }
+    var loadedDailyStats by remember { mutableStateOf<List<DailyStat>?>(null) }
+    var loadedHourlyStats by remember { mutableStateOf<List<HourlyStat>?>(null) }
     
     LaunchedEffect(Unit) {
         scope.launch {
@@ -91,27 +126,26 @@ fun RewindScreen(
                     DataStoreUtils.getStringBlocking(context, DataStoreUtils.KEY_USERNAME, "Music Fan")
                 }
                 
-                // Load basic stats first for quick display
+                // Load all data
                 rewindData = RewindDataFetcher.getRewindData(currentYear)
                 
                 if (rewindData != null) {
                     loadedStats = rewindData!!.stats
+                    loadedTopSongs = rewindData!!.topSongs
+                    loadedTopArtists = rewindData!!.topArtists
+                    loadedTopAlbums = rewindData!!.topAlbums
+                    loadedTopPlaylists = rewindData!!.topPlaylists
+                    loadedMonthlyStats = rewindData!!.monthlyStats
+                    loadedDailyStats = rewindData!!.dailyStats
+                    loadedHourlyStats = rewindData!!.hourlyStats
                     
-                    // Calculate ranking quickly
+                    // Calculate ranking
                     val joinDate = runBlocking {
                         DataStoreUtils.getStringBlocking(context, "join_date", "")
                     }
                     val rankingResult = calculateUserRanking(rewindData!!, joinDate)
                     userRanking = rankingResult.first
                     userPercentile = rankingResult.second
-                    
-                    // Load other data in background
-                    scope.launch {
-                        loadedTopSongs = rewindData!!.topSongs
-                        loadedTopArtists = rewindData!!.topArtists
-                        loadedTopAlbums = rewindData!!.topAlbums
-                        loadedTopPlaylists = rewindData!!.topPlaylists
-                    }
                 }
                 
             } catch (e: Exception) {
@@ -125,16 +159,14 @@ fun RewindScreen(
     Box(
         modifier = Modifier.fillMaxSize()
     ) {
+        // Dynamic background based on slide
+        val currentPalette = colorPalettes[mainPagerState.currentPage % colorPalettes.size]
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF0F0B1A),
-                            Color(0xFF1A1529),
-                            Color(0xFF2A1F3A)
-                        )
+                        colors = currentPalette
                     )
                 )
         )
@@ -142,55 +174,120 @@ fun RewindScreen(
         if (isLoading) {
             LoadingScreen()
         } else {
+            val data = rewindData ?: return
+            
             HorizontalPager(
-                state = pagerState,
+                state = mainPagerState,
                 modifier = Modifier.fillMaxSize()
             ) { page ->
                 when (page) {
-                    0 -> WelcomeScreen(
-                        username = username,
-                        onGetStarted = {
-                            scope.launch {
-                                pagerState.animateScrollToPage(1)
-                            }
-                        }
-                    )
-                    1 -> RewindContentScreen(
-                        username = username,
-                        rewindData = rewindData,
-                        loadedTopSongs = loadedTopSongs,
-                        loadedTopArtists = loadedTopArtists,
-                        loadedTopAlbums = loadedTopAlbums,
-                        loadedTopPlaylists = loadedTopPlaylists,
-                        loadedStats = loadedStats,
-                        userRanking = userRanking,
-                        userPercentile = userPercentile,
-                        showMinutesInHours = showMinutesInHours,
-                        onToggleMinutesHours = { showMinutesInHours = !showMinutesInHours },
-                        onOpenDetailedRewind = {
-                            val dataString = encodeRewindDataForUrl(rewindData, username, currentYear)
-                            val url = "https://cubicrewind.lovable.app?data=$dataString"
-                            uriHandler.openUri(url)
-                        },
-                        onShareRewind = {
-                            shareRewindData(context, rewindData, username, userRanking, currentYear)
-                        }
-                    )
+                    0 -> WelcomeSlide(username, currentYear) {
+                        scope.launch { mainPagerState.animateScrollToPage(1) }
+                    }
+                    1 -> StatsSlide(username, data, userRanking, userPercentile, showMinutesInHours) {
+                        scope.launch { mainPagerState.animateScrollToPage(2) }
+                    }
+                    2 -> TopSongsSlide(data.topSongs.take(5)) {
+                        scope.launch { mainPagerState.animateScrollToPage(3) }
+                    }
+                    3 -> TopArtistsSlide(data.topArtists.take(5)) {
+                        scope.launch { mainPagerState.animateScrollToPage(4) }
+                    }
+                    4 -> TopAlbumsSlide(data.topAlbums.take(3)) {
+                        scope.launch { mainPagerState.animateScrollToPage(5) }
+                    }
+                    5 -> MonthlyStatsSlide(data.monthlyStats) {
+                        scope.launch { mainPagerState.animateScrollToPage(6) }
+                    }
+                    6 -> DailyPatternsSlide(data.dailyStats) {
+                        scope.launch { mainPagerState.animateScrollToPage(7) }
+                    }
+                    7 -> HourlyPatternsSlide(data.hourlyStats) {
+                        scope.launch { mainPagerState.animateScrollToPage(8) }
+                    }
+                    8 -> BestOfAllSlide(data) {
+                        scope.launch { mainPagerState.animateScrollToPage(9) }
+                    }
+                    9 -> DonateSlide {
+                        // Go back to first slide
+                        scope.launch { mainPagerState.animateScrollToPage(0) }
+                    }
                 }
             }
             
-            if (!isLoading) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(bottom = 100.dp),
-                    contentAlignment = Alignment.BottomCenter
+            // Page indicators at bottom
+            PageIndicator(
+                pageCount = 10,
+                currentPage = mainPagerState.currentPage,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 80.dp)
+            )
+            
+            // Navigation buttons
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 20.dp)
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 20.dp),
+                contentAlignment = Alignment.Center
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    PageIndicator(
-                        pageCount = 2,
-                        currentPage = pagerState.currentPage,
-                        modifier = Modifier.padding(bottom = 16.dp)
-                    )
+                    // Previous button
+                    if (mainPagerState.currentPage > 0) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    mainPagerState.animateScrollToPage(mainPagerState.currentPage - 1)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White.copy(alpha = 0.2f)
+                            ),
+                            shape = CircleShape,
+                            modifier = Modifier.size(50.dp)
+                        ) {
+                            Text("←", fontSize = 20.sp)
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.size(50.dp))
+                    }
+                    
+                    // Share/Next button
+                    if (mainPagerState.currentPage < 9) {
+                        Button(
+                            onClick = {
+                                scope.launch {
+                                    mainPagerState.animateScrollToPage(mainPagerState.currentPage + 1)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color.White.copy(alpha = 0.8f)
+                            ),
+                            shape = CircleShape,
+                            modifier = Modifier.size(50.dp)
+                        ) {
+                            Text("→", fontSize = 20.sp, color = Color.Black)
+                        }
+                    } else {
+                        // Use the context captured at the beginning of the function
+                        Button(
+                            onClick = {
+                                shareRewindData(context, data, username, userRanking, currentYear)
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = Color(0xFF1DB954)
+                            ),
+                            shape = CircleShape,
+                            modifier = Modifier.size(50.dp)
+                        ) {
+                            Text("📤", fontSize = 20.sp)
+                        }
+                    }
                 }
             }
         }
@@ -244,29 +341,25 @@ fun LoadingScreen() {
     }
 }
 
+// SLIDE 1: Welcome Screen
 @Composable
-fun WelcomeScreen(
-    username: String,
-    onGetStarted: () -> Unit
-) {
+fun WelcomeSlide(username: String, year: Int, onNext: () -> Unit) {
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .padding(horizontal = 24.dp, vertical = 40.dp),
+            .padding(40.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Enhanced App Logo/Icon with animation
         Box(
             modifier = Modifier
-                .size(140.dp)
+                .size(120.dp)
                 .clip(CircleShape)
                 .background(
                     brush = Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF9C27B0),
-                            Color(0xFF673AB7),
-                            Color(0xFF4527A0)
+                            Color.White.copy(alpha = 0.3f),
+                            Color.White.copy(alpha = 0.1f)
                         )
                     )
                 ),
@@ -274,739 +367,219 @@ fun WelcomeScreen(
         ) {
             Text(
                 text = "🎵",
-                fontSize = 64.sp
+                fontSize = 60.sp
             )
         }
         
         Spacer(modifier = Modifier.height(40.dp))
         
-        // Animated Welcome Title
         Text(
-            text = "REWIND ${LocalDate.now().year}",
-            fontSize = 36.sp,
+            text = "YOUR ${year}",
+            fontSize = 28.sp,
             fontWeight = FontWeight.Bold,
             color = Color.White,
-            textAlign = TextAlign.Center,
-            modifier = Modifier
-                .background(
-                    brush = Brush.horizontalGradient(
-                        colors = listOf(
-                            Color(0xFFE040FB),
-                            Color(0xFF7E57C2),
-                            Color(0xFFE040FB)
-                        )
-                    )
-                )
-                .padding(horizontal = 32.dp, vertical = 8.dp)
-                .clip(RoundedCornerShape(20.dp))
+            letterSpacing = 2.sp
         )
         
-        Spacer(modifier = Modifier.height(16.dp))
+        Text(
+            text = "MUSIC REWIND",
+            fontSize = 42.sp,
+            fontWeight = FontWeight.Black,
+            color = Color.White,
+            letterSpacing = 1.sp,
+            modifier = Modifier.padding(top = 10.dp)
+        )
         
-        // Enhanced welcome message
+        Spacer(modifier = Modifier.height(30.dp))
+        
         Text(
             buildAnnotatedString {
                 withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
-                    append("Welcome back, ")
+                    append("For ")
                 }
                 withStyle(style = SpanStyle(
-                    color = Color(0xFFE040FB),
+                    color = Color.White,
                     fontWeight = FontWeight.Bold,
                     fontSize = 24.sp
                 )) {
                     append(username)
                 }
-                withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
-                    append("!")
-                }
             },
-            fontSize = 22.sp,
+            fontSize = 20.sp,
             textAlign = TextAlign.Center
         )
         
-        Spacer(modifier = Modifier.height(32.dp))
+        Spacer(modifier = Modifier.height(40.dp))
         
-        // Enhanced description
         Text(
-            text = "Your personal music journey for ${LocalDate.now().year}",
-            color = Color(0xFFCE93D8),
-            fontSize = 18.sp,
-            lineHeight = 26.sp,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 16.dp)
+            text = "Swipe → to begin your journey",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
         )
-        
-        Spacer(modifier = Modifier.height(40.dp))
-        
-        // Enhanced Feature highlights with cards
-        Column(
-            verticalArrangement = Arrangement.spacedBy(16.dp),
-            modifier = Modifier.padding(horizontal = 16.dp)
-        ) {
-            FeatureCard(icon = "📊", text = "Detailed listening statistics")
-            FeatureCard(icon = "🔥", text = "Top songs & artists")
-            FeatureCard(icon = "⭐", text = "Personal ranking")
-            FeatureCard(icon = "💿", text = "Top albums & playlists")
-            FeatureCard(icon = "🔒", text = "100% private & secure")
-        }
-        
-        Spacer(modifier = Modifier.height(48.dp))
-        
-        // Enhanced privacy note
-        Card(
-            modifier = Modifier.padding(horizontal = 16.dp),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(
-                containerColor = Color(0xFF2A1F3A)
-            )
-        ) {
-            Text(
-                text = "Your privacy is respected.\nAll data is stored only on your device.",
-                color = Color.White.copy(alpha = 0.7f),
-                fontSize = 14.sp,
-                textAlign = TextAlign.Center,
-                lineHeight = 20.sp,
-                modifier = Modifier.padding(16.dp)
-            )
-        }
-        
-        Spacer(modifier = Modifier.height(40.dp))
-        
-        // Enhanced Get Started button
-        Button(
-            onClick = onGetStarted,
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF9C27B0)
-            ),
-            shape = RoundedCornerShape(16.dp),
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(60.dp)
-                .padding(horizontal = 32.dp),
-            contentPadding = PaddingValues(horizontal = 32.dp),
-            elevation = ButtonDefaults.buttonElevation(
-                defaultElevation = 8.dp,
-                pressedElevation = 4.dp
-            )
-        ) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                Text(
-                    text = "🎵",
-                    fontSize = 20.sp
-                )
-                Text(
-                    text = "Get Started",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-        }
     }
 }
 
+// SLIDE 2: Stats & Ranking
 @Composable
-fun FeatureCard(icon: String, text: String) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 4.dp
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 20.dp, vertical = 16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFE040FB),
-                                Color(0xFF7E57C2)
-                            )
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = icon,
-                    fontSize = 20.sp
-                )
-            }
-            Text(
-                text = text,
-                color = Color.White.copy(alpha = 0.9f),
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
-
-@OptIn(ExperimentalFoundationApi::class)
-@Composable
-fun RewindContentScreen(
+fun StatsSlide(
     username: String,
-    rewindData: RewindData?,
-    loadedTopSongs: List<TopSong>?,
-    loadedTopArtists: List<TopArtist>?,
-    loadedTopAlbums: List<TopAlbum>?,
-    loadedTopPlaylists: List<TopPlaylist>?,
-    loadedStats: ListeningStats?,
+    data: RewindData,
     userRanking: String,
     userPercentile: String,
     showMinutesInHours: Boolean,
-    onToggleMinutesHours: () -> Unit,
-    onOpenDetailedRewind: () -> Unit,
-    onShareRewind: () -> Unit
+    onNext: () -> Unit
 ) {
-    val data = rewindData ?: return
-    val stats = loadedStats ?: data.stats
-    val scope = rememberCoroutineScope() // FIXED: Added missing scope
-    
-    // Separate pager for top songs/artists
-    val topItemsPagerState = rememberPagerState(pageCount = { 2 })
-    
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        // Header
-        item {
+        Text(
+            text = "📊 YOUR YEAR IN NUMBERS",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        // Ranking Card
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White.copy(alpha = 0.15f)
+            )
+        ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 24.dp),
+                modifier = Modifier.padding(20.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = "🎵 REWIND ${data.year}",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                
-                Spacer(modifier = Modifier.height(8.dp))
-                
-                Text(
-                    buildAnnotatedString {
-                        withStyle(style = SpanStyle(color = Color.White.copy(alpha = 0.8f))) {
-                            append("For ")
-                        }
-                        withStyle(style = SpanStyle(
-                            color = Color(0xFFE040FB),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 20.sp
-                        )) {
-                            append(username)
-                        }
-                    },
-                    fontSize = 18.sp,
-                    color = Color.White
-                )
-            }
-        }
-        
-        // Enhanced User Ranking Card
-        item {
-            EnhancedUserRankingCard(userRanking, userPercentile)
-        }
-        
-        // Action Buttons - FIXED: Added missing ActionButtonsCard
-        item {
-            ActionButtonsCard(onOpenDetailedRewind, onShareRewind)
-        }
-        
-        // Main Stats Card with toggle
-        item {
-            MainStatsCard(
-                data = data,
-                showMinutesInHours = showMinutesInHours,
-                onToggleMinutesHours = onToggleMinutesHours
-            )
-        }
-        
-        // Top Songs & Artists Pager
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF2A1F3A)
-                )
-            ) {
-                Column(
-                    modifier = Modifier.padding(20.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🔥 Top Content",
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White
-                        )
-                        
-                        // Pager tabs
-                        Row(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color(0xFF3D2E54))
-                                .padding(2.dp)
-                        ) {
-                            TabButton(
-                                text = "Songs",
-                                isSelected = topItemsPagerState.currentPage == 0,
-                                onClick = {
-                                    scope.launch {
-                                        topItemsPagerState.animateScrollToPage(0)
-                                    }
-                                }
-                            )
-                            TabButton(
-                                text = "Artists",
-                                isSelected = topItemsPagerState.currentPage == 1,
-                                onClick = {
-                                    scope.launch {
-                                        topItemsPagerState.animateScrollToPage(1)
-                                    }
-                                }
-                            )
-                        }
-                    }
-                    
-                    Spacer(modifier = Modifier.height(16.dp))
-                    
-                    HorizontalPager(state = topItemsPagerState) { page ->
-                        when (page) {
-                            0 -> {
-                                val songs = loadedTopSongs ?: data.topSongs
-                                if (songs.isNotEmpty()) {
-                                    Column {
-                                        songs.take(10).forEachIndexed { index, song ->
-                                            TopSongItem(
-                                                rank = index + 1,
-                                                song = song,
-                                                modifier = Modifier.padding(vertical = 4.dp)
-                                            )
-                                        }
-                                    }
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(200.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "No songs data available",
-                                            color = Color.White.copy(alpha = 0.6f)
-                                        )
-                                    }
-                                }
-                            }
-                            1 -> {
-                                val artists = loadedTopArtists ?: data.topArtists
-                                if (artists.isNotEmpty()) {
-                                    LazyRow(
-                                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        items(artists.take(10).chunked(2)) { row ->
-                                            Column(
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                row.forEach { artist ->
-                                                    ArtistCard(
-                                                        artist = artist,
-                                                        modifier = Modifier
-                                                            .width(150.dp)
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                } else {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(200.dp),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = "No artists data available",
-                                            color = Color.White.copy(alpha = 0.6f)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        
-        // Top Albums Section
-        item {
-            val albums = loadedTopAlbums ?: data.topAlbums
-            if (albums.isNotEmpty()) {
-                TopAlbumsCard(albums)
-            }
-        }
-        
-        // Top Playlists Section
-        item {
-            val playlists = loadedTopPlaylists ?: data.topPlaylists
-            if (playlists.isNotEmpty()) {
-                TopPlaylistsCard(playlists)
-            }
-        }
-        
-        // Enhanced Listening Patterns
-        item {
-            EnhancedListeningPatternsCard(stats)
-        }
-        
-        // Enhanced Monthly Stats
-        item {
-            if (data.monthlyStats.isNotEmpty()) {
-                EnhancedMonthlyStatsCard(data.monthlyStats, showMinutesInHours)
-            }
-        }
-        
-        // Enhanced Time Stats
-        item {
-            if (data.dailyStats.isNotEmpty() || data.hourlyStats.isNotEmpty()) {
-                EnhancedTimeStatsCard(
-                    dailyStats = data.dailyStats,
-                    hourlyStats = data.hourlyStats,
-                    showMinutesInHours = showMinutesInHours
-                )
-            }
-        }
-        
-        // More Insights
-        item {
-            MoreInsightsCard(data, showMinutesInHours)
-        }
-        
-        // Footer note
-        item {
-            Text(
-                text = "Your data is stored locally on your device only",
-                color = Color.White.copy(alpha = 0.5f),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 16.dp, horizontal = 24.dp)
-            )
-        }
-    }
-}
-
-// FIXED: Added missing ActionButtonsCard function
-@Composable
-fun ActionButtonsCard(onOpenDetailedRewind: () -> Unit, onShareRewind: () -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        OutlinedButton(
-            onClick = onOpenDetailedRewind,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.outlinedButtonColors(
-                contentColor = Color(0xFFE040FB)
-            ),
-            border = BorderStroke(1.5.dp, Color(0xFFE040FB))
-        ) {
-            Text(
-                text = "🌐 Detailed Rewind",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-        
-        Button(
-            onClick = onShareRewind,
-            modifier = Modifier.weight(1f),
-            shape = RoundedCornerShape(12.dp),
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color(0xFF9C27B0)
-            )
-        ) {
-            Text(
-                text = "📤 Share",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-        }
-    }
-}
-
-@Composable
-fun TabButton(
-    text: String,
-    isSelected: Boolean,
-    onClick: () -> Unit
-) {
-    Text(
-        text = text,
-        color = if (isSelected) Color.White else Color.White.copy(alpha = 0.6f),
-        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-        fontSize = 14.sp,
-        modifier = Modifier
-            .clip(RoundedCornerShape(10.dp))
-            .background(
-                if (isSelected) Color(0xFF9C27B0) else Color.Transparent
-            )
-            .padding(horizontal = 16.dp, vertical = 8.dp)
-            .pointerInput(Unit) {
-                detectTapGestures {
-                    onClick()
-                }
-            }
-    )
-}
-
-@Composable
-fun EnhancedUserRankingCard(userRanking: String, userPercentile: String) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 8.dp
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(24.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Column {
-                Text(
-                    text = "🏆 Your Music Ranking",
+                    text = "🏆 YOUR RANKING",
                     fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.6f),
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    color = Color.White.copy(alpha = 0.7f),
+                    modifier = Modifier.padding(bottom = 8.dp)
                 )
                 Text(
                     text = userRanking,
                     fontSize = 28.sp,
                     fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    textAlign = TextAlign.Center
                 )
                 Text(
                     text = userPercentile,
-                    fontSize = 14.sp,
-                    color = Color(0xFFE040FB),
-                    fontWeight = FontWeight.Medium
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.8f),
+                    modifier = Modifier.padding(top = 4.dp)
                 )
             }
-            
-            Box(
-                modifier = Modifier
-                    .size(70.dp)
-                    .clip(CircleShape)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFFFFD700),
-                                Color(0xFFFFC107),
-                                Color(0xFFFF9800)
-                            )
-                        )
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                when (userRanking) {
-                    "Legendary Listener" -> Text("👑", fontSize = 32.sp)
-                    "Music Enthusiast" -> Text("🔥", fontSize = 32.sp)
-                    "Regular Listener" -> Text("⭐", fontSize = 32.sp)
-                    "Casual Listener" -> Text("🎵", fontSize = 32.sp)
-                    else -> Text("🏆", fontSize = 32.sp)
-                }
-            }
         }
-    }
-}
-
-@Composable
-fun MainStatsCard(
-    data: RewindData,
-    showMinutesInHours: Boolean,
-    onToggleMinutesHours: () -> Unit
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
+        
+        // Stats Grid
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "📊 Your Year in Numbers",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                
-                // Toggle button for minutes/hours
-                Text(
-                    text = if (showMinutesInHours) "Switch to Min" else "Switch to Hrs",
-                    fontSize = 12.sp,
-                    color = Color(0xFFE040FB),
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF3D2E54))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                        .pointerInput(Unit) {
-                            detectTapGestures {
-                                onToggleMinutesHours()
-                            }
-                        }
-                )
-            }
+            StatItem(
+                value = data.stats.totalPlays.toString(),
+                label = "Total Plays",
+                icon = "▶️",
+                modifier = Modifier.weight(1f)
+            )
             
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                EnhancedStatBox(
-                    value = data.stats.totalPlays.toString(),
-                    label = "Total Plays",
-                    icon = "▶️",
-                    color = Color(0xFFE040FB),
-                    modifier = Modifier.weight(1f)
-                )
-                
-                EnhancedStatBox(
-                    value = if (showMinutesInHours) {
-                        val hours = data.stats.totalMinutes / 60
-                        val remainingMinutes = data.stats.totalMinutes % 60
-                        if (hours > 0) "$hours h" else "$remainingMinutes m"
-                    } else {
-                        "${data.stats.totalMinutes} m"
-                    },
-                    label = if (showMinutesInHours) "Hours Listened" else "Minutes Listened",
-                    icon = "⏱️",
-                    color = Color(0xFF7E57C2),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Row(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                EnhancedStatBox(
-                    value = data.totalUniqueSongs.toString(),
-                    label = "Unique Songs",
-                    icon = "🎶",
-                    color = Color(0xFFAB47BC),
-                    modifier = Modifier.weight(1f)
-                )
-                
-                EnhancedStatBox(
-                    value = data.daysWithMusic.toString(),
-                    label = "Active Days",
-                    icon = "📅",
-                    color = Color(0xFFCE93D8),
-                    modifier = Modifier.weight(1f)
-                )
-            }
+            StatItem(
+                value = if (showMinutesInHours) {
+                    val hours = data.stats.totalMinutes / 60
+                    val minutes = data.stats.totalMinutes % 60
+                    "$hours h"
+                } else {
+                    "${data.stats.totalMinutes}"
+                },
+                label = if (showMinutesInHours) "Hours" else "Minutes",
+                icon = "⏱️",
+                modifier = Modifier.weight(1f)
+            )
         }
+        
+        Spacer(modifier = Modifier.height(12.dp))
+        
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            StatItem(
+                value = data.totalUniqueSongs.toString(),
+                label = "Unique Songs",
+                icon = "🎶",
+                modifier = Modifier.weight(1f)
+            )
+            
+            StatItem(
+                value = data.daysWithMusic.toString(),
+                label = "Active Days",
+                icon = "📅",
+                modifier = Modifier.weight(1f)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(30.dp))
+        
+        // More stats
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            StatRow(icon = "👥", label = "Unique Artists", value = data.totalUniqueArtists.toString())
+            StatRow(icon = "💿", label = "Unique Albums", value = data.totalUniqueAlbums.toString())
+            StatRow(icon = "📋", label = "Unique Playlists", value = data.totalUniquePlaylists.toString())
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        Text(
+            text = "Swipe → for Top Songs",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
     }
 }
 
 @Composable
-fun EnhancedStatBox(
-    value: String,
-    label: String,
-    icon: String,
-    color: Color,
-    modifier: Modifier = Modifier
-) {
+fun StatItem(value: String, label: String, icon: String, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = color.copy(alpha = 0.15f)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 4.dp
+            containerColor = Color.White.copy(alpha = 0.1f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(20.dp),
+                .padding(16.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.Center
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(color.copy(alpha = 0.3f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = icon,
-                    fontSize = 20.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
+            Text(
+                text = icon,
+                fontSize = 24.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
+            )
             Text(
                 text = value,
                 fontSize = 22.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = label,
                 fontSize = 12.sp,
@@ -1018,64 +591,91 @@ fun EnhancedStatBox(
 }
 
 @Composable
-fun TopSongsCard(songs: List<TopSong>) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
+fun StatRow(icon: String, label: String, value: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            Text(text = icon, fontSize = 20.sp)
             Text(
-                text = "🔥 Top 10 Songs",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                text = label,
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 16.sp
             )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            songs.take(10).forEachIndexed { index, song ->
-                TopSongItem(
-                    rank = index + 1,
-                    song = song,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-            }
         }
+        Text(
+            text = value,
+            color = Color.White,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Bold
+        )
+    }
+}
+
+// SLIDE 3: Top Songs
+@Composable
+fun TopSongsSlide(songs: List<TopSong>, onNext: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "🔥 TOP SONGS OF THE YEAR",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        songs.forEachIndexed { index, song ->
+            TopSongItemSlide(
+                rank = index + 1,
+                song = song,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        if (songs.isNotEmpty()) {
+            Text(
+                text = "\"${songs[0].song.title}\" was your most played song",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 16.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        Text(
+            text = "Swipe → for Top Artists",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
     }
 }
 
 @Composable
-fun TopSongItem(
-    rank: Int,
-    song: TopSong,
-    modifier: Modifier = Modifier
-) {
-    var thumbnailUrl by remember { mutableStateOf<String?>(song.song.thumbnailUrl) }
-    val scope = rememberCoroutineScope()
-    
-    LaunchedEffect(song.song.title, song.song.artistsText) {
-        if (thumbnailUrl.isNullOrEmpty() && song.song.title.isNotEmpty() && song.song.artistsText != null) {
-            scope.launch {
-                val fetchedUrl = fetchSongThumbnail(song.song.title, song.song.artistsText!!)
-                if (fetchedUrl != null) {
-                    thumbnailUrl = fetchedUrl
-                }
-            }
-        }
-    }
-    
+fun TopSongItemSlide(rank: Int, song: TopSong, modifier: Modifier = Modifier) {
     Card(
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier,
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF3D2E54)
+            containerColor = Color.White.copy(alpha = 0.15f)
         )
     ) {
         Row(
@@ -1085,25 +685,16 @@ fun TopSongItem(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            // Enhanced rank badge
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(36.dp)
                     .clip(CircleShape)
                     .background(
                         when (rank) {
-                            1 -> Brush.radialGradient(
-                                colors = listOf(Color(0xFFFFD700), Color(0xFFFFC107))
-                            )
-                            2 -> Brush.radialGradient(
-                                colors = listOf(Color(0xFFC0C0C0), Color(0xFF9E9E9E))
-                            )
-                            3 -> Brush.radialGradient(
-                                colors = listOf(Color(0xFFCD7F32), Color(0xFF8D6E63))
-                            )
-                            else -> Brush.radialGradient(
-                                colors = listOf(Color(0xFF9C27B0), Color(0xFF7B1FA2))
-                            )
+                            1 -> Color(0xFFFFD700)
+                            2 -> Color(0xFFC0C0C0)
+                            3 -> Color(0xFFCD7F32)
+                            else -> Color.White.copy(alpha = 0.3f)
                         }
                     ),
                 contentAlignment = Alignment.Center
@@ -1112,26 +703,10 @@ fun TopSongItem(
                     text = "$rank",
                     color = if (rank <= 3) Color.Black else Color.White,
                     fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    fontSize = 14.sp
                 )
             }
             
-            // Song thumbnail with fallback
-            Box(
-                modifier = Modifier
-                    .size(52.dp)
-                    .clip(RoundedCornerShape(10.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                NetworkImage(
-                    url = thumbnailUrl,
-                    contentDescription = "Song thumbnail",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-            
-            // Song info
             Column(
                 modifier = Modifier.weight(1f)
             ) {
@@ -1153,25 +728,17 @@ fun TopSongItem(
                 )
             }
             
-            // Enhanced play count
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally
+                horizontalAlignment = Alignment.End
             ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF9C27B0).copy(alpha = 0.3f))
-                        .padding(horizontal = 12.dp, vertical = 6.dp)
-                ) {
-                    Text(
-                        text = "${song.playCount}",
-                        fontSize = 14.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
                 Text(
-                    text = "${song.minutes} min",
+                    text = "${song.playCount}",
+                    fontSize = 16.sp,
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "plays",
                     fontSize = 10.sp,
                     color = Color.White.copy(alpha = 0.6f)
                 )
@@ -1180,331 +747,222 @@ fun TopSongItem(
     }
 }
 
+// SLIDE 4: Top Artists
 @Composable
-fun TopArtistsCard(artists: List<TopArtist>) {
-    Card(
+fun TopArtistsSlide(artists: List<TopArtist>, onNext: () -> Unit) {
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Text(
-                text = "⭐ Top 10 Artists",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+        Text(
+            text = "⭐ TOP ARTISTS OF THE YEAR",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        artists.forEachIndexed { index, artist ->
+            TopArtistItemSlide(
+                rank = index + 1,
+                artist = artist,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 10.dp)
             )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            LazyRow(
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                items(artists.take(10)) { artist ->
-                    ArtistCard(artist = artist, modifier = Modifier.width(150.dp))
-                }
-            }
         }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        if (artists.isNotEmpty()) {
+            Text(
+                text = "\"${artists[0].artist.name ?: "Your top artist"}\" was your most listened artist",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 16.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        Text(
+            text = "Swipe → for Top Albums",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
     }
 }
 
 @Composable
-fun ArtistCard(
-    artist: TopArtist,
-    modifier: Modifier = Modifier
-) {
-    var thumbnailUrl by remember { mutableStateOf<String?>(artist.artist.thumbnailUrl) }
-    val scope = rememberCoroutineScope()
-    
-    LaunchedEffect(artist.artist.name) {
-        if (thumbnailUrl.isNullOrEmpty() && artist.artist.name != null) {
-            scope.launch {
-                val fetchedUrl = fetchArtistThumbnail(artist.artist.name!!)
-                if (fetchedUrl != null) {
-                    thumbnailUrl = fetchedUrl
-                }
-            }
-        }
-    }
-    
+fun TopArtistItemSlide(rank: Int, artist: TopArtist, modifier: Modifier = Modifier) {
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF3D2E54)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 4.dp
-        )
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            // Enhanced artist thumbnail
-            Box(
-                modifier = Modifier
-                    .size(70.dp)
-                    .clip(CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                NetworkImage(
-                    url = thumbnailUrl,
-                    contentDescription = "Artist thumbnail",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            Text(
-                text = artist.artist.name ?: "Unknown Artist",
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
-                textAlign = TextAlign.Center,
-                lineHeight = 16.sp
-            )
-            
-            Spacer(modifier = Modifier.height(4.dp))
-            
-            Text(
-                text = "${artist.minutes} min",
-                fontSize = 12.sp,
-                color = Color(0xFFE040FB),
-                fontWeight = FontWeight.Medium
-            )
-            
-            Text(
-                text = "${artist.songCount} songs",
-                fontSize = 11.sp,
-                color = Color.White.copy(alpha = 0.6f),
-                textAlign = TextAlign.Center
-            )
-        }
-    }
-}
-
-@Composable
-fun TopAlbumsCard(albums: List<TopAlbum>) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Text(
-                text = "💿 Top Albums",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            albums.take(5).forEachIndexed { index, album ->
-                AlbumItem(
-                    rank = index + 1,
-                    album = album,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-            }
-        }
-    }
-}
-
-// FIXED: Added missing AlbumItem function
-@Composable
-fun AlbumItem(
-    rank: Int,
-    album: TopAlbum,
-    modifier: Modifier = Modifier
-) {
-    var thumbnailUrl by remember { mutableStateOf<String?>(album.album.thumbnailUrl) }
-    
-    Card(
-        modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF3D2E54)
+            containerColor = Color.White.copy(alpha = 0.15f)
         )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            // Rank badge
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(
-                        when (rank) {
-                            1 -> Color(0xFFFFD700)
-                            2 -> Color(0xFFC0C0C0)
-                            3 -> Color(0xFFCD7F32)
-                            else -> Color(0xFF9C27B0).copy(alpha = 0.5f)
-                        }
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = "$rank",
-                    color = if (rank <= 3) Color.Black else Color.White,
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 14.sp
-                )
-            }
-            
-            // Album cover with fallback
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(RoundedCornerShape(8.dp)),
-                contentAlignment = Alignment.Center
-            ) {
-                NetworkImage(
-                    url = thumbnailUrl,
-                    contentDescription = "Album cover",
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop
-                )
-            }
-            
-            // Album info
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = album.album.title ?: "Unknown Album",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 20.sp
-                )
-                Text(
-                    text = album.album.authorsText ?: "Unknown Artist",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            
-            // Stats
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(Color(0xFF9C27B0).copy(alpha = 0.3f))
-                        .padding(horizontal = 10.dp, vertical = 4.dp)
-                ) {
-                    Text(
-                        text = "${album.songCount}",
-                        fontSize = 14.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-                Text(
-                    text = "${album.minutes} min",
-                    fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun TopPlaylistsCard(playlists: List<TopPlaylist>) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Text(
-                text = "📋 Top Playlists",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            playlists.take(5).forEachIndexed { index, playlist ->
-                PlaylistItem(
-                    rank = index + 1,
-                    playlist = playlist,
-                    modifier = Modifier.padding(vertical = 6.dp)
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun PlaylistItem(
-    rank: Int,
-    playlist: TopPlaylist,
-    modifier: Modifier = Modifier
-) {
-    Card(
-        modifier = modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF3D2E54)
-        )
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             Box(
                 modifier = Modifier
                     .size(40.dp)
                     .clip(CircleShape)
-                    .background(
-                        Brush.radialGradient(
-                            colors = listOf(Color(0xFF9C27B0), Color(0xFF7B1FA2))
-                        )
-                    ),
+                    .background(Color.White.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = when (rank) {
+                        1 -> "🥇"
+                        2 -> "🥈"
+                        3 -> "🥉"
+                        else -> "$rank"
+                    },
+                    fontSize = if (rank <= 3) 20.sp else 16.sp
+                )
+            }
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = artist.artist.name ?: "Unknown Artist",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${artist.songCount} songs • ${artist.minutes} min",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f)
+                )
+            }
+        }
+    }
+}
+
+// SLIDE 5: Top Albums
+@Composable
+fun TopAlbumsSlide(albums: List<TopAlbum>, onNext: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "💿 TOP ALBUMS OF THE YEAR",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        albums.forEachIndexed { index, album ->
+            TopAlbumItemSlide(
+                rank = index + 1,
+                album = album,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 12.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        if (albums.isNotEmpty()) {
+            Text(
+                text = "\"${albums[0].album.title ?: "Your top album"}\" was your most played album",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 16.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        Text(
+            text = "Swipe → for Monthly Breakdown",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+    }
+}
+
+@Composable
+fun TopAlbumItemSlide(rank: Int, album: TopAlbum, modifier: Modifier = Modifier) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.White.copy(alpha = 0.15f)
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(50.dp)
+                    .clip(RoundedCornerShape(10.dp))
+                    .background(Color.White.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(text = "💿", fontSize = 24.sp)
+            }
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = album.album.title ?: "Unknown Album",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = album.album.authorsText ?: "Unknown Artist",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = "${album.songCount} songs • ${album.minutes} min",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(top = 4.dp)
+                )
+            }
+            
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(Color.White.copy(alpha = 0.3f)),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
@@ -1514,146 +972,157 @@ fun PlaylistItem(
                     fontSize = 16.sp
                 )
             }
-            
-            Column(
-                modifier = Modifier.weight(1f)
-            ) {
-                Text(
-                    text = playlist.playlist.playlist.name,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color.White,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    lineHeight = 20.sp
-                )
-                Text(
-                    text = "${playlist.songCount} songs",
-                    fontSize = 12.sp,
-                    color = Color.White.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
-            
-            Text(
-                text = "${playlist.minutes} min",
-                fontSize = 12.sp,
-                color = Color(0xFFE040FB),
-                fontWeight = FontWeight.Medium
-            )
         }
     }
 }
 
+// SLIDE 6: Monthly Stats
 @Composable
-fun EnhancedListeningPatternsCard(stats: ListeningStats) {
-    Card(
+fun MonthlyStatsSlide(monthlyStats: List<MonthlyStat>, onNext: () -> Unit) {
+    val sortedStats = monthlyStats.sortedBy { it.month }
+    val peakMonth = monthlyStats.maxByOrNull { it.minutes }
+    
+    Column(
         modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "📈 MONTHLY LISTENING BREAKDOWN",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        if (peakMonth != null) {
+            Card(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 20.dp),
+                shape = RoundedCornerShape(16.dp),
+                colors = CardDefaults.cardColors(
+                    containerColor = Color.White.copy(alpha = 0.2f)
+                ),
+                border = BorderStroke(2.dp, Color.White.copy(alpha = 0.5f))
+            ) {
+                Column(
+                    modifier = Modifier.padding(20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Text(
+                        text = "🏆 PEAK MONTH",
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                        letterSpacing = 1.sp
+                    )
+                    Text(
+                        text = getMonthName(peakMonth.month),
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        modifier = Modifier.padding(vertical = 8.dp)
+                    )
+                    Text(
+                        text = "${peakMonth.minutes} minutes",
+                        fontSize = 18.sp,
+                        color = Color.White.copy(alpha = 0.9f)
+                    )
+                    Text(
+                        text = "${peakMonth.plays} plays",
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.7f),
+                        modifier = Modifier.padding(top = 4.dp)
+                    )
+                }
+            }
+        }
+        
+        // Monthly list
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            sortedStats.forEach { monthStat ->
+                MonthlyStatItemSlide(monthStat, isPeak = monthStat == peakMonth)
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Text(
+            text = "Swipe → for Daily Patterns",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+    }
+}
+
+fun getMonthName(monthNumber: String): String {
+    return try {
+        val monthInt = monthNumber.toInt()
+        monthNames[monthInt] ?: "Month $monthNumber"
+    } catch (e: Exception) {
+        "Month $monthNumber"
+    }
+}
+
+@Composable
+fun MonthlyStatItemSlide(monthStat: MonthlyStat, isPeak: Boolean = false) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
+            containerColor = if (isPeak) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.15f)
         )
     ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
         ) {
             Text(
-                text = "⏰ Listening Patterns",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
+                text = getMonthName(monthStat.month),
+                fontSize = 16.sp,
+                fontWeight = if (isPeak) FontWeight.Bold else FontWeight.Medium,
                 color = Color.White
             )
             
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // First row: Most Active Day and Hour
             Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
             ) {
-                if (stats.mostActiveDay != null) {
-                    EnhancedPatternItem(
-                        icon = "📅",
-                        title = "Most Active Day",
-                        value = stats.mostActiveDay.dayOfWeek,
-                        description = "Day you listened the most",
-                        color = Color(0xFF7E57C2),
-                        modifier = Modifier.weight(1f)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "${monthStat.minutes}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "minutes",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.6f)
                     )
                 }
                 
-                if (stats.mostActiveHour != null) {
-                    EnhancedPatternItem(
-                        icon = "🕒",
-                        title = "Most Active Hour",
-                        value = stats.mostActiveHour.hour,
-                        description = "Peak listening time",
-                        color = Color(0xFFAB47BC),
-                        modifier = Modifier.weight(1f)
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "${monthStat.plays}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Second row: Most Active Month and Average daily minutes
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                EnhancedPatternItem(
-                    icon = "📊",
-                    title = "Daily Average",
-                    value = String.format("%.1f min", stats.averageDailyMinutes),
-                    description = "Average per day",
-                    color = Color(0xFFE040FB),
-                    modifier = Modifier.weight(1f)
-                )
-                
-                // Average session length
-                val avgSessionMinutes = if (stats.totalPlays > 0) {
-                    String.format("%.1f", stats.totalMinutes.toDouble() / stats.totalPlays)
-                } else "0"
-                
-                EnhancedPatternItem(
-                    icon = "🎵",
-                    title = "Avg. Session",
-                    value = "${avgSessionMinutes} min",
-                    description = "Average per play",
-                    color = Color(0xFFCE93D8),
-                    modifier = Modifier.weight(1f)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Third row: First and Last Play
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                if (stats.firstPlayDate != null) {
-                    EnhancedPatternItem(
-                        icon = "🎬",
-                        title = "First Play",
-                        value = stats.firstPlayDate,
-                        description = "When you started",
-                        color = Color(0xFF673AB7),
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-                
-                if (stats.lastPlayDate != null) {
-                    EnhancedPatternItem(
-                        icon = "⏹️",
-                        title = "Last Played",
-                        value = stats.lastPlayDate,
-                        description = "Most recent listen",
-                        color = Color(0xFF9575CD),
-                        modifier = Modifier.weight(1f)
+                    Text(
+                        text = "plays",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.6f)
                     )
                 }
             }
@@ -1661,132 +1130,379 @@ fun EnhancedListeningPatternsCard(stats: ListeningStats) {
     }
 }
 
+// SLIDE 7: Daily Patterns
 @Composable
-fun EnhancedPatternItem(
-    icon: String,
+fun DailyPatternsSlide(dailyStats: List<DailyStat>, onNext: () -> Unit) {
+    val sortedStats = dailyStats.sortedByDescending { it.minutes }
+    val top3Days = sortedStats.take(3)
+    val weekOrder = listOf("MON", "TUE", "WED", "THU", "FRI", "SAT", "SUN")
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "📅 DAILY LISTENING PATTERNS",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        // Top 3 days highlight
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White.copy(alpha = 0.2f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "🏅 TOP 3 DAYS",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    top3Days.forEachIndexed { index, dayStat ->
+                        TopDayItem(rank = index + 1, dayStat = dayStat)
+                    }
+                }
+            }
+        }
+        
+        // All days in week order
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            weekOrder.forEach { dayCode ->
+                val dayStat = dailyStats.find { it.dayOfWeek == dayCode }
+                DayStatItem(
+                    dayName = dayNames[dayCode] ?: dayCode,
+                    minutes = dayStat?.minutes ?: 0L,
+                    plays = dayStat?.plays ?: 0,
+                    isTop3 = top3Days.any { it.dayOfWeek == dayCode }
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        if (top3Days.isNotEmpty()) {
+            Text(
+                text = "You listened most on ${dayNames[top3Days[0].dayOfWeek] ?: top3Days[0].dayOfWeek}",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 16.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Text(
+            text = "Swipe → for Hourly Patterns",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+    }
+}
+
+@Composable
+fun TopDayItem(rank: Int, dayStat: DailyStat) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Box(
+            modifier = Modifier
+                .size(50.dp)
+                .clip(CircleShape)
+                .background(
+                    when (rank) {
+                        1 -> Color(0xFFFFD700)
+                        2 -> Color(0xFFC0C0C0)
+                        3 -> Color(0xFFCD7F32)
+                        else -> Color.White.copy(alpha = 0.3f)
+                    }
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = when (rank) {
+                    1 -> "🥇"
+                    2 -> "🥈"
+                    3 -> "🥉"
+                    else -> "$rank"
+                },
+                fontSize = if (rank <= 3) 24.sp else 20.sp
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = dayNames[dayStat.dayOfWeek]?.take(3) ?: dayStat.dayOfWeek,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White
+        )
+        
+        Text(
+            text = "${dayStat.minutes} min",
+            fontSize = 12.sp,
+            color = Color.White.copy(alpha = 0.8f)
+        )
+    }
+}
+
+@Composable
+fun DayStatItem(dayName: String, minutes: Long, plays: Int, isTop3: Boolean) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isTop3) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.15f)
+        ),
+        border = if (isTop3) BorderStroke(1.dp, Color.White.copy(alpha = 0.5f)) else null
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Text(
+                text = dayName,
+                fontSize = 16.sp,
+                fontWeight = if (isTop3) FontWeight.Bold else FontWeight.Medium,
+                color = Color.White
+            )
+            
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp)
+            ) {
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "${minutes}",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "minutes",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+                
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        text = "$plays",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
+                    Text(
+                        text = "plays",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
+            }
+        }
+    }
+}
+
+// SLIDE 8: Hourly Patterns
+@Composable
+fun HourlyPatternsSlide(hourlyStats: List<HourlyStat>, onNext: () -> Unit) {
+    val sortedStats = hourlyStats.sortedByDescending { it.minutes }
+    val peakHour = sortedStats.firstOrNull()
+    val leastHour = hourlyStats.minByOrNull { it.minutes }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "⏰ HOURLY LISTENING PATTERNS",
+            fontSize = 24.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        // Peak vs Least comparison
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            // Peak Hour
+            HourComparisonCard(
+                title = "PEAK HOUR",
+                hour = peakHour?.hour ?: "N/A",
+                minutes = peakHour?.minutes ?: 0L,
+                description = "When you listened the most",
+                isPeak = true,
+                modifier = Modifier.weight(1f)
+            )
+            
+            // Least Active Hour
+            HourComparisonCard(
+                title = "QUIET HOUR",
+                hour = leastHour?.hour ?: "N/A",
+                minutes = leastHour?.minutes ?: 0L,
+                description = "When you listened the least",
+                isPeak = false,
+                modifier = Modifier.weight(1f)
+            )
+        }
+        
+        // Top hours list
+        Text(
+            text = "TOP LISTENING HOURS",
+            fontSize = 14.sp,
+            color = Color.White.copy(alpha = 0.7f),
+            letterSpacing = 1.sp,
+            modifier = Modifier
+                .padding(bottom = 12.dp)
+                .align(Alignment.Start)
+        )
+        
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            sortedStats.take(6).forEachIndexed { index, hourStat ->
+                HourStatItem(
+                    hour = hourStat.hour,
+                    description = hourDescriptions[hourStat.hour] ?: "",
+                    minutes = hourStat.minutes,
+                    plays = hourStat.plays,
+                    rank = index + 1
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        peakHour?.let {
+            val description = hourDescriptions[it.hour] ?: ""
+            Text(
+                text = "You were most active at $description (${it.hour})",
+                color = Color.White.copy(alpha = 0.8f),
+                fontSize = 16.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Text(
+            text = "Swipe → for Best of Everything",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+    }
+}
+
+@Composable
+fun HourComparisonCard(
     title: String,
-    value: String,
+    hour: String,
+    minutes: Long,
     description: String,
-    color: Color,
+    isPeak: Boolean,
     modifier: Modifier = Modifier
 ) {
     Card(
         modifier = modifier,
         shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = color.copy(alpha = 0.15f)
+            containerColor = if (isPeak) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.15f)
         ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 4.dp
+        border = BorderStroke(
+            2.dp,
+            if (isPeak) Color(0xFFFFD700) else Color.White.copy(alpha = 0.5f)
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            Box(
-                modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(color.copy(alpha = 0.3f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = icon,
-                    fontSize = 22.sp
-                )
-            }
-            Spacer(modifier = Modifier.height(8.dp))
-            Text(
-                text = value,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-            Spacer(modifier = Modifier.height(4.dp))
             Text(
                 text = title,
                 fontSize = 12.sp,
-                color = Color.White.copy(alpha = 0.8f),
-                textAlign = TextAlign.Center
+                color = Color.White.copy(alpha = 0.7f),
+                letterSpacing = 1.sp,
+                modifier = Modifier.padding(bottom = 8.dp)
             )
+            
+            Text(
+                text = hour,
+                fontSize = 32.sp,
+                fontWeight = FontWeight.Bold,
+                color = Color.White
+            )
+            
+            Text(
+                text = "${minutes} min",
+                fontSize = 18.sp,
+                color = Color.White.copy(alpha = 0.9f),
+                modifier = Modifier.padding(vertical = 8.dp)
+            )
+            
             Text(
                 text = description,
-                fontSize = 10.sp,
-                color = Color.White.copy(alpha = 0.5f),
-                textAlign = TextAlign.Center
+                fontSize = 12.sp,
+                color = Color.White.copy(alpha = 0.6f),
+                textAlign = TextAlign.Center,
+                lineHeight = 14.sp
             )
         }
     }
 }
 
 @Composable
-fun EnhancedMonthlyStatsCard(monthlyStats: List<MonthlyStat>, showMinutesInHours: Boolean) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "📈 Monthly Listening Breakdown",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-                Text(
-                    text = "Total: ${monthlyStats.sumOf { it.minutes }} min",
-                    fontSize = 12.sp,
-                    color = Color(0xFFE040FB),
-                    fontWeight = FontWeight.Medium
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            Column(
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                monthlyStats.forEachIndexed { index, monthStat ->
-                    EnhancedMonthlyStatItem(
-                        monthStat = monthStat,
-                        showMinutesInHours = showMinutesInHours,
-                        isPeak = index == monthlyStats.indexOf(
-                            monthlyStats.maxByOrNull { it.minutes }
-                        )
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun EnhancedMonthlyStatItem(monthStat: MonthlyStat, showMinutesInHours: Boolean, isPeak: Boolean) {
+fun HourStatItem(hour: String, description: String, minutes: Long, plays: Int, rank: Int) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(
-            containerColor = if (isPeak) Color(0xFF4A1F7A) else Color(0xFF3D2E54)
-        ),
-        border = if (isPeak) BorderStroke(2.dp, Color(0xFFE040FB)) else null
+            containerColor = Color.White.copy(alpha = 0.15f)
+        )
     ) {
         Row(
             modifier = Modifier
@@ -1799,173 +1515,206 @@ fun EnhancedMonthlyStatItem(monthStat: MonthlyStat, showMinutesInHours: Boolean,
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                if (isPeak) {
-                    Box(
-                        modifier = Modifier
-                            .size(24.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFE040FB)),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "👑",
-                            fontSize = 12.sp
-                        )
-                    }
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.2f)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = "$rank",
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
+                    )
                 }
                 
                 Column {
                     Text(
-                        text = monthStat.month,
+                        text = hour,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        modifier = Modifier.weight(1f)
+                        color = Color.White
                     )
                     Text(
-                        text = "${monthStat.plays} plays",
+                        text = description,
                         fontSize = 12.sp,
                         color = Color.White.copy(alpha = 0.6f)
                     )
                 }
             }
             
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "${minutes} min",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                Text(
+                    text = "$plays plays",
+                    fontSize = 10.sp,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
+    }
+}
+
+// SLIDE 9: Best of Everything
+@Composable
+fun BestOfAllSlide(data: RewindData, onNext: () -> Unit) {
+    val topSong = data.topSongs.firstOrNull()
+    val topArtist = data.topArtists.firstOrNull()
+    val topAlbum = data.topAlbums.firstOrNull()
+    val topMonth = data.monthlyStats.maxByOrNull { it.minutes }
+    val topDay = data.dailyStats.maxByOrNull { it.minutes }
+    val topHour = data.hourlyStats.maxByOrNull { it.minutes }
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text(
+            text = "🏆 BEST OF EVERYTHING",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 10.dp)
+        )
+        
+        Text(
+            text = "Your Year in Highlights",
+            fontSize = 16.sp,
+            color = Color.White.copy(alpha = 0.8f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            // Song
+            BestOfItem(
+                icon = "🎵",
+                title = "TOP SONG",
+                value = topSong?.song?.title ?: "N/A",
+                detail = topSong?.song?.artistsText ?: "",
+                extra = "${topSong?.playCount ?: 0} plays"
+            )
+            
+            // Artist
+            BestOfItem(
+                icon = "⭐",
+                title = "TOP ARTIST",
+                value = topArtist?.artist?.name ?: "N/A",
+                detail = "${topArtist?.songCount ?: 0} songs",
+                extra = "${topArtist?.minutes ?: 0} min"
+            )
+            
+            // Album
+            BestOfItem(
+                icon = "💿",
+                title = "TOP ALBUM",
+                value = topAlbum?.album?.title ?: "N/A",
+                detail = topAlbum?.album?.authorsText ?: "",
+                extra = "${topAlbum?.minutes ?: 0} min"
+            )
+            
+            // Month
+            BestOfItem(
+                icon = "📈",
+                title = "PEAK MONTH",
+                value = topMonth?.let { getMonthName(it.month) } ?: "N/A",
+                detail = "${topMonth?.plays ?: 0} plays",
+                extra = "${topMonth?.minutes ?: 0} min"
+            )
+            
+            // Day
+            BestOfItem(
+                icon = "📅",
+                title = "TOP DAY",
+                value = topDay?.let { dayNames[it.dayOfWeek] ?: it.dayOfWeek } ?: "N/A",
+                detail = "${topDay?.plays ?: 0} plays",
+                extra = "${topDay?.minutes ?: 0} min"
+            )
+            
+            // Hour
+            BestOfItem(
+                icon = "⏰",
+                title = "PEAK HOUR",
+                value = topHour?.hour ?: "N/A",
+                detail = hourDescriptions[topHour?.hour] ?: "",
+                extra = "${topHour?.minutes ?: 0} min"
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White.copy(alpha = 0.2f)
+            ),
+            border = BorderStroke(2.dp, Color.White.copy(alpha = 0.5f))
+        ) {
             Column(
-                horizontalAlignment = Alignment.End
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 Text(
-                    text = if (showMinutesInHours) {
-                        val hours = monthStat.minutes / 60
-                        val minutes = monthStat.minutes % 60
-                        if (hours > 0) "$hours h $minutes m" else "$minutes m"
-                    } else {
-                        "${monthStat.minutes} min"
-                    },
-                    fontSize = 16.sp,
+                    text = "🎶 TOTAL LISTENING",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    letterSpacing = 1.sp
+                )
+                Text(
+                    text = "${data.stats.totalMinutes}",
+                    fontSize = 32.sp,
+                    fontWeight = FontWeight.Bold,
                     color = Color.White,
-                    fontWeight = FontWeight.Bold
+                    modifier = Modifier.padding(vertical = 8.dp)
                 )
-                if (isPeak) {
-                    Text(
-                        text = "Peak Month",
-                        fontSize = 10.sp,
-                        color = Color(0xFFE040FB),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
+                Text(
+                    text = "minutes • ${data.stats.totalPlays} plays",
+                    fontSize = 16.sp,
+                    color = Color.White.copy(alpha = 0.8f)
+                )
             }
         }
-    }
-}
-
-@Composable
-fun EnhancedTimeStatsCard(
-    dailyStats: List<DailyStat>,
-    hourlyStats: List<HourlyStat>,
-    showMinutesInHours: Boolean
-) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Text(
+            text = "Swipe → for Support & Donate",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
         )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Text(
-                text = "🕐 Detailed Time Patterns",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Daily Stats Section
-            Text(
-                text = "📅 Daily Activity",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            if (dailyStats.isNotEmpty()) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    dailyStats.sortedByDescending { it.minutes }.forEach { dayStat ->
-                        EnhancedTimeStatItem(
-                            label = dayStat.dayOfWeek,
-                            minutes = dayStat.minutes,
-                            plays = dayStat.plays,
-                            showMinutesInHours = showMinutesInHours
-                        )
-                    }
-                }
-            } else {
-                Text(
-                    text = "No daily data available",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(20.dp))
-            
-            // Hourly Stats Section
-            Text(
-                text = "⏰ Hourly Listening Peaks",
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            
-            if (hourlyStats.isNotEmpty()) {
-                Column(
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    hourlyStats.sortedByDescending { it.minutes }
-                        .take(8)
-                        .forEach { hourStat ->
-                            EnhancedTimeStatItem(
-                                label = hourStat.hour,
-                                minutes = hourStat.minutes,
-                                plays = hourStat.plays,
-                                showMinutesInHours = showMinutesInHours
-                            )
-                        }
-                }
-            } else {
-                Text(
-                    text = "No hourly data available",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 14.sp,
-                    modifier = Modifier.padding(vertical = 12.dp)
-                )
-            }
-        }
     }
 }
 
 @Composable
-fun EnhancedTimeStatItem(
-    label: String,
-    minutes: Long,
-    plays: Int,
-    showMinutesInHours: Boolean
+fun BestOfItem(
+    icon: String,
+    title: String,
+    value: String,
+    detail: String,
+    extra: String
 ) {
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(10.dp),
+        shape = RoundedCornerShape(12.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF3D2E54)
+            containerColor = Color.White.copy(alpha = 0.15f)
         )
     ) {
         Row(
@@ -1973,184 +1722,44 @@ fun EnhancedTimeStatItem(
                 .fillMaxWidth()
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = label,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = Color.White,
-                modifier = Modifier.weight(1f)
-            )
-            
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
-            ) {
-                Column(
-                    horizontalAlignment = Alignment.End
-                ) {
-                    Text(
-                        text = if (showMinutesInHours) {
-                            val hours = minutes / 60
-                            val remainingMinutes = minutes % 60
-                            if (hours > 0) "$hours h $remainingMinutes m" else "$remainingMinutes m"
-                        } else {
-                            "$minutes m"
-                        },
-                        fontSize = 14.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold
-                    )
-                    Text(
-                        text = "$plays plays",
-                        fontSize = 11.sp,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-fun MoreInsightsCard(data: RewindData, showMinutesInHours: Boolean) {
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp),
-        shape = RoundedCornerShape(20.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color(0xFF2A1F3A)
-        )
-    ) {
-        Column(
-            modifier = Modifier.padding(20.dp)
-        ) {
-            Text(
-                text = "📈 More Insights",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Average plays per day
-            val avgPlaysPerDay = if (data.stats.totalPlays > 0) {
-                String.format("%.1f", data.stats.totalPlays / 365.0)
-            } else "0"
-            
-            EnhancedInsightRow(
-                icon = "📊",
-                title = "Daily Average Plays",
-                value = "$avgPlaysPerDay plays/day"
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Average minutes per day
-            val avgMinutesPerDay = if (data.stats.totalMinutes > 0) {
-                String.format("%.1f", data.stats.totalMinutes / 365.0)
-            } else "0"
-            
-            EnhancedInsightRow(
-                icon = "⏱️",
-                title = "Daily Listening",
-                value = if (showMinutesInHours) {
-                    val hours = avgMinutesPerDay.toDouble() / 60
-                    String.format("%.1f hours/day", hours)
-                } else {
-                    "$avgMinutesPerDay min/day"
-                }
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Add average listening session time
-            val avgSessionMinutes = if (data.stats.totalMinutes > 0 && data.stats.totalPlays > 0) {
-                val avg = data.stats.totalMinutes.toDouble() / data.stats.totalPlays.toDouble()
-                String.format("%.1f", avg)
-            } else "0"
-            
-            EnhancedInsightRow(
-                icon = "🎵",
-                title = "Avg. Session Length",
-                value = "${avgSessionMinutes} min"
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Add unique artists count
-            EnhancedInsightRow(
-                icon = "👥",
-                title = "Unique Artists",
-                value = data.totalUniqueArtists.toString()
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Add unique albums count
-            EnhancedInsightRow(
-                icon = "💿",
-                title = "Unique Albums",
-                value = data.totalUniqueAlbums.toString()
-            )
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Add unique playlists count
-            EnhancedInsightRow(
-                icon = "📋",
-                title = "Unique Playlists",
-                value = data.totalUniquePlaylists.toString()
-            )
-        }
-    }
-}
-
-@Composable
-fun EnhancedInsightRow(
-    icon: String,
-    title: String,
-    value: String
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        Box(
-            modifier = Modifier
-                .size(44.dp)
-                .clip(CircleShape)
-                .background(
-                    brush = Brush.radialGradient(
-                        colors = listOf(
-                            Color(0xFFE040FB),
-                            Color(0xFF7E57C2)
-                        )
-                    )
-                ),
-            contentAlignment = Alignment.Center
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Text(
                 text = icon,
-                fontSize = 20.sp
+                fontSize = 24.sp
             )
-        }
-        
-        Column(
-            modifier = Modifier.weight(1f)
-        ) {
+            
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = title,
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    letterSpacing = 0.5.sp
+                )
+                Text(
+                    text = value,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = Color.White,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (detail.isNotEmpty()) {
+                    Text(
+                        text = detail,
+                        fontSize = 12.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+            
             Text(
-                text = title,
+                text = extra,
                 fontSize = 14.sp,
-                color = Color.White.copy(alpha = 0.7f)
-            )
-            Text(
-                text = value,
-                fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
                 color = Color.White
             )
@@ -2158,24 +1767,205 @@ fun EnhancedInsightRow(
     }
 }
 
+// SLIDE 10: Donate Slide
 @Composable
-fun PageIndicator(
-    pageCount: Int,
-    currentPage: Int,
-    modifier: Modifier = Modifier
-) {
+fun DonateSlide(onNext: () -> Unit) {
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
+    
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(30.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
+    ) {
+        Text(
+            text = "❤️ SUPPORT THE DEVELOPER",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            color = Color.White,
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 10.dp)
+        )
+        
+        Text(
+            text = "Anon Ghost",
+            fontSize = 20.sp,
+            color = Color.White.copy(alpha = 0.9f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 5.dp)
+        )
+        
+        Text(
+            text = "I build mobile apps & websites 🚀",
+            fontSize = 16.sp,
+            color = Color.White.copy(alpha = 0.7f),
+            textAlign = TextAlign.Center,
+            modifier = Modifier.padding(bottom = 30.dp)
+        )
+        
+        // Donation options
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 20.dp),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White.copy(alpha = 0.15f)
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(20.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "ONE-TIME DONATION",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    letterSpacing = 1.sp,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                
+                Button(
+                    onClick = {
+                        // Open Ko-fi page
+                        uriHandler.openUri("https://ko-fi.com/anonghost40418")
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFF29ABE0)
+                    ),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text(text = "☕", fontSize = 20.sp)
+                        Text(
+                            text = "Buy a Coffee for Anon Ghost",
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "ko-fi.com/anonghost40418",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
+        }
+        
+        Text(
+            text = "Your support keeps me motivated and helps me create even more awesome projects!",
+            color = Color.White.copy(alpha = 0.8f),
+            fontSize = 16.sp,
+            textAlign = TextAlign.Center,
+            lineHeight = 22.sp,
+            modifier = Modifier.padding(horizontal = 20.dp, vertical = 20.dp)
+        )
+        
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 10.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = Color.White.copy(alpha = 0.1f)
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // PayPal logo placeholder
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF003087)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "P", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp)
+                }
+                
+                // Mastercard logo placeholder
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFFEB001B)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "MC", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                }
+                
+                // Visa logo placeholder
+                Box(
+                    modifier = Modifier
+                        .size(40.dp)
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(Color(0xFF1A1F71)),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(text = "VISA", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                }
+                
+                Spacer(modifier = Modifier.weight(1f))
+                
+                Text(
+                    text = "Pay Anon Ghost directly",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(20.dp))
+        
+        Text(
+            text = "Thank you for using Cubic Music! 🎵",
+            color = Color.White.copy(alpha = 0.7f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+        
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        Text(
+            text = "Swipe ← to go back to start",
+            color = Color.White.copy(alpha = 0.6f),
+            fontSize = 14.sp,
+            fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+        )
+    }
+}
+
+@Composable
+fun PageIndicator(pageCount: Int, currentPage: Int, modifier: Modifier = Modifier) {
     Row(
         modifier = modifier,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         repeat(pageCount) { page ->
             Box(
                 modifier = Modifier
-                    .size(10.dp)
+                    .size(8.dp)
                     .clip(CircleShape)
                     .background(
                         color = if (page == currentPage) 
-                            Color(0xFFE040FB)
+                            Color.White
                         else 
                             Color.White.copy(alpha = 0.3f)
                     )
@@ -2184,7 +1974,6 @@ fun PageIndicator(
     }
 }
 
-// Function to fetch song thumbnail from API
 suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
     return withContext(Dispatchers.IO) {
         try {
@@ -2192,12 +1981,11 @@ suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
             val url = "https://yt.omada.cafe/api/v1/search?q=$query&type=video"
             
             val connection = URL(url).openConnection()
-            connection.connectTimeout = 3000 // Reduced timeout for better performance
+            connection.connectTimeout = 3000
             connection.readTimeout = 3000
             
             val response = connection.getInputStream().bufferedReader().use { it.readText() }
             
-            // Parse JSON response to find video thumbnail
             val thumbnailMatch = Regex("\"videoThumbnails\":\\s*\\[.*?\"url\":\"(.*?)\"").find(response)
             thumbnailMatch?.groups?.get(1)?.value?.let { thumbnailUrl ->
                 val cleanedUrl = thumbnailUrl.replace("\\/", "/")
@@ -2210,13 +1998,11 @@ suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
                 }
             }
         } catch (e: Exception) {
-            // Silently fail - we'll use fallback
         }
         return@withContext null
     }
 }
 
-// Function to fetch artist thumbnail from API
 suspend fun fetchArtistThumbnail(artistName: String): String? {
     return withContext(Dispatchers.IO) {
         try {
@@ -2229,7 +2015,6 @@ suspend fun fetchArtistThumbnail(artistName: String): String? {
             
             val response = connection.getInputStream().bufferedReader().use { it.readText() }
             
-            // Parse JSON response to find author thumbnail
             val thumbnailMatch = Regex("\"authorThumbnails\":\\s*\\[.*?\"url\":\"(.*?)\"").find(response)
             thumbnailMatch?.groups?.get(1)?.value?.let { thumbnailUrl ->
                 val cleanedUrl = thumbnailUrl.replace("\\/", "/")
@@ -2242,13 +2027,11 @@ suspend fun fetchArtistThumbnail(artistName: String): String? {
                 }
             }
         } catch (e: Exception) {
-            // Silently fail - we'll use fallback
         }
         return@withContext null
     }
 }
 
-// Simple image loader composable without Coil
 @Composable
 fun NetworkImage(
     url: String?,
@@ -2277,7 +2060,7 @@ fun NetworkImage(
             imageBitmap = withContext(Dispatchers.IO) {
                 try {
                     val connection = URL(url).openConnection()
-                    connection.connectTimeout = 2000 // Fast timeout
+                    connection.connectTimeout = 2000
                     connection.readTimeout = 2000
                     val inputStream = connection.getInputStream()
                     val bitmap = BitmapFactory.decodeStream(inputStream)
@@ -2315,7 +2098,6 @@ fun NetworkImage(
                 contentScale = contentScale
             )
         } else {
-            // Fallback emoji if image fails to load
             Text(
                 text = if (contentDescription?.contains("artist") == true) "🎤" else "🎵",
                 fontSize = 20.sp
@@ -2324,7 +2106,6 @@ fun NetworkImage(
     }
 }
 
-// Enhanced ranking calculation
 private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<String, String> {
     if (data == null) return Pair("New Listener", "Just Starting")
     
@@ -2333,10 +2114,8 @@ private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<Stri
     val uniqueSongs = data.totalUniqueSongs
     val daysWithMusic = data.daysWithMusic
     
-    // Calculate comprehensive score
     var score = 0
     
-    // Hours listened scoring
     val hoursListened = totalMinutes / 60.0
     score += when {
         hoursListened >= 1000 -> 40
@@ -2350,7 +2129,6 @@ private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<Stri
         else -> 1
     }
     
-    // Total plays scoring
     score += when {
         totalPlays >= 10000 -> 40
         totalPlays >= 5000 -> 35
@@ -2363,7 +2141,6 @@ private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<Stri
         else -> 1
     }
     
-    // Unique songs scoring
     score += when {
         uniqueSongs >= 1000 -> 30
         uniqueSongs >= 500 -> 25
@@ -2374,7 +2151,6 @@ private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<Stri
         else -> 1
     }
     
-    // Active days scoring
     val activeDaysPercent = (daysWithMusic / 365.0) * 100
     score += when {
         activeDaysPercent >= 90 -> 30
@@ -2386,7 +2162,6 @@ private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<Stri
         else -> 1
     }
     
-    // Join date bonus (simplified)
     if (joinDate.isNotEmpty()) {
         try {
             val joinYear = joinDate.substring(0, 4).toInt()
@@ -2406,7 +2181,6 @@ private fun calculateUserRanking(data: RewindData?, joinDate: String): Pair<Stri
         }
     }
     
-    // Determine ranking and percentile with better names
     return when {
         score >= 140 -> Pair("Legendary Listener", "Top 1%")
         score >= 120 -> Pair("Music Maestro", "Top 3%")
