@@ -313,9 +313,9 @@ fun DonateScreen(
                         Column(
                             verticalArrangement = Arrangement.spacedBy(14.dp)
                         ) {
-                            BenefitItem(text = "✔️ Cover hosting & maintenance costs")
-                            BenefitItem(text = "✔️ Improve performance & add new features")
-                            BenefitItem(text = "✔️ Keep projects alive and evolving")
+                            BenefitItem(text = " Cover maintenance costs")
+                            BenefitItem(text = " Improve performance & add new features")
+                            BenefitItem(text = " Keep projects alive and evolving")
                         }
                         
                         Spacer(modifier = Modifier.height(20.dp))
@@ -329,7 +329,7 @@ fun DonateScreen(
                                 .padding(16.dp)
                         ) {
                             Text(
-                                text = "Thank you for your love and support — it truly keeps everything moving forward! ❤️",
+                                text = "Thank you for your love and support , it truly keeps everything moving forward! ❤️",
                                 fontSize = 14.sp,
                                 color = Color(0xFFE040FB),
                                 fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
@@ -360,13 +360,13 @@ fun DonateScreen(
                         ) {
                             Column {
                                 Text(
-                                    text = "Monthly Support",
+                                    text = "One-Time Support",
                                     fontSize = 18.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
                                 )
                                 Text(
-                                    text = "Recurring monthly donation",
+                                    text = "ways to donate",
                                     fontSize = 13.sp,
                                     color = Color.White.copy(alpha = 0.7f),
                                     modifier = Modifier.padding(top = 2.dp)
