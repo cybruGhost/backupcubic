@@ -282,6 +282,8 @@ dependencies {
     implementation (libs.hypnoticcanvas)
     implementation (libs.hypnoticcanvas.shaders)
     implementation(libs.github.jeziellago.compose.markdown)
+// In your build.gradle.kts or build.gradle
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
     implementation(libs.room)
     ksp(libs.room.compiler)

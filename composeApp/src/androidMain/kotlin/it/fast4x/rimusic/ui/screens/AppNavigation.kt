@@ -62,6 +62,7 @@ import it.fast4x.rimusic.ui.screens.player.Queue
 import it.fast4x.rimusic.ui.screens.playlist.PlaylistScreen
 import it.fast4x.rimusic.ui.screens.podcast.PodcastScreen
 import it.fast4x.rimusic.ui.screens.rewind.RewindScreen
+import it.fast4x.rimusic.ui.screens.donate.DonateScreen
 import it.fast4x.rimusic.ui.screens.search.SearchScreen
 import it.fast4x.rimusic.ui.screens.searchresult.SearchResultScreen
 import it.fast4x.rimusic.ui.screens.settings.SettingsScreen
@@ -295,6 +296,12 @@ fun AppNavigation(
             RewindScreen(
                 navController = navController,
                 miniPlayer = miniPlayer,
+            )
+        }
+  // Fixed Donate screen 
+        composable(route = NavRoutes.donate.name) {
+            DonateScreen(
+                onBackClick = { navController.popBackStack() }
             )
         }
 
