@@ -236,7 +236,7 @@ fun LoadingScreen() {
             )
             
             Text(
-                text = "Generating your musical journey...",
+                text = "GENERATING YOUR REWIND...",
                 color = Color.White,
                 fontSize = 16.sp
             )

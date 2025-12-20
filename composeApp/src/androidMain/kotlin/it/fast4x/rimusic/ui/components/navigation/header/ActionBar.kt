@@ -67,7 +67,13 @@ private fun HamburgerMenu(
             R.string.rewind  // Make sure this exists in strings.xml
         ) { onItemClick(NavRoutes.rewind) }
     )
-    
+            // Donate button
+    menu.add(
+        DropdownMenu.Item(
+            R.drawable.heart_gift,
+            R.string.donate  
+        ) { onItemClick(NavRoutes.donate) }
+    )
     // Picture in picture button
     if (isPipSupported && enablePictureInPicture) {
         menu.add(
