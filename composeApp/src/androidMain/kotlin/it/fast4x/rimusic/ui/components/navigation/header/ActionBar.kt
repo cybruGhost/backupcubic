@@ -61,12 +61,13 @@ private fun HamburgerMenu(
     )
     
         // Rewind button
-    menu.add(
-        DropdownMenu.Item(
-            R.drawable.rewind,
-            R.string.rewind  // Make sure this exists in strings.xml
-        ) { onItemClick(NavRoutes.rewind) }
-    )
+        menu.add(
+            DropdownMenu.Item(
+                R.drawable.waigwe,
+                R.string.rewind,
+                iconType = DropdownMenu.IconType.Image  // ← ADD THIS
+            ) { onItemClick(NavRoutes.rewind) }
+        )
             // Donate button
     menu.add(
         DropdownMenu.Item(
