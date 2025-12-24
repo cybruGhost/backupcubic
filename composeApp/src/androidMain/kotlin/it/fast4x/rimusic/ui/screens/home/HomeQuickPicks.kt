@@ -146,6 +146,19 @@ import kotlin.time.Duration.Companion.days
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 
+//rewind
+import androidx.compose.foundation.layout.Box
+import androidx.compose.ui.graphics.Color
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import com.mikepenz.hypnoticcanvas.shaderBackground
+import com.mikepenz.hypnoticcanvas.shaders.BlackCherryCosmos
+// If 't()' doesn't exist, use GoldenMagma directly or check the correct name
+// import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
+import kotlin.random.Random
+import java.time.LocalDate
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @ExperimentalTextApi
@@ -168,6 +181,11 @@ fun HomeQuickPicks(
     val menuState = LocalMenuState.current
     val windowInsets = LocalPlayerAwareWindowInsets.current
     var playEventType by rememberPreference(playEventsTypeKey, PlayEventsType.CasualPlayed)
+// ===== ADDEED THE REWIND SECTION HERE =====
+// Check if current date is between Dec 6th and Dec 31st
+val calendar = java.util.Calendar.getInstance()
+val currentMonth = calendar.get(java.util.Calendar.MONTH) // 0-11, where 11=December
+val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
 
     var trendingList by remember { mutableStateOf<List<Song>>(emptyList()) }
     var trending by persist<Song?>("home/trending")
@@ -728,6 +746,81 @@ runCatching {
                         }
                     }
                 }
+
+// Show only from December 6th (month=11, day>=6) to December 31st (month=11, day<=31)
+if (currentMonth == 11 && currentDay in 6..31) {
+    val currentYear = calendar.get(java.util.Calendar.YEAR)
+    
+    // Randomly select between 2 styles: BlackCherryCosmos or custom gradient
+    // If you find the correct name for Golden Magma, you can add it back
+    val selectedStyle = remember { 
+        if (Random.nextBoolean()) "BlackCherryCosmos" else "CustomGradient"
+    }
+    
+    Spacer(modifier = Modifier.height(16.dp))
+
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .height(80.dp) // Slightly taller for better proportions
+            .clip(RoundedCornerShape(20.dp)) // Curvy edges with 20dp radius
+            .then(
+                if (selectedStyle == "BlackCherryCosmos") {
+                    Modifier.shaderBackground(BlackCherryCosmos)
+                } else {
+                    Modifier.background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                Color(0xFFFF15E5),
+                                Color(0xFFFAAEF7),
+                                Color(0xFF6903F9)
+                            )
+                        )
+                    )
+                }
+            )
+            .clickable {
+                // Navigate to Rewind screen
+                navController.navigate("rewind")
+            }
+    ) {
+        // Subtle overlay for better text readability on shader
+        if (selectedStyle == "BlackCherryCosmos") {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.1f))
+            )
+        }
+        
+        Column(
+            modifier = Modifier.fillMaxSize(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            BasicText(
+                text = "REWIND",
+                style = typography().m.bold.color(Color.White),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            
+            Spacer(modifier = Modifier.height(6.dp)) // Slightly more spacing
+            
+            BasicText(
+                text = "$currentYear",
+                style = typography().s.semiBold.color(Color.White.copy(alpha = 0.9f)),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(16.dp))
+}
+// ===== END REWIND SECTION =====
+
 
                 if (showRelatedAlbums)
                     relatedInit?.albums?.let { albums ->
