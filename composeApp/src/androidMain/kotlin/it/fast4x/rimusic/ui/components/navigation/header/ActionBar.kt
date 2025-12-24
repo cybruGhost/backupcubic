@@ -63,9 +63,8 @@ private fun HamburgerMenu(
         // Rewind button
         menu.add(
             DropdownMenu.Item(
-                R.drawable.waigwe,
+               R.drawable.trophy,
                 R.string.rewind,
-                iconType = DropdownMenu.IconType.Image  // ← ADD THIS
             ) { onItemClick(NavRoutes.rewind) }
         )
             // Donate button
