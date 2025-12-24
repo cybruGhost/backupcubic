@@ -817,7 +817,7 @@ if (currentMonth == 11 && currentDay in 6..31) {
         }
     }
 
-    Spacer(modifier = Modifier.height(16.dp))
+    Spacer(modifier = Modifier.height(12.dp))
 }
 // ===== END REWIND SECTION =====
 
