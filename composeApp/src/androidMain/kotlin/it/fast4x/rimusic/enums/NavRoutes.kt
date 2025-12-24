@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 
 enum class NavRoutes {
+    welcome, 
     home,
     album,
     artist,
