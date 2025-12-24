@@ -13,6 +13,6 @@ jobs:
     steps:
       - uses: EndBug/label-sync@v2
         with:
-          source-repo: knighthat/Kreate  # owner/repo format, not full URL
+          source-repo: cybruGhost/Cubic-Music  # owner/repo format, not full URL
           delete-other-labels: false     # keep existing labels that aren't in source
           token: ${{ secrets.GITHUB_TOKEN }}
