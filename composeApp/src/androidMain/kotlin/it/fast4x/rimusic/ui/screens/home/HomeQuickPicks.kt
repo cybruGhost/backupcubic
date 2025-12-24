@@ -151,11 +151,9 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import com.mikepenz.hypnoticcanvas.shaderBackground
 import com.mikepenz.hypnoticcanvas.shaders.BlackCherryCosmos
-// If 't()' doesn't exist, use GoldenMagma directly or check the correct name
-// import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
+import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
 import kotlin.random.Random
 import java.time.LocalDate
 
@@ -751,10 +749,9 @@ runCatching {
 if (currentMonth == 11 && currentDay in 6..31) {
     val currentYear = calendar.get(java.util.Calendar.YEAR)
     
-    // Randomly select between 2 styles: BlackCherryCosmos or custom gradient
-    // If you find the correct name for Golden Magma, you can add it back
-    val selectedStyle = remember { 
-        if (Random.nextBoolean()) "BlackCherryCosmos" else "CustomGradient"
+    // Randomly select between BlackCherryCosmos and GoldenMagma
+    val selectedShader = remember { 
+        if (Random.nextBoolean()) BlackCherryCosmos else GoldenMagma
     }
     
     Spacer(modifier = Modifier.height(16.dp))
@@ -765,34 +762,23 @@ if (currentMonth == 11 && currentDay in 6..31) {
             .padding(horizontal = 16.dp)
             .height(80.dp) // Slightly taller for better proportions
             .clip(RoundedCornerShape(20.dp)) // Curvy edges with 20dp radius
-            .then(
-                if (selectedStyle == "BlackCherryCosmos") {
-                    Modifier.shaderBackground(BlackCherryCosmos)
-                } else {
-                    Modifier.background(
-                        Brush.horizontalGradient(
-                            colors = listOf(
-                                Color(0xFFFF15E5),
-                                Color(0xFFFAAEF7),
-                                Color(0xFF6903F9)
-                            )
-                        )
-                    )
-                }
-            )
+            .shaderBackground(selectedShader) // Use the randomly selected shader
             .clickable {
                 // Navigate to Rewind screen
                 navController.navigate("rewind")
             }
     ) {
-        // Subtle overlay for better text readability on shader
-        if (selectedStyle == "BlackCherryCosmos") {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.1f))
-            )
-        }
+        // Subtle overlay for better text readability on both shaders
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    if (selectedShader == BlackCherryCosmos) 
+                        Color.Black.copy(alpha = 0.15f)  // Darker overlay for dark cosmic background
+                    else 
+                        Color.Black.copy(alpha = 0.1f)   // Lighter overlay for golden magma
+                )
+        )
         
         Column(
             modifier = Modifier.fillMaxSize(),
@@ -810,7 +796,12 @@ if (currentMonth == 11 && currentDay in 6..31) {
             
             BasicText(
                 text = "$currentYear",
-                style = typography().s.semiBold.color(Color.White.copy(alpha = 0.9f)),
+                style = typography().s.semiBold.color(
+                    if (selectedShader == BlackCherryCosmos)
+                        Color.LightGray  // Light gray for dark background
+                    else
+                        Color.White.copy(alpha = 0.9f)  // White with transparency for golden background
+                ),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
@@ -820,7 +811,6 @@ if (currentMonth == 11 && currentDay in 6..31) {
     Spacer(modifier = Modifier.height(12.dp))
 }
 // ===== END REWIND SECTION =====
-
 
                 if (showRelatedAlbums)
                     relatedInit?.albums?.let { albums ->
