@@ -4,39 +4,39 @@ import android.media.MediaPlayer
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.graphics.drawable.toBitmap
 import coil.compose.AsyncImagePainter
+import coil.compose.SubcomposeAsyncImage
 import coil.compose.rememberAsyncImagePainter
+import coil.compose.rememberImagePainter
 import coil.request.ImageRequest
+import com.mikepenz.hypnoticcanvas.shaders.IceReflection
 import it.fast4x.rimusic.ui.screens.rewind.TopSong
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers.IO
-import okhttp3.OkHttpClient
-import okhttp3.Request
 import org.json.JSONObject
 import java.net.URL
 import java.net.URLEncoder
-import java.util.concurrent.TimeUnit
-import kotlin.math.roundToInt
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.DisposableEffect
-import androidx.compose.foundation.border
-
+import com.mikepenz.hypnoticcanvas.shaderBackground
+import kotlin.math.roundToInt
 
 @Composable
 fun AfterTopSongsSlide(
@@ -44,7 +44,8 @@ fun AfterTopSongsSlide(
     onNext: () -> Unit
 ) {
     val context = LocalContext.current
-    // 状态管理：缩略图URL、预览URL、加载状态
+    
+    // 状态管理
     var thumbnailUrl by remember { mutableStateOf<String?>(null) }
     var previewUrl by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
@@ -53,55 +54,78 @@ fun AfterTopSongsSlide(
     val mediaPlayer = remember { MediaPlayer() }
     
     // 自动获取歌曲信息并播放
-DisposableEffect(topSong) {
-    // Setup: launch coroutine to auto-play preview if available
-    val job = CoroutineScope(IO).launch {
-        topSong?.let { song ->
-            val songInfo = fetchSongInfo(song.song.title, song.song.artistsText ?: "")
-            previewUrl = songInfo.second
-            previewUrl?.let { url ->
-                try {
-                    mediaPlayer.reset()
-                    mediaPlayer.setDataSource(url)
-                    mediaPlayer.prepareAsync()
-                    mediaPlayer.setOnPreparedListener { player ->
-                        player.start()
-                        launch {
-                            delay(30000)
+    LaunchedEffect(topSong) {
+        if (topSong != null) {
+            isLoading = true
+            try {
+                // 先获取缩略图（主要功能）
+                val thumbnail = fetchSongThumbnail(topSong.song.title, topSong.song.artistsText ?: "")
+                thumbnailUrl = thumbnail
+                
+                // 然后尝试获取预览（辅助功能，不阻塞UI）
+                CoroutineScope(IO).launch {
+                    try {
+                        val preview = fetchSongPreview(topSong.song.title, topSong.song.artistsText ?: "")
+                        previewUrl = preview
+                        
+                        // 自动播放预览（如果有）
+                        preview?.let { url ->
                             withContext(Dispatchers.Main) {
-                                if (player.isPlaying) player.pause()
+                                try {
+                                    mediaPlayer.reset()
+                                    mediaPlayer.setDataSource(url)
+                                    mediaPlayer.prepareAsync()
+                                    mediaPlayer.setOnPreparedListener { player ->
+                                        player.start()
+                                        // 30秒后自动停止
+                                        launch {
+                                            delay(30000)
+                                            if (player.isPlaying) {
+                                                player.pause()
+                                            }
+                                        }
+                                    }
+                                } catch (e: Exception) {
+                                    // 静默失败，预览不是必需的
+                                }
                             }
                         }
+                    } catch (e: Exception) {
+                        // 静默失败，预览不是必需的
                     }
-                } catch (e: Exception) {
-                    e.printStackTrace()
                 }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            } finally {
+                isLoading = false
             }
         }
     }
-
-    // Cleanup when Composable leaves composition
-    onDispose {
-        job.cancel() // cancel coroutine
-        if (mediaPlayer.isPlaying) mediaPlayer.stop()
-        mediaPlayer.release()
-    }
-}
     
+    // 清理 MediaPlayer
+    DisposableEffect(Unit) {
+        onDispose {
+            if (mediaPlayer.isPlaying) {
+                mediaPlayer.stop()
+            }
+            mediaPlayer.release()
+        }
+    }
+    
+    // 使用简单的黑色背景替代shader以提高性能
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color.Black)
     ) {
-        // 背景渐变
+        // 添加一些渐变效果
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            Color(0xFF1A1A2E),
-                            Color(0xFF16213E),
+                            Color(0xFF0A0A1A),
                             Color.Black
                         ),
                         radius = 800f
@@ -112,366 +136,394 @@ DisposableEffect(topSong) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 20.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // 标题区域
+            // 顶部标题 - 简化
             Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.padding(bottom = 40.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp, top = 12.dp),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Text(
-                    text = "🎵",
-                    fontSize = 48.sp,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    Text(
+                        text = "#",
+                        fontSize = 32.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFF4FC3F7),
+                        letterSpacing = 0.sp
+                    )
+                    Text(
+                        text = "1",
+                        fontSize = 42.sp,
+                        fontWeight = FontWeight.Black,
+                        color = Color(0xFFFFD700),
+                        letterSpacing = 0.sp
+                    )
+                }
                 
                 Text(
-                    text = "YOUR #1",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Black,
-                    color = Color(0xFFFFD700),
-                    letterSpacing = 3.sp
-                )
-                
-                Text(
-                    text = "Song of the Year",
-                    fontSize = 16.sp,
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontWeight = FontWeight.Medium,
-                    modifier = Modifier.padding(top = 4.dp)
+                    text = "YOUR TOP SONG",
+                    fontSize = 12.sp,
+                    color = Color.White.copy(alpha = 0.7f),
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.sp
                 )
             }
             
-            // 主要内容卡片
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .weight(1f),
-                shape = RoundedCornerShape(30.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF2D2B55).copy(alpha = 0.8f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 16.dp)
-            ) {
-                Column(
+            if (topSong != null) {
+                // 大型缩略图 - 使用更简单的加载方式
+                Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                        .fillMaxWidth()
+                        .aspectRatio(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .shadow(
+                            elevation = 16.dp,
+                            shape = RoundedCornerShape(16.dp),
+                            clip = true
+                        ),
+                    contentAlignment = Alignment.Center
                 ) {
-                    if (topSong != null) {
-                        // 1. 大缩略图显示区域
-                        Box(
-                            modifier = Modifier
-                                .size(200.dp)
-                                .clip(RoundedCornerShape(20.dp))
-                                .background(
-                                    if (thumbnailUrl == null) Color(0xFF2A1B3D) else Color.Transparent
-                                ),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            if (thumbnailUrl != null) {
-                                // 使用 Coil 加载并显示网络图片
-                                val painter = rememberAsyncImagePainter(
-                                    model = ImageRequest.Builder(context)
-                                        .data(thumbnailUrl)
-                                        .crossfade(true)
-                                        .build()
-                                )
-                                
-                                if (painter.state is AsyncImagePainter.State.Loading) {
+                    if (thumbnailUrl != null) {
+                        // 使用SubcomposeAsyncImage，更好地处理加载状态
+                        SubcomposeAsyncImage(
+                            model = thumbnailUrl,
+                            contentDescription = "${topSong.song.title} thumbnail",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                            loading = {
+                                Box(
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentAlignment = Alignment.Center
+                                ) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(40.dp),
                                         strokeWidth = 3.dp,
                                         color = Color.White.copy(alpha = 0.7f)
                                     )
-                                } else {
-                                    Image(
-                                        painter = painter,
-                                        contentDescription = "${topSong.song.title} thumbnail",
-                                        modifier = Modifier
-                                            .fillMaxSize()
-                                            .clip(RoundedCornerShape(20.dp)),
-                                        contentScale = ContentScale.Crop
+                                }
+                            },
+                            error = {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(
+                                            Brush.verticalGradient(
+                                                colors = listOf(
+                                                    Color(0xFF1E3A5F),
+                                                    Color(0xFF0F1B2D)
+                                                )
+                                            )
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Text(
+                                        text = "🎵",
+                                        fontSize = 60.sp,
+                                        color = Color.White.copy(alpha = 0.5f)
                                     )
                                 }
-                            } else if (isLoading) {
+                            }
+                        )
+                    } else {
+                        // 没有缩略图URL时的回退
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            Color(0xFF2A1B3D),
+                                            Color(0xFF1A1030)
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isLoading) {
                                 CircularProgressIndicator(
                                     modifier = Modifier.size(40.dp),
                                     strokeWidth = 3.dp,
                                     color = Color.White.copy(alpha = 0.7f)
                                 )
                             } else {
-                                // 回退：显示音乐图标
                                 Text(
                                     text = "🎵",
-                                    fontSize = 60.sp,
-                                    color = Color.White.copy(alpha = 0.7f)
+                                    fontSize = 80.sp,
+                                    color = Color.White.copy(alpha = 0.4f)
                                 )
                             }
-                            
-                            // 音频播放状态指示器
-                            if (mediaPlayer.isPlaying) {
-                                Box(
-                                    modifier = Modifier
-                                        .size(50.dp)
-                                        .clip(CircleShape)
-                                        .background(Color(0xFFFFD700).copy(alpha = 0.8f))
-                                        .border(2.dp, Color.White, CircleShape),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = "♪",
-                                        fontSize = 24.sp,
-                                        color = Color.Black
-                                    )
-                                }
-                            }
                         }
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // 2. 歌曲信息
-                        Text(
-                            text = "\"${topSong.song.title}\"",
-                            fontSize = 26.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color(0xFFFFD700),
-                            textAlign = TextAlign.Center,
-                            lineHeight = 32.sp,
-                            modifier = Modifier.padding(horizontal = 16.dp)
-                        )
-                        
-                        Text(
-                            text = "by ${topSong.song.artistsText ?: "Unknown Artist"}",
-                            fontSize = 18.sp,
-                            color = Color.White.copy(alpha = 0.9f),
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier.padding(bottom = 32.dp, top = 8.dp)
-                        )
-                        
-                        // 3. 统计卡片
-                        Card(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp),
-                            shape = RoundedCornerShape(20.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = Color(0xFF3A3A6E).copy(alpha = 0.6f)
-                            )
-                        ) {
-                            Column(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(vertical = 24.dp),
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "🔥 ${topSong.playCount}",
-                                    fontSize = 42.sp,
-                                    fontWeight = FontWeight.Black,
-                                    color = Color(0xFFFF6B6B)
-                                )
-                                
-                                Text(
-                                    text = "total plays",
-                                    fontSize = 14.sp,
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontWeight = FontWeight.Medium,
-                                    modifier = Modifier.padding(top = 4.dp)
-                                )
-                                
-                                Spacer(modifier = Modifier.height(16.dp))
-                                
-                                Row(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .padding(horizontal = 32.dp),
-                                    horizontalArrangement = Arrangement.SpaceBetween
-                                ) {
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(text = "⏱️", fontSize = 20.sp, modifier = Modifier.padding(bottom = 4.dp))
-                                        Text(
-                                            text = "${topSong.minutes}",
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = "minutes",
-                                            fontSize = 12.sp,
-                                            color = Color.White.copy(alpha = 0.7f)
-                                        )
-                                    }
-                                    
-                                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                        Text(text = "📅", fontSize = 20.sp, modifier = Modifier.padding(bottom = 4.dp))
-                                        val avgPerDay = String.format("%.1f", topSong.playCount / 365.0)
-                                        Text(
-                                            text = avgPerDay,
-                                            fontSize = 18.sp,
-                                            fontWeight = FontWeight.Bold,
-                                            color = Color.White
-                                        )
-                                        Text(
-                                            text = "per day",
-                                            fontSize = 12.sp,
-                                            color = Color.White.copy(alpha = 0.7f)
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(24.dp))
-                        
-                        // 4. 音频控制按钮（可选）
-                        if (previewUrl != null) {
-                            Row(
-                                modifier = Modifier.fillMaxWidth(),
-                                horizontalArrangement = Arrangement.Center
-                            ) {
-                                Button(
-                                    onClick = {
-                                        if (mediaPlayer.isPlaying) {
-                                            mediaPlayer.pause()
-                                        } else {
-                                            if (!mediaPlayer.isPlaying) {
-                                                mediaPlayer.start()
-                                            }
-                                        }
-                                    },
-                                    colors = ButtonDefaults.buttonColors(
-                                        containerColor = Color(0xFF9C27B0)
-                                    ),
-                                    shape = RoundedCornerShape(12.dp)
-                                ) {
-                                    Text(
-                                        text = if (mediaPlayer.isPlaying) "⏸️ Pause Preview" else "▶️ Play Preview",
-                                        fontSize = 14.sp
-                                    )
-                                }
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                        }
-                        
-                        // 5. 趣味事实卡片
+                    }
+                    
+                    // 播放状态指示器（简化）
+                    if (mediaPlayer.isPlaying) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color(0xFF9C27B0).copy(alpha = 0.2f))
                                 .padding(16.dp)
+                                .align(Alignment.BottomEnd)
+                                .size(44.dp)
+                                .clip(CircleShape)
+                                .background(Color(0xFF64B5F6).copy(alpha = 0.9f)),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column {
-                                Text(
-                                    text = "✨ FUN FACT",
-                                    fontSize = 12.sp,
-                                    color = Color(0xFFE91E63),
-                                    fontWeight = FontWeight.Bold,
-                                    letterSpacing = 0.5.sp,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-                                
-                                val totalHours = (topSong.minutes / 60f).roundToInt()
-                                Text(
-                                    text = "This was your most played song! You've listened ${topSong.playCount} times (${totalHours} hours).",
-                                    fontSize = 14.sp,
-                                    color = Color.White.copy(alpha = 0.95f),
-                                    lineHeight = 20.sp,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                    } else {
-                        // 无数据时的回退界面
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.Center
-                        ) {
-                            Text(text = "🎵", fontSize = 48.sp, modifier = Modifier.padding(bottom = 16.dp))
                             Text(
-                                text = "No top song data available",
-                                fontSize = 18.sp,
-                                color = Color.White.copy(alpha = 0.7f),
-                                textAlign = TextAlign.Center
+                                text = "♪",
+                                fontSize = 20.sp,
+                                color = Color.White
                             )
                         }
                     }
                 }
-            }
-            
-            // 导航提示
-            Box(
-                modifier = Modifier
-                    .padding(top = 24.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(Color.White.copy(alpha = 0.1f))
-                    .padding(horizontal = 20.dp, vertical = 12.dp)
-            ) {
-                Text(
-                    text = "Swipe for top artists →",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Medium
-                )
+                
+                Spacer(modifier = Modifier.height(28.dp))
+                
+                // 歌曲信息 - 更简洁
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 20.dp)
+                ) {
+                    Text(
+                        text = topSong.song.title,
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White,
+                        textAlign = TextAlign.Center,
+                        lineHeight = 30.sp,
+                        maxLines = 2,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    Text(
+                        text = topSong.song.artistsText ?: "Unknown Artist",
+                        fontSize = 16.sp,
+                        color = Color(0xFF64B5F6),
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center,
+                        maxLines = 1,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(32.dp))
+                
+                // 关键统计数据 - 更简单，只有播放次数和分钟数
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp),
+                    horizontalArrangement = Arrangement.SpaceEvenly
+                ) {
+                    // 播放次数
+                    StatColumn(
+                        emoji = "🔥",
+                        value = "${topSong.playCount}",
+                        label = "PLAYS",
+                        color = Color(0xFFFF6B6B)
+                    )
+                    
+                    // 分钟数
+                    StatColumn(
+                        emoji = "⏱️",
+                        value = "${topSong.minutes}",
+                        label = "MINUTES",
+                        color = Color(0xFF4FC3F7)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(36.dp))
+                
+                // 有趣的统计事实 - 简化
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 20.dp)
+                ) {
+                    Text(
+                        text = "📊 LISTENING STAT",
+                        fontSize = 11.sp,
+                        color = Color(0xFFFFD54F),
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 0.5.sp,
+                        modifier = Modifier.padding(bottom = 10.dp)
+                    )
+                    
+                    val totalHours = (topSong.minutes / 60f).roundToInt()
+                    val statText = if (totalHours > 0) {
+                        "That's ${totalHours} hours of listening!"
+                    } else {
+                        "Your most played track this year!"
+                    }
+                    
+                    Text(
+                        text = statText,
+                        fontSize = 15.sp,
+                        color = Color.White.copy(alpha = 0.9f),
+                        textAlign = TextAlign.Center,
+                        lineHeight = 22.sp
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(40.dp))
+                
+                // 导航提示
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .padding(bottom = 20.dp)
+                        .fillMaxWidth()
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.1f)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = "→",
+                            fontSize = 18.sp,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(6.dp))
+                    
+                    Text(
+                        text = "swipe to continue",
+                        color = Color.White.copy(alpha = 0.4f),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Normal
+                    )
+                }
+            } else {
+                // 无数据时的回退界面
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center,
+                    modifier = Modifier.fillMaxSize()
+                ) {
+                    Text(
+                        text = "🎵",
+                        fontSize = 56.sp,
+                        modifier = Modifier.padding(bottom = 20.dp)
+                    )
+                    Text(
+                        text = "No song data available",
+                        fontSize = 16.sp,
+                        color = Color.White.copy(alpha = 0.6f),
+                        textAlign = TextAlign.Center
+                    )
+                }
             }
         }
     }
 }
 
-// 获取歌曲信息的协程函数（来自你提供的代码）
-private suspend fun fetchSongInfo(title: String, artist: String): Pair<String?, String?> {
+// 统计列组件
+@Composable
+private fun StatColumn(
+    emoji: String,
+    value: String,
+    label: String,
+    color: Color
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.width(100.dp)
+    ) {
+        Text(
+            text = emoji,
+            fontSize = 22.sp,
+            modifier = Modifier.padding(bottom = 6.dp)
+        )
+        Text(
+            text = value,
+            fontSize = 26.sp,
+            fontWeight = FontWeight.Black,
+            color = color
+        )
+        Text(
+            text = label,
+            fontSize = 10.sp,
+            color = Color.White.copy(alpha = 0.6f),
+            fontWeight = FontWeight.Medium,
+            letterSpacing = 0.5.sp
+        )
+    }
+}
+
+// 获取歌曲缩略图的函数（使用你提供的代码）
+private suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
     return withContext(Dispatchers.IO) {
         try {
-            // 首先尝试 Deezer API
+            val query = URLEncoder.encode("$songTitle $artist", "UTF-8")
+            val url = "https://yt.omada.cafe/api/v1/search?q=$query&type=video"
+            
+            val connection = URL(url).openConnection()
+            connection.connectTimeout = 3000 // 缩短超时时间
+            connection.readTimeout = 3000
+            
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            
+            // 简化的正则匹配
+            val pattern = Regex("\"videoThumbnails\"\\s*:\\s*\\[.*?\\{\\s*\"url\"\\s*:\\s*\"(https?://[^\"]+)\"")
+            val match = pattern.find(response)
+            
+            match?.groups?.get(1)?.value?.let { thumbnailUrl ->
+                return@withContext thumbnailUrl.replace("\\/", "/")
+            }
+            
+            // 如果上面的模式没找到，尝试更简单的匹配
+            val simplePattern = Regex("\"url\"\\s*:\\s*\"(https?://[^\"]+\\.(jpg|png|webp))\"")
+            val simpleMatch = simplePattern.find(response)
+            
+            simpleMatch?.groups?.get(1)?.value?.let { thumbnailUrl ->
+                return@withContext thumbnailUrl.replace("\\/", "/")
+            }
+            
+            return@withContext null
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return@withContext null
+        }
+    }
+}
+
+// 获取歌曲预览音频的函数（单独处理）
+private suspend fun fetchSongPreview(title: String, artist: String): String? {
+    return withContext(Dispatchers.IO) {
+        try {
             val query = URLEncoder.encode("$title $artist", "UTF-8")
             val url = "https://api.deezer.com/search?q=$query&limit=1"
             
-            val connection = URL(url).openConnection().apply {
-                connectTimeout = 5000
-                readTimeout = 5000
-            }
+            val connection = URL(url).openConnection()
+            connection.connectTimeout = 3000
+            connection.readTimeout = 3000
             
-            val response = connection.getInputStream().bufferedReader().use { it.readText() }
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
             val json = JSONObject(response)
             
             if (json.has("data")) {
                 val dataArray = json.getJSONArray("data")
                 if (dataArray.length() > 0) {
                     val songData = dataArray.getJSONObject(0)
-                    val thumbnail = songData.getJSONObject("album").getString("cover_big")
-                    val preview = songData.optString("preview", null)
-                    
-                    return@withContext Pair(thumbnail, preview)
+                    return@withContext songData.optString("preview", null)
                 }
             }
-            
-            // 回退方案：尝试 YouTube API 获取缩略图
-            val ytQuery = URLEncoder.encode("$title $artist", "UTF-8")
-            val ytUrl = "https://yt.omada.cafe/api/v1/search?q=$ytQuery&type=video"
-            
-            val ytConnection = URL(ytUrl).openConnection().apply {
-                connectTimeout = 5000
-                readTimeout = 5000
-            }
-            
-            val ytResponse = ytConnection.getInputStream().bufferedReader().use { it.readText() }
-            
-            // 使用正则表达式解析 YouTube 响应中的缩略图URL
-            val thumbnailMatch = Regex("\"videoThumbnails\":\\s*\\[.*?\"url\":\"(.*?)\"").find(ytResponse)
-            val thumbnail = thumbnailMatch?.groups?.get(1)?.value?.replace("\\/", "/")
-            
-            return@withContext Pair(thumbnail, null)
-            
+            return@withContext null
         } catch (e: Exception) {
-            e.printStackTrace()
-            return@withContext Pair(null, null)
+            // 静默失败，预览不是必需的
+            return@withContext null
         }
     }
 }
