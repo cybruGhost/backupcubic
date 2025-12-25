@@ -39,7 +39,6 @@ import androidx.compose.ui.layout.ContentScale
 
 
 
-
 // Import your slide components
 import it.fast4x.rimusic.ui.screens.rewind.slides.*
 
@@ -135,28 +134,32 @@ fun RewindScreen(
                                 scope.launch { mainPagerState.animateScrollToPage(3) }
                             }
                         )
+                        3 -> AfterTopSongsSlide(
+                            topSong = data?.topSongs?.firstOrNull(), // Pass the #1 song
+                            onNext = { scope.launch { mainPagerState.animateScrollToPage(4) } }
+                        )
                         4 -> TopArtistsSlide(
                             artists = data?.topArtists ?: emptyList(),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(4) }
+                                scope.launch { mainPagerState.animateScrollToPage(5) }
                             }
                         )
                         5 -> TopAlbumsSlide(
                             albums = data?.topAlbums ?: emptyList(),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(5) }
+                                scope.launch { mainPagerState.animateScrollToPage(6) }
                             }
                         )
                         6 -> MonthlyStatsSlide(
                             monthlyStats = data?.monthlyStats ?: emptyList(),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(6) }
+                                scope.launch { mainPagerState.animateScrollToPage(7) }
                             }
                         )
                         7 -> BestOfAllSlide(  // Changed from 8 to 6
                             data = data ?: createEmptyRewindData(currentYear),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(7) }
+                                scope.launch { mainPagerState.animateScrollToPage(8) }
                             }
                         )
                         8 -> DonateSlide(  // Changed from 9 to 7
