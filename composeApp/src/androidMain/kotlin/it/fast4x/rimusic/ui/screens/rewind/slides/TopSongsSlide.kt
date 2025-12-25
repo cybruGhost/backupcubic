@@ -1,645 +1,227 @@
 package it.fast4x.rimusic.ui.screens.rewind.slides
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.*
-import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithCache
-import androidx.compose.ui.draw.rotate
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.*
-import it.fast4x.rimusic.ui.screens.rewind.*
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.mikepenz.hypnoticcanvas.shaderBackground
+import it.fast4x.rimusic.ui.screens.rewind.TopSong
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import org.json.JSONArray
-import org.json.JSONObject
+import kotlinx.coroutines.withContext
 import java.net.URL
+import androidx.compose.foundation.border
+import androidx.compose.foundation.BorderStroke
+import java.net.URLEncoder
 
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
-fun TopSongsSlide(songs: List<TopSong>, onNext: () -> Unit) {
-    val scrollState = rememberScrollState()
-    val context = LocalContext.current
-    val coroutineScope = rememberCoroutineScope()
-    val thumbnailUrls = remember { mutableStateMapOf<String, String?>() }
-    
-    // Fetch thumbnails for all songs using the API
-    LaunchedEffect(songs) {
-        songs.forEach { song ->
-            val searchQuery = "${song.song.title} ${song.song.artistsText ?: ""}"
-            coroutineScope.launch {
-                try {
-                    val encodedQuery = java.net.URLEncoder.encode(searchQuery, "UTF-8")
-                    val url = "https://yt.omada.cafe/api/v1/search?q=$encodedQuery"
-                    val jsonText = URL(url).readText()
-                    val jsonArray = JSONArray(jsonText)
-                    if (jsonArray.length() > 0) {
-                        val firstResult = jsonArray.getJSONObject(0)
-                        val thumbnails = firstResult.optJSONObject("thumbnails")
-                        if (thumbnails != null) {
-                            // Get medium quality thumbnail if available
-                            val thumbnailUrl = thumbnails.optString("medium", null) ?: 
-                                             thumbnails.optString("high", null) ?:
-                                             thumbnails.optString("default", null)
-                            if (thumbnailUrl != null) {
-                                thumbnailUrls[song.song.id] = thumbnailUrl
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-        }
-    }
-    
-    Column(
+fun TopSongsSlide(
+    songs: List<TopSong>,
+    onNext: () -> Unit
+) {
+    // Using InkFlow shader background
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color(0xFF0A0519),
-                        Color(0xFF1A0F2E),
-                        Color(0xFF0A0519)
-                    )
-                )
-            )
-            .verticalScroll(scrollState)
-            .padding(horizontal = 16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally
+            .shaderBackground(com.mikepenz.hypnoticcanvas.shaders.InkFlow)
     ) {
-        Spacer(modifier = Modifier.height(40.dp))
-        
-        // Decorative header with emojis
+        // Dark overlay for better text visibility
         Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 30.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            // Background glow effect
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(60.dp)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFF00D4FF).copy(alpha = 0.1f),
-                                Color.Transparent
-                            ),
-                            center = Offset.Unspecified,
-                            radius = 200.dp.value
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.4f),
+                            Color.Black.copy(alpha = 0.3f),
+                            Color.Black.copy(alpha = 0.4f)
                         )
                     )
-            )
-            
-            // Main header with emoji decoration
+                )
+        )
+        
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 8.dp, vertical = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            // Header with better styling
             Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
+                // Main title with gradient
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(0.9f)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(
+                            Brush.linearGradient(
+                                colors = listOf(
+                                    Color(0xFF9C27B0).copy(alpha = 0.4f),
+                                    Color(0xFF673AB7).copy(alpha = 0.4f),
+                                    Color(0xFF3F51B5).copy(alpha = 0.4f)
+                                )
+                            )
+                        )
+                        .border(
+                            1.5.dp,
+                            Color.White.copy(alpha = 0.3f),
+                            RoundedCornerShape(18.dp)
+                        )
+                        .padding(vertical = 18.dp),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Decorative emojis
-                    Text(
-                        text = "🎵 ",
-                        fontSize = 32.sp,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    
-                    Text(
-                        text = "YOUR TOP 10 SONGS",
-                        fontSize = 28.sp,
-                        fontWeight = FontWeight.ExtraBold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center,
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Text(
+                            text = "🎵 TOP 10 SONGS",
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White,
+                            letterSpacing = 0.8.sp
+                        )
+                        
+                        Text(
+                            text = "Your most played tracks of the year",
+                            fontSize = 14.sp,
+                            color = Color.White.copy(alpha = 0.85f),
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+            }
+            
+            // Show message if no songs
+            if (songs.isEmpty()) {
+                Spacer(modifier = Modifier.weight(1f))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Box(
                         modifier = Modifier
-                            .background(
-                                brush = Brush.horizontalGradient(
-                                    colors = listOf(
-                                        Color(0xFF00D4FF).copy(alpha = 0.3f),
-                                        Color(0xFFE040FB).copy(alpha = 0.3f),
-                                        Color(0xFF00D4FF).copy(alpha = 0.3f)
-                                    )
-                                ),
-                                shape = RoundedCornerShape(20.dp)
-                            )
-                            .padding(horizontal = 24.dp, vertical = 12.dp)
-                            .shadow(
-                                elevation = 20.dp,
-                                shape = RoundedCornerShape(20.dp),
-                                clip = true
-                            )
-                    )
-                    
+                            .size(80.dp)
+                            .clip(CircleShape)
+                            .background(Color.White.copy(alpha = 0.15f))
+                            .border(
+                                2.dp,
+                                Color.White.copy(alpha = 0.25f),
+                                CircleShape
+                            ),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
-                        text = " 🎶",
-                        fontSize = 32.sp,
-                        modifier = Modifier.padding(start = 8.dp)
+                        text = "🎵",
+                        fontSize = 40.sp
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(modifier = Modifier.height(16.dp))
                 
-                // Subtitle with emoji
-                Text(
-                    text = "🎧 Your year in music 🎤",
-                    fontSize = 14.sp,
-                    color = Color(0xFF00D4FF),
-                    fontWeight = FontWeight.Medium
-                )
-            }
-        }
-        
-        if (songs.isEmpty()) {
-            Spacer(modifier = Modifier.height(100.dp))
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "🎵",
-                    fontSize = 48.sp,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
                 Text(
                     text = "No songs data available",
-                    color = Color.White.copy(alpha = 0.6f),
-                    fontSize = 16.sp
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold
                 )
+                
                 Text(
                     text = "Start listening to see your stats!",
-                    color = Color.White.copy(alpha = 0.4f),
+                    color = Color.White.copy(alpha = 0.7f),
                     fontSize = 14.sp,
                     modifier = Modifier.padding(top = 8.dp)
                 )
             }
-        } else {
-            // Top 3 songs with special styling
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "🏆 TOP 3 🏆",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color(0xFFFFD700),
-                    modifier = Modifier
-                        .padding(bottom = 20.dp)
-                        .background(
-                            color = Color(0xFFFFD700).copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
+            Spacer(modifier = Modifier.weight(1f))
+            } else {
+                // Top 10 Songs List
+                val displayedSongs = if (songs.size > 10) songs.take(10) else songs
                 
-                songs.take(3).forEachIndexed { index, song ->
-                    Top3SongItem(
-                        rank = index + 1,
-                        song = song,
-                        thumbnailUrl = thumbnailUrls[song.song.id],
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 8.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(30.dp))
-            
-            // Rest of the songs (4-10)
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Text(
-                    text = "🎯 THE TOP 10 🎯",
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White.copy(alpha = 0.9f),
-                    modifier = Modifier
-                        .padding(bottom = 20.dp)
-                        .background(
-                            color = Color(0xFF00D4FF).copy(alpha = 0.1f),
-                            shape = RoundedCornerShape(10.dp)
-                        )
-                        .padding(horizontal = 16.dp, vertical = 8.dp)
-                )
-                
-                songs.drop(3).forEachIndexed { index, song ->
-                    StandardSongItem(
-                        rank = index + 4,
-                        song = song,
-                        thumbnailUrl = thumbnailUrls[song.song.id],
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 6.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(40.dp))
-            
-            // Stats highlight with emoji decoration
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 4.dp),
-                shape = RoundedCornerShape(25.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0xFF1A1035).copy(alpha = 0.9f)
-                ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 15.dp),
-                border = BorderStroke(1.dp, Color(0xFF00D4FF).copy(alpha = 0.3f))
-            ) {
-                Box(
-                    modifier = Modifier.fillMaxWidth()
+                Column(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
-                    // Decorative background
-                    Box(
-                        modifier = Modifier
-                            .matchParentSize()
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFF00D4FF).copy(alpha = 0.05f),
-                                        Color.Transparent
-                                    )
-                                )
-                            )
-                    )
-                    
-                    Column(
-                        modifier = Modifier
-                            .padding(24.dp)
-                            .fillMaxWidth(),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        // Header with emoji
-                        Row(
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        ) {
-                            Text(
-                                text = "✨ ",
-                                fontSize = 24.sp
-                            )
-                            Text(
-                                text = "YOUR MUSICAL JOURNEY",
-                                fontSize = 18.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = Color(0xFF00D4FF),
-                                textAlign = TextAlign.Center
-                            )
-                            Text(
-                                text = " ✨",
-                                fontSize = 24.sp
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // Highlight song
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .background(
-                                    color = Color(0xFF00D4FF).copy(alpha = 0.1f),
-                                    shape = RoundedCornerShape(20.dp)
-                                )
-                                .padding(20.dp)
-                        ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally
-                            ) {
-                                Text(
-                                    text = "🎵",
-                                    fontSize = 32.sp,
-                                    modifier = Modifier.padding(bottom = 8.dp)
-                                )
-                                Text(
-                                    text = "\"${songs[0].song.title}\"",
-                                    fontSize = 22.sp,
-                                    fontWeight = FontWeight.ExtraBold,
-                                    color = Color.White,
-                                    textAlign = TextAlign.Center,
-                                    modifier = Modifier.padding(horizontal = 10.dp)
-                                )
-                                Text(
-                                    text = "was your soundtrack of the year",
-                                    fontSize = 16.sp,
-                                    color = Color.White.copy(alpha = 0.8f),
-                                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic,
-                                    textAlign = TextAlign.Center
-                                )
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(20.dp))
-                        
-                        // Stats row with emojis
-                        Row(
+                    // Top 3 with golden medals
+                    displayedSongs.take(3).forEachIndexed { index, song ->
+                        TopSongItem(
+                            rank = index + 1,
+                            song = song,
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            StatItem(
-                                value = "${songs[0].playCount}",
-                                label = "PLAYS",
-                                emoji = "🔥",
-                                color = Color(0xFFFFD700)
-                            )
-                            StatItem(
-                                value = "${songs.size}",
-                                label = "TRACKS",
-                                emoji = "🎵",
-                                color = Color(0xFF00D4FF)
-                            )
-                            StatItem(
-                                value = "${songs.sumOf { it.playCount }}",
-                                label = "TOTAL PLAYS",
-                                emoji = "📈",
-                                color = Color(0xFFE040FB)
-                            )
-                        }
+                            isTop3 = true
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(20.dp))
+                    
+                    // Songs 4-10
+                    displayedSongs.drop(3).forEachIndexed { index, song ->
+                        TopSongItem(
+                            rank = index + 4,
+                            song = song,
+                            modifier = Modifier.fillMaxWidth(),
+                            isTop3 = false
+                        )
                     }
                 }
+                
+                Spacer(modifier = Modifier.height(32.dp))
             }
             
-            Spacer(modifier = Modifier.height(40.dp))
-        }
-        
-        // Swipe hint with emoji
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(bottom = 30.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.Center
-        ) {
-            Text(
-                text = "🎨 ",
-                fontSize = 18.sp
-            )
-            Text(
-                text = "Swipe for Top Artists",
-                fontSize = 16.sp,
-                color = Color.White.copy(alpha = 0.7f),
-                fontWeight = FontWeight.Medium
-            )
-            
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            Icon(
-                imageVector = Icons.Default.PlayArrow,
-                contentDescription = null,
-                tint = Color(0xFF00D4FF),
+            // Subtle navigation hint
+            Column(
                 modifier = Modifier
-                    .rotate(90f)
-                    .size(20.dp)
-            )
-        }
-    }
-}
-
-@Composable
-private fun Top3SongItem(
-    rank: Int,
-    song: TopSong,
-    thumbnailUrl: String?,
-    modifier: Modifier = Modifier
-) {
-    val gradientColors = when (rank) {
-        1 -> listOf(Color(0xFFFFD700), Color(0xFFFFA000))
-        2 -> listOf(Color(0xFFC0C0C0), Color(0xFF9E9E9E))
-        3 -> listOf(Color(0xFFCD7F32), Color(0xFF8B4513))
-        else -> listOf(Color(0xFF6A11CB), Color(0xFF2575FC))
-    }
-    
-    val rankEmoji = when (rank) {
-        1 -> "🥇"
-        2 -> "🥈"
-        3 -> "🥉"
-        else -> "#$rank"
-    }
-    
-    Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(25.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.Transparent
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 15.dp),
-        border = BorderStroke(2.dp, gradientColors[0].copy(alpha = 0.5f))
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(110.dp)
-                .background(
-                    brush = Brush.linearGradient(
-                        colors = gradientColors.map { it.copy(alpha = 0.2f) },
-                        start = Offset(0f, 0f),
-                        end = Offset(1000f, 1000f)
-                    )
-                )
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 20.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    .padding(top = 8.dp, bottom = 16.dp)
+                    .fillMaxWidth(),
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Rank badge with emoji
                 Box(
                     modifier = Modifier
-                        .size(70.dp)
-                        .shadow(
-                            elevation = 15.dp,
-                            shape = CircleShape,
-                            clip = true
-                        )
-                        .drawWithCache {
-                            onDrawBehind {
-                                // Draw metallic shine
-                                drawCircle(
-                                    brush = Brush.radialGradient(
-                                        colors = listOf(
-                                            Color.White.copy(alpha = 0.4f),
-                                            Color.Transparent
-                                        ),
-                                        center = Offset(size.width * 0.3f, size.height * 0.3f)
-                                    ),
-                                    radius = size.minDimension / 2
-                                )
-                            }
-                        }
-                        .background(
-                            brush = Brush.radialGradient(
-                                colors = gradientColors,
-                                center = Offset.Unspecified,
-                                radius = 100f
-                            ),
-                            shape = CircleShape
+                        .size(32.dp)
+                        .clip(CircleShape)
+                        .background(Color.White.copy(alpha = 0.08f))
+                        .border(
+                            1.dp,
+                            Color.White.copy(alpha = 0.15f),
+                            CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = rankEmoji,
-                        fontSize = 28.sp,
-                        modifier = Modifier.shadow(2.dp)
+                        text = "➤",
+                        fontSize = 14.sp,
+                        color = Color.White.copy(alpha = 0.6f)
                     )
                 }
                 
-                // Thumbnail or emoji placeholder
-                Box(
-                    modifier = Modifier
-                        .size(70.dp)
-                        .clip(RoundedCornerShape(15.dp))
-                        .background(
-                            color = Color.Black.copy(alpha = 0.3f),
-                            shape = RoundedCornerShape(15.dp)
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    if (thumbnailUrl != null) {
-                        NetworkImage(
-                            url = thumbnailUrl,
-                            contentDescription = song.song.title,
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .clip(RoundedCornerShape(15.dp))
-                        )
-                    } else {
-                        Text(
-                            text = "🎵",
-                            fontSize = 32.sp
-                        )
-                    }
-                }
+                Spacer(modifier = Modifier.height(6.dp))
                 
-                // Song info
-                Column(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "🎧 ",
-                            fontSize = 16.sp
-                        )
-                        Text(
-                            text = song.song.title,
-                            fontSize = 18.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = Color.White,
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            lineHeight = 22.sp
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = "👤 ",
-                            fontSize = 12.sp
-                        )
-                        Text(
-                            text = song.song.artistsText ?: "Unknown Artist",
-                            fontSize = 14.sp,
-                            color = Color.White.copy(alpha = 0.9f),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(6.dp))
-                    
-                    // Play count with decorative bar
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(4.dp)
-                                .background(
-                                    color = gradientColors[0].copy(alpha = 0.5f),
-                                    shape = RoundedCornerShape(2.dp)
-                                )
-                        )
-                        
-                        Spacer(modifier = Modifier.width(8.dp))
-                        
-                        Column(
-                            horizontalAlignment = Alignment.End
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Text(
-                                    text = "▶️ ",
-                                    fontSize = 10.sp
-                                )
-                                Text(
-                                    text = "${song.playCount}",
-                                    fontSize = 16.sp,
-                                    color = gradientColors[0],
-                                    fontWeight = FontWeight.Bold
-                                )
-                            }
-                            Text(
-                                text = "plays",
-                                fontSize = 10.sp,
-                                color = Color.White.copy(alpha = 0.7f)
-                            )
-                        }
-                    }
-                }
-            }
-            
-            // Decorative corner emoji
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .align(Alignment.TopEnd)
-                    .background(
-                        color = gradientColors[0].copy(alpha = 0.1f),
-                        shape = RoundedCornerShape(0.dp, 25.dp, 0.dp, 25.dp)
-                    ),
-                contentAlignment = Alignment.Center
-            ) {
                 Text(
-                    text = "⭐",
-                    fontSize = 16.sp
+                    text = "swipe for artists",
+                    color = Color.White.copy(alpha = 0.4f),
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Normal,
+                    letterSpacing = 0.4.sp
                 )
             }
         }
@@ -647,218 +229,178 @@ private fun Top3SongItem(
 }
 
 @Composable
-private fun StandardSongItem(
+fun TopSongItem(
     rank: Int,
     song: TopSong,
-    thumbnailUrl: String?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isTop3: Boolean = false
 ) {
-    val gradientColors = when (rank) {
-        in 4..6 -> listOf(Color(0xFF9C27B0), Color(0xFF7B1FA2))
-        else -> listOf(Color(0xFF00D4FF), Color(0xFF0097A7))
+    var thumbnailUrl by remember { mutableStateOf<String?>(null) }
+    
+    // Get colors based on rank
+    val rankColors = when (rank) {
+        1 -> Pair(Color(0xFFFFD700), Color(0xFFFFC107)) // Gold
+        2 -> Pair(Color(0xFFC0C0C0), Color(0xFF9E9E9E)) // Silver
+        3 -> Pair(Color(0xFFCD7F32), Color(0xFF8D6E63)) // Bronze
+        in 4..6 -> Pair(Color(0xFF9C27B0), Color(0xFF7B1FA2)) // Purple
+        else -> Pair(Color(0xFF2196F3), Color(0xFF1976D2)) // Blue
+    }
+    
+    // Fetch thumbnail
+    LaunchedEffect(song.song.title, song.song.artistsText) {
+        if (song.song.title.isNotEmpty() && song.song.artistsText != null) {
+            val fetchedUrl = fetchSongThumbnail(song.song.title, song.song.artistsText!!)
+            thumbnailUrl = fetchedUrl
+        }
     }
     
     Card(
         modifier = modifier,
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(16.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.White.copy(alpha = 0.05f)
+            containerColor = Color(0xFF3D2E54) // Solid dark purple, not transparent
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 5.dp),
-        onClick = { /* Handle song click */ }
+        border = BorderStroke(
+            1.5.dp,
+            rankColors.first.copy(alpha = if (isTop3) 0.8f else 0.5f)
+        ),
+        elevation = CardDefaults.cardElevation(
+            defaultElevation = if (isTop3) 8.dp else 4.dp
+        )
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 12.dp),
+                .padding(vertical = 14.dp, horizontal = 16.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            horizontalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Rank indicator with emoji
+            // Rank badge with gradient
             Box(
                 modifier = Modifier
-                    .size(40.dp)
+                    .size(44.dp)
                     .clip(CircleShape)
                     .background(
-                        color = when (rank) {
-                            in 4..6 -> Color(0xFF9C27B0).copy(alpha = 0.3f)
-                            else -> Color(0xFF00D4FF).copy(alpha = 0.2f)
-                        }
+                        Brush.radialGradient(
+                            colors = listOf(
+                                rankColors.first,
+                                rankColors.second
+                            )
+                        )
+                    )
+                    .border(
+                        2.dp,
+                        Color.White.copy(alpha = 0.3f),
+                        CircleShape
                     ),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = when (rank) {
-                        4 -> "④"
-                        5 -> "⑤"
-                        6 -> "⑥"
-                        7 -> "⑦"
-                        8 -> "⑧"
-                        9 -> "⑨"
-                        10 -> "⑩"
+                    text = if (rank <= 3) when (rank) {
+                        1 -> "🥇"
+                        2 -> "🥈"
+                        3 -> "🥉"
                         else -> "$rank"
-                    },
-                    color = Color.White.copy(alpha = 0.9f),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 16.sp
+                    } else "$rank",
+                    fontSize = if (rank <= 3) 20.sp else 18.sp,
+                    color = if (rank <= 3) Color.Black else Color.White,
+                    fontWeight = FontWeight.Bold
                 )
             }
             
-            // Thumbnail or emoji
+            // Song thumbnail
             Box(
                 modifier = Modifier
-                    .size(50.dp)
+                    .size(54.dp)
                     .clip(RoundedCornerShape(10.dp))
                     .background(
-                        brush = Brush.verticalGradient(
+                        Brush.linearGradient(
                             colors = listOf(
-                                Color(0xFF3D2E54),
-                                Color(0xFF2A1F3A)
+                                Color(0xFF2A1B3D),
+                                Color(0xFF1A1030)
                             )
                         )
                     ),
                 contentAlignment = Alignment.Center
             ) {
-                if (thumbnailUrl != null) {
-                    NetworkImage(
-                        url = thumbnailUrl,
-                        contentDescription = song.song.title,
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .clip(RoundedCornerShape(10.dp))
-                    )
-                } else {
-                    Text(
-                        text = "🎵",
-                        fontSize = 24.sp
-                    )
-                }
+                NetworkImage(
+                    url = thumbnailUrl,
+                    contentDescription = "${song.song.title} thumbnail",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Crop
+                )
             }
             
             // Song info
             Column(
                 modifier = Modifier.weight(1f)
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "🎵 ",
-                        fontSize = 12.sp
-                    )
-                    Text(
-                        text = song.song.title,
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "👤 ",
-                        fontSize = 10.sp
-                    )
-                    Text(
-                        text = song.song.artistsText ?: "Unknown Artist",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    text = song.song.title,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    lineHeight = 20.sp
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                Text(
+                    text = song.song.artistsText ?: "Unknown Artist",
+                    fontSize = 14.sp,
+                    color = Color.White.copy(alpha = 0.85f),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
             
             // Play count
             Column(
-                horizontalAlignment = Alignment.End
+                horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
+                Box(
+                    modifier = Modifier
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(rankColors.first.copy(alpha = 0.3f))
+                        .padding(horizontal = 12.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        text = "▶️ ",
-                        fontSize = 10.sp
-                    )
-                    Text(
                         text = "${song.playCount}",
-                        fontSize = 14.sp,
+                        fontSize = 16.sp,
                         color = Color.White,
                         fontWeight = FontWeight.Bold
                     )
                 }
-                Text(
-                    text = "plays",
-                    fontSize = 10.sp,
-                    color = Color.White.copy(alpha = 0.6f)
-                )
+                
+                if (song.minutes > 0) {
+                    Spacer(modifier = Modifier.height(2.dp))
+                    Text(
+                        text = "${song.minutes} min",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "plays",
+                        fontSize = 10.sp,
+                        color = Color.White.copy(alpha = 0.6f)
+                    )
+                }
             }
         }
     }
 }
 
 @Composable
-private fun StatItem(value: String, label: String, emoji: String, color: Color) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
-    ) {
-        Row(
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = emoji,
-                fontSize = 20.sp,
-                modifier = Modifier.padding(end = 4.dp)
-            )
-            Text(
-                text = value,
-                fontSize = 24.sp,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-        }
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.7f),
-            letterSpacing = 0.5.sp
-        )
-    }
-}
-
-// NetworkImage composable - with proper API fetching
-@Composable
 fun NetworkImage(
-    url: String,
+    url: String?,
     contentDescription: String?,
     modifier: Modifier = Modifier,
     contentScale: ContentScale = ContentScale.Crop
 ) {
-    var imageBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
-    var isLoading by remember { mutableStateOf(true) }
-    
-    LaunchedEffect(url) {
-        isLoading = true
-        imageBitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            try {
-                val connection = URL(url).openConnection()
-                connection.connectTimeout = 5000
-                connection.readTimeout = 5000
-                val inputStream = connection.getInputStream()
-                val bitmap = android.graphics.BitmapFactory.decodeStream(inputStream)
-                inputStream.close()
-                bitmap?.asImageBitmap()
-            } catch (e: Exception) {
-                e.printStackTrace()
-                null
-            }
-        }
-        isLoading = false
-    }
-    
     Box(
         modifier = modifier
             .background(
@@ -871,30 +413,52 @@ fun NetworkImage(
             ),
         contentAlignment = Alignment.Center
     ) {
-        if (isLoading) {
-            Box(
-                modifier = Modifier.fillMaxSize(),
-                contentAlignment = Alignment.Center
-            ) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(16.dp),
-                    strokeWidth = 2.dp,
-                    color = Color.White.copy(alpha = 0.5f)
-                )
-            }
-        } else if (imageBitmap != null) {
-            Image(
-                bitmap = imageBitmap!!,
+        if (url != null) {
+            AsyncImage(
+                model = url,
                 contentDescription = contentDescription,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = contentScale
             )
         } else {
+            // Fallback emoji
             Text(
                 text = "🎵",
-                fontSize = 32.sp,
+                fontSize = 24.sp,
                 color = Color.White.copy(alpha = 0.7f)
             )
         }
+    }
+}
+
+// Function to fetch song thumbnail from API
+suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
+    return withContext(Dispatchers.IO) {
+        try {
+            val query = URLEncoder.encode("$songTitle $artist", "UTF-8")
+            val url = "https://yt.omada.cafe/api/v1/search?q=$query&type=video"
+            
+            val connection = URL(url).openConnection()
+            connection.connectTimeout = 3000 // Reduced timeout for better performance
+            connection.readTimeout = 3000
+            
+            val response = connection.getInputStream().bufferedReader().use { it.readText() }
+            
+            // Parse JSON response to find video thumbnail
+            val thumbnailMatch = Regex("\"videoThumbnails\":\\s*\\[.*?\"url\":\"(.*?)\"").find(response)
+            thumbnailMatch?.groups?.get(1)?.value?.let { thumbnailUrl ->
+                val cleanedUrl = thumbnailUrl.replace("\\/", "/")
+                return@withContext if (cleanedUrl.startsWith("//")) {
+                    "https:$cleanedUrl"
+                } else if (!cleanedUrl.startsWith("http")) {
+                    "https://$cleanedUrl"
+                } else {
+                    cleanedUrl
+                }
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+        return@withContext null
     }
 }
