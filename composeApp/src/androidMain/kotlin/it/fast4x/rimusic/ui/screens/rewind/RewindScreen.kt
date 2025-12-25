@@ -85,8 +85,11 @@ fun RewindScreen(
     }
     
     Box(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(bottom = 70.dp)  // Add bottom padding for miniPlayer
     ) {
+   
         // Hypnotic canvas shader background with optimized rendering
         Box(
             modifier = Modifier
