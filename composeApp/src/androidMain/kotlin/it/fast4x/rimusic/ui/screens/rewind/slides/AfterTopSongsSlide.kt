@@ -49,6 +49,8 @@ fun AfterTopSongsSlide(
     var thumbnailUrl by remember { mutableStateOf<String?>(null) }
     var previewUrl by remember { mutableStateOf<String?>(null) }
     var isLoading by remember { mutableStateOf(false) }
+    val thumbShape = RoundedCornerShape(20.dp)
+
     
     // 创建并管理 MediaPlayer
     val mediaPlayer = remember { MediaPlayer() }
@@ -178,25 +180,27 @@ fun AfterTopSongsSlide(
             
             if (topSong != null) {
                 // 大型缩略图 - 使用更简单的加载方式
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .aspectRatio(1f)
-                        .clip(RoundedCornerShape(16.dp))
-                        .shadow(
-                            elevation = 16.dp,
-                            shape = RoundedCornerShape(16.dp),
-                            clip = true
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .aspectRatio(1f)
+                            .shadow(
+                                elevation = 16.dp,
+                                shape = thumbShape,
+                                clip = false
+                            )
+                            .clip(thumbShape),
+                        contentAlignment = Alignment.Center
+                    ){
                     if (thumbnailUrl != null) {
-                        // 使用SubcomposeAsyncImage，更好地处理加载状态
+                       // 使用SubcomposeAsyncImage，更好地处理加载状态
                         SubcomposeAsyncImage(
                             model = thumbnailUrl,
                             contentDescription = "${topSong.song.title} thumbnail",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .clip(RoundedCornerShape(20.dp)),
+                            contentScale = ContentScale.Fit,
                             loading = {
                                 Box(
                                     modifier = Modifier.fillMaxSize(),
