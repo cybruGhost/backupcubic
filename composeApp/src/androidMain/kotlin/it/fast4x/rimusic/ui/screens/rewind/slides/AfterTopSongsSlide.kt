@@ -463,34 +463,29 @@ private fun StatColumn(
 }
 
 // 获取歌曲缩略图的函数（使用你提供的代码）
-private suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
+private suspend fun fetchTopSongThumbnail(songTitle: String, artist: String): String? {
     return withContext(Dispatchers.IO) {
         try {
             val query = URLEncoder.encode("$songTitle $artist", "UTF-8")
             val url = "https://yt.omada.cafe/api/v1/search?q=$query&type=video"
-            
+
             val connection = URL(url).openConnection()
-            connection.connectTimeout = 3000 // 缩短超时时间
+            connection.connectTimeout = 3000
             connection.readTimeout = 3000
-            
-            val response = connection.inputStream.bufferedReader().use { it.readText() }
-            
-            // 简化的正则匹配
-            val pattern = Regex("\"videoThumbnails\"\\s*:\\s*\\[.*?\\{\\s*\"url\"\\s*:\\s*\"(https?://[^\"]+)\"")
-            val match = pattern.find(response)
-            
-            match?.groups?.get(1)?.value?.let { thumbnailUrl ->
-                return@withContext thumbnailUrl.replace("\\/", "/")
-            }
-            
-            // 如果上面的模式没找到，尝试更简单的匹配
+
+            val response = connection.getInputStream().bufferedReader().use { it.readText() }
+
+            val maxresPattern = Regex("\"quality\"\\s*:\\s*\"maxres\".*?\"url\"\\s*:\\s*\"(https?://[^\"]+)\"")
+            maxresPattern.find(response)?.groups?.get(1)?.value?.let { return@withContext it.replace("\\/", "/") }
+
+            val hqPattern = Regex("\"videoThumbnails\"\\s*:\\s*\\[.*?\\{\\s*\"url\"\\s*:\\s*\"(https?://[^\"]+)\"")
+            hqPattern.find(response)?.groups?.get(1)?.value?.let { return@withContext it.replace("\\/", "/") }
+
             val simplePattern = Regex("\"url\"\\s*:\\s*\"(https?://[^\"]+\\.(jpg|png|webp))\"")
-            val simpleMatch = simplePattern.find(response)
-            
-            simpleMatch?.groups?.get(1)?.value?.let { thumbnailUrl ->
-                return@withContext thumbnailUrl.replace("\\/", "/")
-            }
-            
+            simplePattern.findAll(response)
+                .mapNotNull { it.groups[1]?.value?.replace("\\/", "/") }
+                .firstOrNull()?.let { return@withContext it }
+
             return@withContext null
         } catch (e: Exception) {
             e.printStackTrace()
