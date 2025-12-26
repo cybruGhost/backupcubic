@@ -62,7 +62,7 @@ fun RewindScreen(
     
     // Main pager state for slides - REDUCED TO 8 SLIDES (removed daily/hourly)
    // Change from 8 to 9 slides
-    val mainPagerState = rememberPagerState(pageCount = { 9 })
+    val mainPagerState = rememberPagerState(pageCount = { 10 })
     
     LaunchedEffect(Unit) {
         try {
@@ -192,7 +192,7 @@ fun RewindScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        repeat(9) { index ->  // Changed from 10 to 8
+                        repeat(10) { index ->  // Changed from 10 to 8
                             Box(
                                 modifier = Modifier
                                     .padding(horizontal = 4.dp)
