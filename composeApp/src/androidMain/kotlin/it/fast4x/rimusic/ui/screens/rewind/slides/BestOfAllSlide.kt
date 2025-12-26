@@ -146,40 +146,7 @@ fun BestOfAllSlide(data: RewindData, onNext: () -> Unit) {
                     textAlign = TextAlign.Center
                 )
             }
-            
-            // Top Song
-            TopItemCard(
-                icon = "🎵",
-                title = "TOP SONG",
-                mainText = topSong?.song?.title ?: "N/A",
-                subText = topSong?.song?.artistsText ?: "",
-                stats = "${topSong?.playCount ?: 0} plays • ${topSong?.minutes ?: 0} min",
-                color = Color(0xFFE040FB)
-            )
-            
-            // Top Artist
-            TopItemCard(
-                icon = "⭐",
-                title = "TOP ARTIST",
-                mainText = topArtist?.artist?.name ?: "N/A",
-                subText = "${topArtist?.songCount ?: 0} songs",
-                stats = "${topArtist?.minutes ?: 0} minutes",
-                color = Color(0xFF7C4DFF)
-            )
-            
-            // Top Album
-            TopItemCard(
-                icon = "💿",
-                title = "TOP ALBUM",
-                mainText = topAlbum?.album?.title ?: "N/A",
-                subText = topAlbum?.album?.authorsText ?: "",
-                stats = "${topAlbum?.songCount ?: 0} songs • ${topAlbum?.minutes ?: 0} min",
-                color = Color(0xFF536DFE)
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Description Card
+                        // Description Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -339,6 +306,38 @@ fun BestOfAllSlide(data: RewindData, onNext: () -> Unit) {
                     }
                 }
             }
+            
+            // Top Song
+            TopItemCard(
+                icon = "🎵",
+                title = "TOP SONG",
+                mainText = topSong?.song?.title ?: "N/A",
+                subText = topSong?.song?.artistsText ?: "",
+                stats = "${topSong?.playCount ?: 0} plays • ${topSong?.minutes ?: 0} min",
+                color = Color(0xFFE040FB)
+            )
+            
+            // Top Artist
+            TopItemCard(
+                icon = "⭐",
+                title = "TOP ARTIST",
+                mainText = topArtist?.artist?.name ?: "N/A",
+                subText = "${topArtist?.songCount ?: 0} songs",
+                stats = "${topArtist?.minutes ?: 0} minutes",
+                color = Color(0xFF7C4DFF)
+            )
+            
+            // Top Album
+            TopItemCard(
+                icon = "💿",
+                title = "TOP ALBUM",
+                mainText = topAlbum?.album?.title ?: "N/A",
+                subText = topAlbum?.album?.authorsText ?: "",
+                stats = "${topAlbum?.songCount ?: 0} songs • ${topAlbum?.minutes ?: 0} min",
+                color = Color(0xFF536DFE)
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
             
             // Alternative share button
             Card(
