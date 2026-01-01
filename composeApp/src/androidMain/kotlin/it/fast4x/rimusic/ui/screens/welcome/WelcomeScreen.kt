@@ -1,10 +1,9 @@
-// ui/screens/welcome/WelcomeScreen.kt - FIXED VERSION
+// ui/screens/welcome/WelcomeScreen.kt - REDESIGNED VERSION
 package it.fast4x.rimusic.ui.screens.welcome
 
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
-import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -51,6 +50,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,6 +68,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import kotlin.math.cos
 import kotlin.math.sin
 
 // Key constants matching your WelcomeMessage.kt
@@ -81,7 +82,7 @@ private suspend fun getLocationFromIP(): String? = withContext(Dispatchers.IO) {
         val url = URL("https://ipapi.co/json/")
         val connection = withContext(Dispatchers.IO) { url.openConnection() as HttpURLConnection }
         connection.requestMethod = "GET"
-        connection.connectTimeout = 3000 // Reduced timeout
+        connection.connectTimeout = 3000
         connection.readTimeout = 3000
 
         val responseCode = connection.responseCode
@@ -112,7 +113,7 @@ fun WelcomeScreen(navController: NavController) {
         val hasSeen = DataStoreUtils.getStringBlocking(context, KEY_HAS_SEEN_WELCOME, "")
         userHasSeenWelcome = hasSeen == "true"
         
-        // If city is not set, try to get location from IP (non-blocking)
+        // If city is not set, try to get location from IP
         if (!userHasSeenWelcome) {
             withContext(Dispatchers.IO) {
                 val currentCity = DataStoreUtils.getStringBlocking(context, KEY_CITY, "")
@@ -121,36 +122,36 @@ fun WelcomeScreen(navController: NavController) {
                         val detectedCity = getLocationFromIP() ?: "Nairobi"
                         DataStoreUtils.saveStringBlocking(context, KEY_CITY, detectedCity)
                     } catch (e: Exception) {
-                        // Silently fail, default city will be used
+                        // Silently fail
                     }
                 }
             }
         }
     }
     
-    // Optimized canvas background
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFF000000))
+            .background(Color(0xFF0A0A1A))
     ) {
-        // Performant animated liquid effect
-        LiquidBackground(modifier = Modifier.fillMaxSize())
+        // New custom canvas liquid background
+        CustomLiquidBackground(modifier = Modifier.fillMaxSize())
         
-        // Subtle noise overlay for texture
+        // Subtle stars overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .drawWithCache {
                     onDrawWithContent {
                         drawContent()
-                        // Subtle noise for texture
-                        for (i in 0..100) {
+                        // Subtle stars
+                        for (i in 0..50) {
                             val x = (Math.random() * size.width).toFloat()
                             val y = (Math.random() * size.height).toFloat()
-                            val radius = (Math.random() * 1.5f).toFloat()
+                            val radius = (Math.random() * 1.2f).toFloat()
+                            val alpha = (0.1 + Math.random() * 0.3).toFloat()
                             drawCircle(
-                                color = Color(0x0AFFFFFF),
+                                color = Color.White.copy(alpha = alpha),
                                 radius = radius,
                                 center = Offset(x, y)
                             )
@@ -160,9 +161,9 @@ fun WelcomeScreen(navController: NavController) {
         )
         
         if (userHasSeenWelcome && showWelcome) {
-            // User has already completed welcome, go to home
+            // User has already completed welcome
             LaunchedEffect(Unit) {
-                delay(300) // Reduced delay
+                delay(300)
                 navController.navigate(NavRoutes.home.name) {
                     popUpTo(NavRoutes.welcome.name) { inclusive = true }
                 }
@@ -184,15 +185,14 @@ fun WelcomeScreen(navController: NavController) {
                 Text(
                     text = "Welcome back!",
                     color = Color.White,
-                    fontSize = 16.sp, // Slightly smaller
+                    fontSize = 16.sp,
                     fontWeight = FontWeight.Medium
                 )
             }
         } else if (showWelcome) {
-            // Show welcome screen - CANNOT BE EXITED
+            // Show welcome screen
             WelcomeContent(
                 onComplete = { name, city ->
-                    // Save data to DataStore asynchronously
                     DataStoreUtils.saveStringBlocking(context, KEY_HAS_SEEN_WELCOME, "true")
                     DataStoreUtils.saveStringBlocking(context, KEY_USERNAME, name)
                     if (city.isNotBlank()) {
@@ -204,7 +204,7 @@ fun WelcomeScreen(navController: NavController) {
         } else {
             // Transition to home
             LaunchedEffect(Unit) {
-                delay(300) // Reduced delay
+                delay(300)
                 navController.navigate(NavRoutes.home.name) {
                     popUpTo(NavRoutes.welcome.name) { inclusive = true }
                 }
@@ -237,313 +237,310 @@ fun WelcomeScreen(navController: NavController) {
 @Composable
 fun WelcomeContent(onComplete: (String, String) -> Unit) {
     val context = LocalContext.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    
     var name by remember { mutableStateOf("") }
     var city by remember { mutableStateOf("") }
     var animated by remember { mutableStateOf(false) }
+    
     val alpha by animateFloatAsState(
         targetValue = if (animated) 1f else 0f,
-        animationSpec = tween(durationMillis = 600), // Faster animation
+        animationSpec = tween(durationMillis = 800),
         label = "welcomeAnimation"
     )
+    
     val cardElevation by animateDpAsState(
-        targetValue = if (animated) 8.dp else 0.dp,
-        animationSpec = tween(durationMillis = 800)
+        targetValue = if (animated) 12.dp else 0.dp,
+        animationSpec = tween(durationMillis = 1000)
     )
     
     LaunchedEffect(Unit) {
         animated = true
-        // Load detected city from IP
         city = DataStoreUtils.getStringBlocking(context, KEY_CITY, "")
     }
     
-    Surface(
+    Column(
         modifier = Modifier
             .fillMaxSize()
+            .padding(horizontal = 24.dp)
             .alpha(alpha),
-        color = Color.Transparent
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.SpaceBetween
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(20.dp), // Reduced padding
-            contentAlignment = Alignment.Center
+        // Top spacer for keyboard avoidance
+        Spacer(modifier = Modifier.height(40.dp))
+        
+        // Logo/Icon section
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(top = 20.dp)
         ) {
-            // Decorative floating elements
-            AnimatedFloatingElements()
-            
-            Column(
+            // Animated gradient orb
+            Box(
                 modifier = Modifier
-                    .fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.SpaceBetween
-            ) {
-                Spacer(modifier = Modifier.height(40.dp))
-                
-                // Logo/Icon with optimized animation
-                Box(
-                    modifier = Modifier
-                        .size(100.dp) // Smaller for better performance
-                        .clip(CircleShape)
-                        .background(
-                            Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFFFF6BCB),
-                                    Color(0xFF9C27B0),
-                                    Color(0xFF1A0036)
-                                )
+                    .size(120.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFF6BCB),
+                                Color(0xFF9C27B0),
+                                Color(0xFF1A0036),
+                                Color(0xFF0A0A1A)
+                            ),
+                            center = Offset(0.3f, 0.3f),
+                            radius = 200f
+                        )
+                    )
+                    .border(
+                        width = 2.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFFFF6BCB).copy(alpha = 0.8f),
+                                Color(0xFF9C27B0).copy(alpha = 0.4f)
                             )
-                        )
-                        .border(
-                            width = 1.dp,
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    Color(0xFFFF6BCB),
-                                    Color(0xFF9C27B0)
-                                )
-                            ),
-                            shape = CircleShape
                         ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        painter = painterResource(id = R.drawable.cubic),
-                        contentDescription = "Cubic Logo",
-                        tint = Color.White,
-                        modifier = Modifier.size(48.dp)
-                    )
-                }
-                
-                // Title section
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier
-                        .alpha(if (animated) 1f else 0f)
-                        .padding(horizontal = 20.dp)
-                ) {
-                    Text(
-                        text = "🎵",
-                        color = Color.White,
-                        fontSize = 32.sp, // Smaller
-                        fontWeight = FontWeight.Bold
-                    )
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Text(
-                        text = "Let's get started",
-                        color = Color.White,
-                        fontSize = 22.sp, // Smaller
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 0.5.sp
-                    )
-                    
-                    Text(
-                        text = "Personalize your music journey",
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.Normal,
-                        modifier = Modifier.padding(top = 8.dp)
-                    )
-                }
-                
-                // Input Card
-                ElevatedCard(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .alpha(if (animated) 1f else 0f)
-                        .graphicsLayer {
-                            translationY = cardElevation.value * -0.5f
-                        },
-                    shape = RoundedCornerShape(24.dp),
-                    colors = androidx.compose.material3.CardDefaults.cardColors(
-                        containerColor = Color.White.copy(alpha = 0.08f),
-                        contentColor = Color.White
+                        shape = CircleShape
                     ),
-                    elevation = androidx.compose.material3.CardDefaults.cardElevation(
-                        defaultElevation = cardElevation
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp)
-                    ) {
-                        // Name Input
-                        Text(
-                            text = "Your name",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        
-                        OutlinedTextField(
-                            value = name,
-                            onValueChange = { 
-                                if (it.length <= 14) {
-                                    name = it
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { 
-                                Text(
-                                    "Enter your name",
-                                    color = Color.White.copy(alpha = 0.5f)
-                                ) 
-                            },
-                            singleLine = true,
-                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color(0xFFFF6BCB),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
-                                errorBorderColor = Color(0xFFFF5252)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            supportingText = {
-                                Text(
-                                    text = "${name.length}/14",
-                                    color = if (name.length > 14) Color(0xFFFF5252) else Color.White.copy(alpha = 0.5f),
-                                    fontSize = 11.sp
-                                )
-                            },
-                            isError = name.length > 14
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        // City Input
-                        Text(
-                            text = "Your city (optional)",
-                            color = Color.White,
-                            fontSize = 16.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(bottom = 8.dp)
-                        )
-                        
-                        OutlinedTextField(
-                            value = city,
-                            onValueChange = { 
-                                if (it.length <= 14) {
-                                    city = it
-                                }
-                            },
-                            modifier = Modifier.fillMaxWidth(),
-                            placeholder = { 
-                                Text(
-                                    "e.g., Tokyo, London",
-                                    color = Color.White.copy(alpha = 0.5f)
-                                ) 
-                            },
-                            singleLine = true,
-                            colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = Color.White,
-                                focusedBorderColor = Color(0xFF9C27B0),
-                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f)
-                            ),
-                            shape = RoundedCornerShape(12.dp),
-                            supportingText = {
-                                Text(
-                                    text = "${city.length}/14",
-                                    color = Color.White.copy(alpha = 0.5f),
-                                    fontSize = 11.sp
-                                )
-                            }
-                        )
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        // Helper text
-                        Text(
-                            text = "📍 We'll use this to personalize your experience",
-                            color = Color.White.copy(alpha = 0.5f),
-                            fontSize = 11.sp
-                        )
-                    }
-                }
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    painter = painterResource(id = R.drawable.cubic),
+                    contentDescription = "Cubic Logo",
+                    tint = Color.White,
+                    modifier = Modifier.size(56.dp)
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
+            
+            // Title section
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(horizontal = 20.dp)
+            ) {
+                Text(
+                    text = "🎵 CUBIC MUSIC",
+                    color = Color.White,
+                    fontSize = 28.sp,
+                    fontWeight = FontWeight.Bold,
+                    letterSpacing = 1.sp
+                )
                 
-                // Continue Button
-                Button(
-                    onClick = {
-                        if (name.isNotBlank() && name.length <= 14) {
-                            onComplete(name.trim(), city.trim())
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = "Let's personalize your experience",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Normal,
+                    textAlign = TextAlign.Center
+                )
+            }
+        }
+        
+        // Input Card
+        ElevatedCard(
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer {
+                    translationY = cardElevation.value * -0.3f
+                    shadowElevation = cardElevation.value
+                },
+            shape = RoundedCornerShape(28.dp),
+            colors = androidx.compose.material3.CardDefaults.cardColors(
+                containerColor = Color(0x1AFFFFFF),
+                contentColor = Color.White
+            ),
+            elevation = androidx.compose.material3.CardDefaults.cardElevation(
+                defaultElevation = cardElevation
+            )
+        ) {
+            Column(
+                modifier = Modifier.padding(24.dp)
+            ) {
+                // Name Input - Updated text
+                Text(
+                    text = "What should we call you?",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { 
+                        if (it.length <= 20) {
+                            name = it
                         }
                     },
-                    enabled = name.isNotBlank() && name.length <= 14,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(52.dp)
-                        .clip(RoundedCornerShape(16.dp))
-                        .alpha(if (animated) 1f else 0f),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFFFF6BCB),
-                        contentColor = Color.White,
-                        disabledContainerColor = Color.Gray.copy(alpha = 0.2f),
-                        disabledContentColor = Color.White.copy(alpha = 0.3f)
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { 
+                        Text(
+                            "Enter your name or nickname",
+                            color = Color.White.copy(alpha = 0.5f)
+                        ) 
+                    },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFFFF6BCB),
+                        focusedBorderColor = Color(0xFFFF6BCB),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f),
+                        errorBorderColor = Color(0xFFFF5252)
                     ),
-                    elevation = ButtonDefaults.buttonElevation(
-                        defaultElevation = 4.dp,
-                        pressedElevation = 2.dp,
-                        disabledElevation = 0.dp
+                    shape = RoundedCornerShape(16.dp),
+                    supportingText = {
+                        Text(
+                            text = "${name.length}/20",
+                            color = if (name.length > 20) Color(0xFFFF5252) else Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp
+                        )
+                    },
+                    isError = name.length > 20
+                )
+                
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                // City Input - Clearer purpose
+                Text(
+                    text = "Your city (for weather)",
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(bottom = 12.dp)
+                )
+                
+                OutlinedTextField(
+                    value = city,
+                    onValueChange = { 
+                        if (it.length <= 20) {
+                            city = it
+                        }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                    placeholder = { 
+                        Text(
+                            "e.g., Tokyo, London, New York",
+                            color = Color.White.copy(alpha = 0.5f)
+                        ) 
+                    },
+                    singleLine = true,
+                    colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                        focusedTextColor = Color.White,
+                        unfocusedTextColor = Color.White,
+                        cursorColor = Color(0xFF9C27B0),
+                        focusedBorderColor = Color(0xFF9C27B0),
+                        unfocusedBorderColor = Color.White.copy(alpha = 0.3f)
+                    ),
+                    shape = RoundedCornerShape(16.dp),
+                    supportingText = {
+                        Text(
+                            text = "Used only for weather information",
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 12.sp
+                        )
+                    }
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Helper text
+                Text(
+                    text = "📍 We'll use your city to show local weather",
+                    color = Color.White.copy(alpha = 0.6f),
+                    fontSize = 13.sp,
+                    fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+                )
+            }
+        }
+        
+        // Bottom section
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            modifier = Modifier.padding(bottom = 40.dp)
+        ) {
+            // Continue Button
+            Button(
+                onClick = {
+                    keyboardController?.hide()
+                    if (name.isNotBlank() && name.length <= 20) {
+                        onComplete(name.trim(), city.trim())
+                    }
+                },
+                enabled = name.isNotBlank() && name.length <= 20,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(56.dp)
+                    .clip(RoundedCornerShape(20.dp)),
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = Color(0xFFFF6BCB),
+                    contentColor = Color.White,
+                    disabledContainerColor = Color(0x1AFFFFFF),
+                    disabledContentColor = Color.White.copy(alpha = 0.3f)
+                ),
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 8.dp,
+                    pressedElevation = 4.dp,
+                    disabledElevation = 0.dp
+                )
+            ) {
+                Text(
+                    "Let's Start Listening",
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 17.sp,
+                    letterSpacing = 0.5.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(20.dp))
+            
+            // Terms and Privacy
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Text(
+                    text = "By continuing, you agree to our",
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 12.sp,
+                    textAlign = TextAlign.Center
+                )
+                
+                Box(
+                    modifier = Modifier.clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        onClick = { /* Handle terms click */ }
                     )
                 ) {
                     Text(
-                        "Get Started",
-                        style = MaterialTheme.typography.labelLarge,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        letterSpacing = 0.5.sp
+                        text = "Terms of Service • Privacy Policy",
+                        color = Color(0xFFFF6BCB),
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium,
+                        textAlign = TextAlign.Center
                     )
                 }
                 
-                // Terms and Privacy
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                // Mandatory notice
+                Box(
                     modifier = Modifier
-                        .alpha(if (animated) 1f else 0f)
-                        .padding(bottom = 24.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(
+                            Color(0xFF9C27B0).copy(alpha = 0.15f),
+                            RoundedCornerShape(10.dp)
+                        )
+                        .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Text(
-                        text = "By continuing, you agree to our",
-                        color = Color.White.copy(alpha = 0.5f),
-                        fontSize = 11.sp,
-                        textAlign = TextAlign.Center
+                        text = "✨ Complete setup to begin your music journey",
+                        color = Color.White.copy(alpha = 0.9f),
+                        fontSize = 11.sp
                     )
-                    
-                    Box(
-                        modifier = Modifier.clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            onClick = { /* Handle terms click */ }
-                        )
-                    ) {
-                        Text(
-                            text = "Terms of Service • Privacy Policy",
-                            color = Color(0xFFFF6BCB),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Medium,
-                            textAlign = TextAlign.Center
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    // Mandatory notice
-                    Box(
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(
-                                Color(0xFF9C27B0).copy(alpha = 0.15f),
-                                RoundedCornerShape(8.dp)
-                            )
-                            .padding(horizontal = 12.dp, vertical = 6.dp)
-                    ) {
-                        Text(
-                            text = "✨ Complete this once to begin your journey",
-                            color = Color.White.copy(alpha = 0.8f),
-                            fontSize = 10.sp
-                        )
-                    }
                 }
             }
         }
@@ -553,99 +550,175 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun AnimatedFloatingElements() {
-    // Simple floating circles with minimal animation
-    val density = LocalDensity.current
-    
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .blur(8.dp)
-    ) {
-        // Minimal decorative elements
-        repeat(6) { index ->
-            val size = (20 + index * 8).dp
-            val offsetX = (index * 30).dp
-            val offsetY = (index * 40).dp
-            
-            Box(
-                modifier = Modifier
-                    .size(size)
-                    .graphicsLayer {
-                        alpha = 0.1f
-                        translationX = offsetX.value * density.density
-                        translationY = offsetY.value * density.density
-                    }
-                    .background(
-                        color = Color(0xFFFF6BCB).copy(alpha = 0.1f),
-                        shape = CircleShape
-                    )
-            )
-        }
-    }
+    // Simple floating elements removed for cleaner design
 }
 
 @Composable
-fun LiquidBackground(modifier: Modifier = Modifier) {
+fun CustomLiquidBackground(modifier: Modifier = Modifier) {
     Box(
         modifier = modifier
             .drawWithCache {
                 val width = size.width
                 val height = size.height
-                
-                val liquidBrush = Brush.linearGradient(
-                    colors = listOf(
-                        Color(0xFF1A0036),
-                        Color(0xFF2D0049),
-                        Color(0xFF4A1B6D),
-                        Color(0xFF1A0036)
-                    ),
-                    start = Offset(0f, 0f),
-                    end = Offset(width, height)
-                )
+                val time = System.currentTimeMillis() / 1500f
                 
                 onDrawWithContent {
-                    // Draw base gradient
-                    drawRect(brush = liquidBrush)
+                    // Base dark gradient
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            colors = listOf(
+                                Color(0xFF0A0A1A),  // Deep space black
+                                Color(0xFF1A0036),  // Deep purple
+                                Color(0xFF2D0049),  // Medium purple
+                                Color(0xFF0A0A1A)   // Back to deep space
+                            ),
+                            startY = 0f,
+                            endY = height
+                        )
+                    )
                     
-                    // Simple liquid effect with minimal calculations
-                    val time = System.currentTimeMillis() / 1000f
-                    val waveHeight = 30f
-                    val waveSpeed = 0.5f
+                    // Complex liquid waves with better blending
+                    val waveCount = 4
+                    val waveAmplitude = 35f
+                    val waveSpeed = 0.25f
                     
-                    // Draw waves with clipping for performance
-                    clipRect {
-                        for (i in 0..2) {
-                            val offset = i * 100f
-                            val path = Path().apply {
-                                moveTo(0f, height)
-                                for (x in 0..width.toInt() step 10) {
-                                    val y = height * 0.7f + 
-                                           sin((x + offset + time * waveSpeed * 100) * 0.01f) * waveHeight
-                                    lineTo(x.toFloat(), y)
+                    for (waveIndex in 0 until waveCount) {
+                        val waveOffset = waveIndex * 100f
+                        val wavePhase = waveIndex * 0.7f
+                        val waveHeight = height * (0.6f + waveIndex * 0.08f)
+                        
+                        val path = Path().apply {
+                            moveTo(0f, height)
+                            
+                            // Create smooth wave with cubic bezier for more organic feel
+                            val segments = 40
+                            val segmentWidth = width / segments
+                            
+                            for (segment in 0..segments) {
+                                val x = segment * segmentWidth
+                                val progress = x / width
+                                
+                                // Multi-frequency sine wave for organic movement
+                                val y = waveHeight + 
+                                       sin(x * 0.01f + time * waveSpeed + wavePhase) * waveAmplitude +
+                                       sin(x * 0.023f + time * waveSpeed * 1.3f + wavePhase) * waveAmplitude * 0.5f +
+                                       cos(x * 0.005f + time * waveSpeed * 0.7f + wavePhase) * waveAmplitude * 0.3f
+                                
+                                if (segment == 0) {
+                                    moveTo(x, y)
+                                } else {
+                                    // Use quadratic bezier for smoother curves
+                                    val prevX = (segment - 1) * segmentWidth
+                                    val prevY = waveHeight + 
+                                               sin(prevX * 0.01f + time * waveSpeed + wavePhase) * waveAmplitude +
+                                               sin(prevX * 0.023f + time * waveSpeed * 1.3f + wavePhase) * waveAmplitude * 0.5f +
+                                               cos(prevX * 0.005f + time * waveSpeed * 0.7f + wavePhase) * waveAmplitude * 0.3f
+                                    
+                                    val controlX = (prevX + x) / 2
+                                    val controlY = (prevY + y) / 2 - waveAmplitude * 0.5f
+                                    
+                                    quadraticBezierTo(controlX, controlY, x, y)
                                 }
-                                lineTo(width, height)
-                                close()
                             }
                             
-                            drawPath(
-                                path = path,
-                                color = Color(0xFF9C27B0).copy(alpha = 0.1f + i * 0.05f),
-                                blendMode = BlendMode.Screen
-                            )
+                            lineTo(width, height)
+                            close()
                         }
-                    }
-                    
-                    // Draw subtle particles
-                    for (i in 0..20) {
-                        val x = (Math.random() * width).toFloat()
-                        val y = (Math.random() * height).toFloat()
-                        val radius = (Math.random() * 3f).toFloat()
-                        drawCircle(
-                            color = Color(0xFFFF6BCB).copy(alpha = 0.05f),
-                            radius = radius,
-                            center = Offset(x, y)
+                        
+                        // Gradient wave colors
+                        val waveGradient = Brush.verticalGradient(
+                            0.0f to when (waveIndex) {
+                                0 -> Color(0xFFFF6BCB).copy(alpha = 0.15f)
+                                1 -> Color(0xFF9C27B0).copy(alpha = 0.12f)
+                                2 -> Color(0xFF673AB7).copy(alpha = 0.09f)
+                                else -> Color(0xFF4A1B6D).copy(alpha = 0.06f)
+                            },
+                            1.0f to Color.Transparent
+                        )
+                        
+                        drawPath(
+                            path = path,
+                            brush = waveGradient,
+                            blendMode = BlendMode.Screen
                         )
                     }
+                    
+                    // Floating orbs/bubbles
+                    for (i in 0..15) {
+                        val radius = (10 + Math.random() * 40).toFloat()
+                        val x = (Math.random() * width).toFloat()
+                        val y = (Math.random() * height * 0.7f).toFloat()
+                        val orbTime = time * (0.5f + Math.random().toFloat() * 0.5f)
+                        val floatX = x + sin(orbTime * 0.5f + i) * 30f
+                        val floatY = y + cos(orbTime * 0.3f + i) * 20f
+                        val pulse = 0.7f + sin(orbTime * 0.8f) * 0.3f
+                        
+                        val orbColor = when (i % 3) {
+                            0 -> Color(0xFFFF6BCB).copy(alpha = 0.08f * pulse)
+                            1 -> Color(0xFF9C27B0).copy(alpha = 0.06f * pulse)
+                            else -> Color(0xFF4A1B6D).copy(alpha = 0.04f * pulse)
+                        }
+                        
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    orbColor,
+                                    orbColor.copy(alpha = 0f)
+                                ),
+                                center = Offset(floatX, floatY),
+                                radius = radius * 1.5f
+                            ),
+                            radius = radius,
+                            center = Offset(floatX, floatY),
+                            blendMode = BlendMode.Screen
+                        )
+                    }
+                    
+                    // Subtle glow effect in center
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFFFF6BCB).copy(alpha = 0.05f),
+                                Color(0xFF9C27B0).copy(alpha = 0.03f),
+                                Color.Transparent
+                            ),
+                            center = Offset(width / 2, height / 2),
+                            radius = width * 0.4f
+                        ),
+                        radius = width * 0.4f,
+                        center = Offset(width / 2, height / 2),
+                        blendMode = BlendMode.Screen
+                    )
+                    
+                    // Noise texture for depth
+                    for (i in 0..80) {
+                        val x = (Math.random() * width).toFloat()
+                        val y = (Math.random() * height).toFloat()
+                        val size = (Math.random() * 2f).toFloat()
+                        val alpha = (0.01 + Math.random() * 0.03).toFloat()
+                        
+                        drawCircle(
+                            color = Color.White.copy(alpha = alpha),
+                            radius = size,
+                            center = Offset(x, y),
+                            blendMode = BlendMode.Overlay
+                        )
+                    }
+                    
+                    // Vignette effect
+                    val vignette = Brush.radialGradient(
+                        colors = listOf(
+                            Color.Transparent,
+                            Color(0xFF000000).copy(alpha = 0.3f)
+                        ),
+                        center = Offset(width / 2, height / 2),
+                        radius = width * 0.8f
+                    )
+                    
+                    drawRect(
+                        brush = vignette,
+                        blendMode = BlendMode.Overlay
+                    )
                 }
             }
     )
