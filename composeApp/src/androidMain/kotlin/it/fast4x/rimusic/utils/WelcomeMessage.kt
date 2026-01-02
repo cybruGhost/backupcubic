@@ -756,11 +756,11 @@ private suspend fun getLocationFromIP(): String? {
             val reader = BufferedReader(InputStreamReader(connection.inputStream))
             val response = reader.use { it.readText() }
             val json = JSONObject(response)
-            json.optString("city", "Nairobi")
-        } else "Nairobi"
+            json.optString("city", "invalid city")
+        } else "API failed, just key in your city"
     } catch (e: Exception) {
         e.printStackTrace()
-        "Nairobi"
+        "failure happened, just key in ur city"
     }
 }
 
