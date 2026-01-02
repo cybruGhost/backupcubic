@@ -157,6 +157,18 @@ import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
 import kotlin.random.Random
 import java.time.LocalDate
 
+// ===== NOTIFICATION DATA CLASS =====
+data class NotificationData(
+    val version: String,
+    val url: String,
+    val title: String,
+    val contents: String,
+    val show: Boolean,
+    val is_force: Boolean,
+    val force_update: Boolean,
+    val isUpdate: Boolean
+)
+// ===== END NOTIFICATION DATA CLASS ===== 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @ExperimentalTextApi
@@ -229,6 +241,11 @@ val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
     val showTips by rememberPreference(showTipsKey, true)
     val showCharts by rememberPreference(showChartsKey, true)
 
+    // ===== NOTIFICATION MESSAGE =====
+var notificationResult by persist<Result<NotificationData?>?>("home/notification")
+var notificationInit by persist<NotificationData?>("home/notification")
+// ===== END NOTIFICATION MESSAGE =====
+
     val refreshScope = rememberCoroutineScope()
     val last50Year: Duration = 18250.days
     val from = last50Year.inWholeMilliseconds
@@ -252,7 +269,38 @@ val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
 if (showCharts)
     chartsPageResult =
         Innertube.chartsPageComplete(countryCode = selectedCountryCode.name)
-
+  // ===== FETCH NOTIFICATION =====
+    notificationResult = runCatching {
+        // Replace with your JSON URL
+        val url = "https://v0-spotify-playlist-csv.vercel.app/notification.json"
+        val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.connectTimeout = 5000
+        connection.readTimeout = 5000
+        
+        if (connection.responseCode == java.net.HttpURLConnection.HTTP_OK) {
+            val response = connection.inputStream.bufferedReader().use { it.readText() }
+            
+            // Simple JSON parsing
+            val json = org.json.JSONObject(response)
+            val notificationJson = json.getJSONObject("notification")
+            
+            NotificationData(
+                version = notificationJson.getString("version"),
+                url = notificationJson.getString("url"),
+                title = notificationJson.getString("title"),
+                contents = notificationJson.getString("contents"),
+                show = notificationJson.getBoolean("show"),
+                is_force = notificationJson.getBoolean("is_force"),
+                force_update = notificationJson.getBoolean("force_update"),
+                isUpdate = notificationJson.getBoolean("isUpdate")
+            )
+        } else {
+            null
+        }
+    }
+    // ===== END FETCH NOTIFICATION =====
+    
 if (loadedData) return
 
 runCatching {
@@ -503,6 +551,11 @@ runCatching {
 
                 // Not saved/cached to preference
                 chartsPageInit = chartsPageResult?.getOrNull()
+                
+// ===== INITIALIZE NOTIFICATION =====
+notificationInit = notificationResult?.getOrNull()
+// ===== END INITIALIZE NOTIFICATION =====
+
 
                 if (homePagePreference != null) {
                     when (loadedData) {
@@ -673,7 +726,73 @@ runCatching {
 
                     if (relatedPageResult == null) Loader()
                 }
-
+               // ===== NOTIFICATION MESSAGE SECTION =====
+                // This appears BETWEEN "For You" and "New Albums"
+                notificationInit?.let { notification ->
+                    if (notification.show) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (notification.isUpdate) 
+                                        colorPalette().accent.copy(alpha = 0.1f)
+                                    else 
+                                        colorPalette().background1
+                                )
+                                .clickable {
+                                    // Open URL when clicked
+                                    val intent = android.content.Intent(
+                                        android.content.Intent.ACTION_VIEW,
+                                        android.net.Uri.parse(notification.url)
+                                    )
+                                    context.startActivity(intent)
+                                }
+                                .padding(16.dp)
+                        ) {
+                            Column {
+                                // Title
+                                BasicText(
+                                    text = notification.title,
+                                    style = typography().m.bold.color(
+                                        if (notification.isUpdate) 
+                                            colorPalette().accent 
+                                        else 
+                                            colorPalette().text
+                                    ),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                
+                                Spacer(modifier = Modifier.height(8.dp))
+                                
+                                // Message
+                                BasicText(
+                                    text = notification.contents,
+                                    style = typography().s.color(colorPalette().text),
+                                    maxLines = 3,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                
+                                // Version info if it's an update
+                                if (notification.isUpdate) {
+                                    Spacer(modifier = Modifier.height(8.dp))
+                                    BasicText(
+                                        text = "Version: ${notification.version}",
+                                        style = typography().xs.secondary,
+                                        maxLines = 1
+                                    )
+                                }
+                            }
+                        }
+                        
+                        Spacer(modifier = Modifier.height(16.dp))
+                    }
+                }
+                // ===== END NOTIFICATION MESSAGE SECTION =====
 
                 discoverPageInit?.let { page ->
                     val artists by remember {
