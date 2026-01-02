@@ -145,6 +145,11 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
+import coil.compose.AsyncImage
+import coil.compose.rememberAsyncImagePainter
+import coil.request.ImageRequest
+// checkupdate
+import app.kreate.android.BuildConfig
 
 //rewind
 import androidx.compose.foundation.layout.Box
@@ -166,9 +171,38 @@ data class NotificationData(
     val show: Boolean,
     val is_force: Boolean,
     val force_update: Boolean,
-    val isUpdate: Boolean
+    val isUpdate: Boolean,
+    val imageUrl: String? = null
 )
 // ===== END NOTIFICATION DATA CLASS ===== 
+
+// ===== VERSION COMPARISON =====
+fun isNewerVersion(jsonVersion: String, appVersion: String): Boolean {
+    try {
+        // Remove 'v' prefix and any suffixes (like -beta, -release)
+        val cleanJson = jsonVersion.removePrefix("v").split("-").first()
+        val cleanApp = appVersion.removePrefix("v").split("-").first()
+        
+        // Split by dots
+        val jsonParts = cleanJson.split(".").map { it.toIntOrNull() ?: 0 }
+        val appParts = cleanApp.split(".").map { it.toIntOrNull() ?: 0 }
+        
+        // Compare each part
+        for (i in 0 until maxOf(jsonParts.size, appParts.size)) {
+            val jsonPart = jsonParts.getOrElse(i) { 0 }
+            val appPart = appParts.getOrElse(i) { 0 }
+            
+            if (jsonPart > appPart) return true
+            if (jsonPart < appPart) return false
+        }
+        
+        return false  // Versions are equal
+    } catch (e: Exception) {
+        Timber.e("Error comparing versions: $e")
+        return false
+    }
+}
+// ===== END VERSION COMPARISON =====
 
 @OptIn(ExperimentalMaterial3Api::class)
 @ExperimentalTextApi
@@ -241,9 +275,10 @@ val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
     val showTips by rememberPreference(showTipsKey, true)
     val showCharts by rememberPreference(showChartsKey, true)
 
-    // ===== NOTIFICATION MESSAGE =====
-var notificationResult by persist<Result<NotificationData?>?>("home/notification")
-var notificationInit by persist<NotificationData?>("home/notification")
+// ===== NOTIFICATION MESSAGE =====
+// CHANGE THESE LINES (remove persist):
+var notificationResult by remember { mutableStateOf<Result<NotificationData?>?>(null) }
+var notificationInit by remember { mutableStateOf<NotificationData?>(null) }
 // ===== END NOTIFICATION MESSAGE =====
 
     val refreshScope = rememberCoroutineScope()
@@ -272,7 +307,7 @@ if (showCharts)
   // ===== FETCH NOTIFICATION =====
     notificationResult = runCatching {
         // Replace with your JSON URL
-        val url = "https://v0-spotify-playlist-csv.vercel.app/notification.json"
+        val url = "https://raw.githubusercontent.com/cybruGhost/waigwe/main/storex/notification.json"
         val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         connection.requestMethod = "GET"
         connection.connectTimeout = 5000
@@ -293,7 +328,8 @@ if (showCharts)
                 show = notificationJson.getBoolean("show"),
                 is_force = notificationJson.getBoolean("is_force"),
                 force_update = notificationJson.getBoolean("force_update"),
-                isUpdate = notificationJson.getBoolean("isUpdate")
+                isUpdate = notificationJson.getBoolean("isUpdate"),
+                imageUrl = notificationJson.optString("imageUrl", null)
             )
         } else {
             null
@@ -422,21 +458,26 @@ runCatching {
 
     var refreshing by remember { mutableStateOf(false) }
 
-    fun refresh() {
-        if (refreshing) return
-        trendingList = emptyList()
-        loadedData = false
-        relatedPageResult = null
-        relatedInit = null
-        trending = null
-        refreshScope.launch(Dispatchers.IO) {
-            refreshing = true
-            loadData()
-            delay(500)
-            refreshing = false
-        }
+fun refresh() {
+    if (refreshing) return
+    trendingList = emptyList()
+    loadedData = false
+    relatedPageResult = null
+    relatedInit = null
+    trending = null
+    
+    // ===== CLEAR NOTIFICATION CACHE =====
+    notificationResult = null
+    notificationInit = null
+    // ===== END CLEAR NOTIFICATION CACHE =====
+    
+    refreshScope.launch(Dispatchers.IO) {
+        refreshing = true
+        loadData()
+        delay(500)
+        refreshing = false
     }
-
+}
     val songThumbnailSizeDp = Dimensions.thumbnails.song
     val songThumbnailSizePx = songThumbnailSizeDp.px
     val albumThumbnailSizeDp = 108.dp
@@ -726,74 +767,127 @@ notificationInit = notificationResult?.getOrNull()
 
                     if (relatedPageResult == null) Loader()
                 }
-               // ===== NOTIFICATION MESSAGE SECTION =====
-                // This appears BETWEEN "For You" and "New Albums"
-                notificationInit?.let { notification ->
-                    if (notification.show) {
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    if (notification.isUpdate) 
-                                        colorPalette().accent.copy(alpha = 0.1f)
-                                    else 
-                                        colorPalette().background1
-                                )
-                                .clickable {
-                                    // Open URL when clicked
-                                    val intent = android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW,
-                                        android.net.Uri.parse(notification.url)
-                                    )
-                                    context.startActivity(intent)
-                                }
-                                .padding(16.dp)
-                        ) {
-                            Column {
-                                // Title
-                                BasicText(
-                                    text = notification.title,
-                                    style = typography().m.bold.color(
-                                        if (notification.isUpdate) 
-                                            colorPalette().accent 
-                                        else 
-                                            colorPalette().text
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                
-                                Spacer(modifier = Modifier.height(8.dp))
-                                
-                                // Message
-                                BasicText(
-                                    text = notification.contents,
-                                    style = typography().s.color(colorPalette().text),
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-                                
-                                // Version info if it's an update
-                                if (notification.isUpdate) {
-                                    Spacer(modifier = Modifier.height(8.dp))
-                                    BasicText(
-                                        text = "Version: ${notification.version}",
-                                        style = typography().xs.secondary,
-                                        maxLines = 1
-                                    )
-                                }
-                            }
-                        }
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                    }
+// ===== NOTIFICATION MESSAGE SECTION =====
+notificationInit?.let { notification ->
+    // Get current app version
+    val currentVersion = BuildConfig.VERSION_NAME  // e.g., "v1.7.4"
+    
+    // DEBUG: Print versions to log
+    Timber.d("JSON Version: ${notification.version}, App Version: $currentVersion")
+    
+    // Check if JSON version is NEWER than app version
+    val hasNewUpdate = isNewerVersion(notification.version, currentVersion)
+    
+    // DEBUG: Print comparison result
+    Timber.d("isNewerVersion result: $hasNewUpdate")
+    
+    // ONLY show emergency emoji if force_update is true
+    val showEmergency = notification.force_update && hasNewUpdate
+    
+    if (notification.show) {
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 16.dp)
+                .clip(RoundedCornerShape(12.dp))
+                .background(
+                    // Use accent color ONLY for emergency force updates
+                    if (showEmergency) 
+                        colorPalette().accent.copy(alpha = 0.1f)
+                    else 
+                        colorPalette().background1
+                )
+                .clickable {
+                    val intent = android.content.Intent(
+                        android.content.Intent.ACTION_VIEW,
+                        android.net.Uri.parse(notification.url)
+                    )
+                    context.startActivity(intent)
                 }
-                // ===== END NOTIFICATION MESSAGE SECTION =====
-
+        ) {
+            Column(modifier = Modifier.padding(16.dp)) {
+                // IMAGE (only if exists and not blank)
+                notification.imageUrl?.takeIf { it.isNotBlank() }?.let { imageUrl ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = notification.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(120.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                }
+                
+                // TITLE
+                BasicText(
+                    text = notification.title,
+                    style = typography().m.bold.color(
+                        // Red color ONLY for emergency updates
+                        if (showEmergency) 
+                            Color(0xFFD32F2F)  // Red color
+                        else 
+                            colorPalette().text
+                    ),
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // MESSAGE
+                BasicText(
+                    text = notification.contents,
+                    style = typography().s.color(
+                        if (showEmergency) 
+                            Color(0xFFD32F2F)  // Red color
+                        else 
+                            colorPalette().text
+                    ),
+                    maxLines = 3,
+                    overflow = TextOverflow.Ellipsis
+                )
+                
+                // VERSION INFO (SMALL TEXT at bottom)
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                if (hasNewUpdate) {
+                    // NEW UPDATE AVAILABLE
+                    BasicText(
+                        text = "Update available: ${notification.version} (You have: $currentVersion)",
+                        style = typography().xs.secondary,
+                        maxLines = 1
+                    )
+                    
+                    // EMERGENCY WARNING (only if force_update = true)
+                    if (showEmergency) {
+                        Spacer(modifier = Modifier.height(4.dp))
+                        BasicText(
+                            text = "⚠️ URGENT: This update fixes critical issues",
+                            style = typography().xxs.bold.color(Color(0xFFD32F2F)),
+                            maxLines = 1
+                        )
+                    }
+                } else {
+                    // YOU HAVE LATEST VERSION
+                    BasicText(
+                        text = "Latest version: $currentVersion",
+                        style = typography().xs.secondary,
+                        maxLines = 1
+                    )
+                }
+            }
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+    }
+}
+// ===== END NOTIFICATION MESSAGE SECTION =====
                 discoverPageInit?.let { page ->
                     val artists by remember {
                         Database.artistTable
