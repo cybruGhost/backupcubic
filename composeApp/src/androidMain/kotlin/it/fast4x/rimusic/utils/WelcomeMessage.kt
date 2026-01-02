@@ -745,7 +745,7 @@ private suspend fun fetchWeatherData(city: String): WeatherData? = withContext(D
 // FIXED: Using the new ipapi.co API with proper error handling
 private suspend fun getLocationFromIP(): String? {
     return try {
-        val url = URL("https://ipapi.co/json/")
+        val url = URL("https://ipinfo.io/json/")
         val connection = withContext(Dispatchers.IO) { url.openConnection() as HttpURLConnection }
         connection.requestMethod = "GET"
         connection.connectTimeout = 5000
