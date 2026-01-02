@@ -70,6 +70,8 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import kotlin.math.cos
 import kotlin.math.sin
+import androidx.compose.ui.platform.LocalUriHandler
+import android.net.Uri
 
 // Key constants matching your WelcomeMessage.kt
 private const val KEY_USERNAME = "username"
@@ -79,7 +81,7 @@ private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
 // Copy the getLocationFromIP function here since it's private in utils
 private suspend fun getLocationFromIP(): String? = withContext(Dispatchers.IO) {
     return@withContext try {
-        val url = URL("https://ipapi.co/json/")
+        val url = URL("https://ipinfo.io/json/")
         val connection = withContext(Dispatchers.IO) { url.openConnection() as HttpURLConnection }
         connection.requestMethod = "GET"
         connection.connectTimeout = 3000
@@ -92,11 +94,11 @@ private suspend fun getLocationFromIP(): String? = withContext(Dispatchers.IO) {
             reader.close()
             connection.disconnect()
             val json = JSONObject(response)
-            json.optString("city", "Nairobi")
-        } else "Nairobi"
+            json.optString("city", "invalid city")
+        } else "API failed, just key in your city"
     } catch (e: Exception) {
         e.printStackTrace()
-        "Nairobi"
+        "failure happened, just key in ur city"
     }
 }
 
@@ -237,6 +239,7 @@ fun WelcomeScreen(navController: NavController) {
 @Composable
 fun WelcomeContent(onComplete: (String, String) -> Unit) {
     val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current // ← ADD THIS
     val keyboardController = LocalSoftwareKeyboardController.current
     
     var name by remember { mutableStateOf("") }
@@ -320,9 +323,9 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                 modifier = Modifier.padding(horizontal = 20.dp)
             ) {
                 Text(
-                    text = "🎵 CUBIC MUSIC",
+                    text = "CUBIC MUSIC",
                     color = Color.White,
-                    fontSize = 28.sp,
+                    fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
                     letterSpacing = 1.sp
                 )
@@ -361,7 +364,7 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
             ) {
                 // Name Input - Updated text
                 Text(
-                    text = "What should we call you?",
+                    text = "What should I call you😍?",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -378,7 +381,7 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                     modifier = Modifier.fillMaxWidth(),
                     placeholder = { 
                         Text(
-                            "Enter your name or nickname",
+                            "Enter your 👻 nickname",
                             color = Color.White.copy(alpha = 0.5f)
                         ) 
                     },
@@ -406,7 +409,7 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                 
                 // City Input - Clearer purpose
                 Text(
-                    text = "Your city (for weather)",
+                    text = "Your City",
                     color = Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.SemiBold,
@@ -438,7 +441,7 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                     shape = RoundedCornerShape(16.dp),
                     supportingText = {
                         Text(
-                            text = "Used only for weather information",
+                            text = "Used only for weather updates",
                             color = Color.White.copy(alpha = 0.5f),
                             fontSize = 12.sp
                         )
@@ -449,7 +452,7 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                 
                 // Helper text
                 Text(
-                    text = "📍 We'll use your city to show local weather",
+                    text = "📍All features work without retaining user data.",
                     color = Color.White.copy(alpha = 0.6f),
                     fontSize = 13.sp,
                     fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
@@ -512,7 +515,9 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                 Box(
                     modifier = Modifier.clickable(
                         interactionSource = remember { MutableInteractionSource() },
-                        onClick = { /* Handle terms click */ }
+                        onClick = {
+                        uriHandler.openUri("https://thecub4.vercel.app/legal")
+                    }
                     )
                 ) {
                     Text(
@@ -537,7 +542,7 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
                         .padding(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Text(
-                        text = "✨ Complete setup to begin your music journey",
+                        text = "✨ Almost there",
                         color = Color.White.copy(alpha = 0.9f),
                         fontSize = 11.sp
                     )
