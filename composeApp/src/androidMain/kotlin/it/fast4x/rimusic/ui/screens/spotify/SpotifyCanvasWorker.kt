@@ -7,11 +7,14 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import it.fast4x.rimusic.LocalPlayerServiceBinder
 import it.fast4x.rimusic.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cache
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -20,19 +23,49 @@ import java.io.File
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+data class LogEntry(
+    val message: String,
+    val type: LogType,
+    val timestamp: Long = System.currentTimeMillis()
+)
+
+enum class LogType {
+    ERROR, SUCCESS, LOADING, INFO, WARNING
+}
+
 object SpotifyCanvasState {
-    var currentCanvasUrl: String? = null
-    var isLoading: Boolean = false
-    var error: String? = null
-    var logMessages: MutableList<String> = mutableListOf()
-    var currentTrackId: String? = null  // Changed from private to public
+    var currentCanvasUrl: String? by mutableStateOf(null)
+    var isLoading: Boolean by mutableStateOf(false)
+    var error: String? by mutableStateOf(null)
+    var logEntries: MutableList<LogEntry> by mutableStateOf(mutableListOf())
+    var currentTrackId: String? by mutableStateOf(null)
+    var currentMediaItemId: String? by mutableStateOf(null)
+    var isPlaying: Boolean by mutableStateOf(false) // Track if video should be playing
+    
+    private const val MAX_LOG_ENTRIES = 15
+    
+    fun addLog(message: String, type: LogType = LogType.INFO) {
+        synchronized(logEntries) {
+            logEntries.add(LogEntry(message, type))
+            // Keep only last N logs
+            if (logEntries.size > MAX_LOG_ENTRIES) {
+                logEntries = logEntries.takeLast(MAX_LOG_ENTRIES).toMutableList()
+            }
+        }
+    }
     
     fun clear() {
         currentCanvasUrl = null
         currentTrackId = null
+        currentMediaItemId = null
         error = null
         isLoading = false
-        logMessages.clear()
+        isPlaying = false
+        addLog("Canvas state cleared", LogType.INFO)
+    }
+    
+    fun clearError() {
+        error = null
     }
 }
 
@@ -45,39 +78,39 @@ fun SpotifyCanvasWorker() {
     val userEmail by rememberPreference("spotifyUserEmail", "")
     val showLogs by rememberPreference("showSpotifyCanvasLogs", false)
     
-    LaunchedEffect(binder?.player?.currentMediaItem, isCanvasEnabled, userEmail) {
+    LaunchedEffect(binder?.player, isCanvasEnabled, userEmail) {
         if (binder == null || !isCanvasEnabled || userEmail.isEmpty()) {
             SpotifyCanvasState.clear()
             return@LaunchedEffect
         }
         
-        val mediaItem = binder.player.currentMediaItem ?: return@LaunchedEffect
-        val title = mediaItem.mediaMetadata.title?.toString() ?: ""
-        val artist = mediaItem.mediaMetadata.artist?.toString() ?: ""
-        
-        SpotifyCanvasState.clear()
-        SpotifyCanvasState.isLoading = true
-        
-        if (showLogs) {
-            SpotifyCanvasState.logMessages.add("Starting canvas fetch for: $title")
-        }
-        
-        try {
-            val result = withContext(Dispatchers.IO) {
-                fetchSpotifyCanvas(context, title, artist, userEmail, showLogs)
-            }
+        snapshotFlow { 
+            binder.player.currentMediaItem?.mediaId
+        }.collect { mediaId ->
+            if (mediaId == null) return@collect
             
-            if (showLogs) {
-                SpotifyCanvasState.logMessages.add("Canvas fetch completed")
+            // Clear previous canvas only if song changed
+            if (mediaId != SpotifyCanvasState.currentMediaItemId) {
+                SpotifyCanvasState.clear()
+                SpotifyCanvasState.currentMediaItemId = mediaId
+                
+                val title = binder.player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
+                val artist = binder.player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
+                
+                if (title.isNotBlank() && artist.isNotBlank()) {
+                    fetchCanvasForSong(context, title, artist, userEmail, showLogs, mediaId)
+                }
             }
-        } catch (e: Exception) {
-            SpotifyCanvasState.error = "Failed to load canvas"
-            if (showLogs) {
-                SpotifyCanvasState.logMessages.add("Error: ${e.message}")
-                SpotifyCanvasState.logMessages.add("Tip: Check email or try another song")
-            }
-        } finally {
-            SpotifyCanvasState.isLoading = false
+        }
+    }
+    
+    // Monitor player state to control video playback
+    LaunchedEffect(binder?.player) {
+        if (binder == null) return@LaunchedEffect
+        
+        snapshotFlow { binder.player.playWhenReady }.collect { isPlaying ->
+            SpotifyCanvasState.isPlaying = isPlaying
+            SpotifyCanvasState.addLog("Player state: ${if (isPlaying) "Playing" else "Paused"}", LogType.INFO)
         }
     }
     
@@ -88,25 +121,72 @@ fun SpotifyCanvasWorker() {
     }
 }
 
-private suspend fun fetchSpotifyCanvas(
+private suspend fun fetchCanvasForSong(
+    context: android.content.Context,
+    title: String,
+    artist: String,
+    userEmail: String,
+    showLogs: Boolean,
+    mediaId: String
+) {
+    SpotifyCanvasState.isLoading = true
+    
+    if (showLogs) {
+        SpotifyCanvasState.addLog("Fetching canvas for: $title - $artist", LogType.LOADING)
+    }
+    
+    try {
+        val canvasUrl = withTimeoutOrNull(10000) { // 10 second timeout
+            withContext(Dispatchers.IO) {
+                fetchSpotifyCanvas(context, title, artist, userEmail, showLogs)
+            }
+        }
+        
+        if (canvasUrl != null) {
+            SpotifyCanvasState.currentCanvasUrl = canvasUrl
+            SpotifyCanvasState.isPlaying = true // Start playing
+            
+            if (showLogs) {
+                SpotifyCanvasState.addLog("Canvas loaded successfully", LogType.SUCCESS)
+                SpotifyCanvasState.addLog("Canvas will loop until song changes", LogType.INFO)
+            }
+        } else {
+            if (showLogs) {
+                SpotifyCanvasState.addLog("No canvas available for this track", LogType.WARNING)
+            }
+        }
+    } catch (e: Exception) {
+        SpotifyCanvasState.error = "Failed to load canvas"
+        if (showLogs) {
+            SpotifyCanvasState.addLog("Error: ${e.message}", LogType.ERROR)
+        }
+    } finally {
+        SpotifyCanvasState.isLoading = false
+    }
+}
+
+private fun fetchSpotifyCanvas(
     context: android.content.Context,
     title: String,
     artist: String,
     userEmail: String,
     showLogs: Boolean
 ): String? {
+    // Use smaller cache to save memory
     val cacheDir = File(context.cacheDir, "spotify_canvas")
     if (!cacheDir.exists()) cacheDir.mkdirs()
     
+    // Optimized OkHttpClient with memory constraints
     val client = OkHttpClient.Builder()
-        .cache(Cache(cacheDir, 10 * 1024 * 1024))
-        .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(15, TimeUnit.SECONDS)
+        .cache(Cache(cacheDir, 5 * 1024 * 1024)) // Reduced to 5MB
+        .connectTimeout(10, TimeUnit.SECONDS)    // Reduced timeout
+        .readTimeout(10, TimeUnit.SECONDS)
+        .retryOnConnectionFailure(true)
         .addInterceptor { chain ->
             val request = chain.request()
             val response = chain.proceed(request)
             response.newBuilder()
-                .header("Cache-Control", "public, max-age=60")
+                .header("Cache-Control", "public, max-age=300") // 5 minute cache
                 .build()
         }
         .build()
@@ -115,87 +195,88 @@ private suspend fun fetchSpotifyCanvas(
     val encodedEmail = java.net.URLEncoder.encode(userEmail, "UTF-8")
     val encodedArtist = java.net.URLEncoder.encode(artist, "UTF-8")
     
+    // Step 1: Find Spotify track ID
     val conversionUrl = "https://v0-spotify-playlist-csv.vercel.app/api/youtube-to-spotify" +
         "?title=$encodedTitle" +
         "&email=$encodedEmail" +
         "&author=$encodedArtist"
     
     if (showLogs) {
-        SpotifyCanvasState.logMessages.add("Step 1: Finding Spotify track...")
+        SpotifyCanvasState.addLog("Step 1: Finding Spotify track...", LogType.LOADING)
     }
     
     val conversionRequest = Request.Builder()
         .url(conversionUrl)
         .header("Accept", "application/json")
+        .header("User-Agent", "CubicMusicApp/1.0")
         .build()
     
-    val conversionResponse = client.newCall(conversionRequest).execute()
-    
-    if (!conversionResponse.isSuccessful) {
-        val errorCode = conversionResponse.code
-        val errorMessage = when (errorCode) {
-            401 -> "Token expired. Re-authenticate on website"
-            404 -> "Track not found on Spotify"
-            429 -> "Too many requests. Try later"
-            else -> "API error ($errorCode)"
+    val conversionResponse = try {
+        client.newCall(conversionRequest).execute()
+    } catch (e: IOException) {
+        if (showLogs) {
+            SpotifyCanvasState.addLog("Network error: ${e.message}", LogType.ERROR)
         }
-        SpotifyCanvasState.error = errorMessage
-        throw IOException(errorMessage)
-    }
-    
-    val conversionJson = conversionResponse.body?.string() ?: ""
-    val trackId = parseTrackId(conversionJson)
-    
-    if (trackId == null) {
-        SpotifyCanvasState.error = "Could not find track"
         return null
     }
     
-    SpotifyCanvasState.currentTrackId = trackId
-    
-    if (showLogs) {
-        SpotifyCanvasState.logMessages.add("Found track ID: ${trackId.take(8)}...")
+    if (!conversionResponse.isSuccessful) {
+        if (showLogs) {
+            SpotifyCanvasState.addLog("Conversion API error: ${conversionResponse.code}", LogType.WARNING)
+        }
+        return null
     }
     
+    val conversionJson = conversionResponse.body?.use { it.string() } ?: ""
+    val trackId = parseTrackId(conversionJson)
+    
+    if (trackId == null) {
+        if (showLogs) {
+            SpotifyCanvasState.addLog("Could not extract track ID", LogType.ERROR)
+        }
+        return null
+    }
+    
+    if (showLogs) {
+        SpotifyCanvasState.addLog("Found track ID: ${trackId.take(8)}...", LogType.SUCCESS)
+    }
+    
+    // Step 2: Fetch Canvas URL
     val canvasUrl = "https://spotifyapi-gamma.vercel.app/api/canvas?trackId=$trackId"
     
     if (showLogs) {
-        SpotifyCanvasState.logMessages.add("Step 2: Loading canvas video...")
+        SpotifyCanvasState.addLog("Step 2: Loading canvas video...", LogType.LOADING)
     }
     
     val canvasRequest = Request.Builder()
         .url(canvasUrl)
         .header("Accept", "application/json")
+        .header("User-Agent", "CubicMusicApp/1.0")
         .build()
     
-    val canvasResponse = client.newCall(canvasRequest).execute()
-    
-    if (!canvasResponse.isSuccessful) {
+    val canvasResponse = try {
+        client.newCall(canvasRequest).execute()
+    } catch (e: IOException) {
         if (showLogs) {
-            SpotifyCanvasState.logMessages.add("No canvas available for this track")
+            SpotifyCanvasState.addLog("Canvas API network error", LogType.ERROR)
         }
         return null
     }
     
-    val canvasJson = canvasResponse.body?.string() ?: ""
-    val canvasVideoUrl = parseCanvasUrl(canvasJson)
-    
-    SpotifyCanvasState.currentCanvasUrl = canvasVideoUrl
-    
-    if (showLogs) {
-        if (canvasVideoUrl != null) {
-            SpotifyCanvasState.logMessages.add("Canvas loaded successfully")
-        } else {
-            SpotifyCanvasState.logMessages.add("No canvas video found")
+    if (!canvasResponse.isSuccessful) {
+        if (showLogs) {
+            SpotifyCanvasState.addLog("Canvas API error: ${canvasResponse.code}", LogType.WARNING)
         }
+        return null
     }
     
-    return canvasVideoUrl
+    val canvasJson = canvasResponse.body?.use { it.string() } ?: ""
+    return parseCanvasUrl(canvasJson)
 }
 
 private fun parseTrackId(json: String): String? {
     return try {
-        JSONObject(json).getString("trackId")
+        JSONObject(json).optString("trackId").takeIf { it.isNotBlank() }
     } catch (e: Exception) {
         null
     }
@@ -203,10 +284,14 @@ private fun parseTrackId(json: String): String? {
 
 private fun parseCanvasUrl(json: String): String? {
     return try {
-        val canvases = JSONObject(json).getJSONArray("canvasesList")
-        if (canvases.length() > 0) {
-            canvases.getJSONObject(0).getString("canvasUrl")
-        } else null
+        val canvases = JSONObject(json).optJSONArray("canvasesList")
+        canvases?.let {
+            if (it.length() > 0) {
+                it.getJSONObject(0).optString("canvasUrl").takeIf { url -> 
+                    url.isNotBlank() && url.startsWith("https://")
+                }
+            } else null
+        }
     } catch (e: Exception) {
         null
     }
