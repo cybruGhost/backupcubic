@@ -253,6 +253,17 @@ import me.knighthat.utils.Toaster
 import kotlin.Float.Companion.POSITIVE_INFINITY
 import kotlin.math.absoluteValue
 import kotlin.math.sqrt
+// ADD THESE IMPORTS
+import it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasWorker
+import it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasState
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.MimeTypes
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.AspectRatioFrameLayout
+import androidx.media3.ui.PlayerView
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.ui.unit.sp
+import androidx.compose.foundation.layout.width
 
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -321,6 +332,10 @@ fun Player(
     var swipeAnimationNoThumbnail by rememberPreference( swipeAnimationsNoThumbnailKey, SwipeAnimationNoThumbnail.Sliding )
     val expandPlayerState = rememberPreference( expandedplayerKey, false )
     var expandedplayer by expandPlayerState
+    // ADD THIS FOR SPOTIFY CANVAS
+val spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
+val spotifyUserEmail by rememberPreference("spotifyUserEmail", "")
+val showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
 
 
     if (binder.player.currentTimeline.windowCount == 0) return
@@ -1125,7 +1140,8 @@ fun Player(
     }
 
     blurAdjuster.Render()
-
+// ADD THIS LINE: Start the Spotify Canvas Worker
+SpotifyCanvasWorker()
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -1953,28 +1969,164 @@ fun Player(
                     )
                 }
 
-                BoxWithConstraints(
-                    contentAlignment = Alignment.Center,
+BoxWithConstraints(
+    contentAlignment = Alignment.Center,
+    modifier = Modifier
+        .conditional((screenWidth <= (screenHeight / 2)) && (showlyricsthumbnail || (!expandedplayer && !isShowingLyrics))) {height(screenWidth)}
+        .conditional((screenWidth > (screenHeight / 2)) || expandedplayer || (isShowingLyrics && !showlyricsthumbnail)) {weight(1f)}
+) {
+    
+    // Check if we should show Spotify Canvas
+    val shouldShowCanvas = spotifyCanvasEnabled && 
+        SpotifyCanvasState.currentCanvasUrl != null && 
+        !isShowingLyrics && 
+        !isShowingVisualizer &&
+        showthumbnail
+
+    if (shouldShowCanvas) {
+        // Show Spotify Canvas video (full screen)
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Black)
+        ) {
+            // Video player implementation
+            val canvasUrl = SpotifyCanvasState.currentCanvasUrl
+            if (canvasUrl != null) {
+                // Use ExoPlayer for video playback
+                AndroidView(
+                    factory = { context ->
+                        val playerView = PlayerView(context)
+                        val player = ExoPlayer.Builder(context).build()
+                        
+                        // Configure player
+                        player.playWhenReady = true
+                        player.repeatMode = Player.REPEAT_MODE_ALL
+                        
+                        // Create media item
+                        val mediaItem = MediaItem.Builder()
+                            .setUri(canvasUrl)
+                            .setMimeType(MimeTypes.VIDEO_MP4)
+                            .build()
+                        
+                        player.setMediaItem(mediaItem)
+                        player.prepare()
+                        playerView.player = player
+                        
+                        // Set video scaling
+                        playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
+                        playerView.useController = false // Hide controls for canvas
+                        
+                        playerView
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+                
+                // Clean up player when leaving
+                DisposableEffect(Unit) {
+                    onDispose {
+                        // Player cleanup will be handled by AndroidView
+                    }
+                }
+            }
+            
+            // Show error or loading state
+            SpotifyCanvasState.error?.let { error ->
+                BasicText(
+                    text = error,
+                    style = typography().xs.copy(
+                        color = Color.Red.copy(alpha = 0.8f),
+                        fontSize = 10.sp
+                    ),
                     modifier = Modifier
-                        .conditional((screenWidth <= (screenHeight / 2)) && (showlyricsthumbnail || (!expandedplayer && !isShowingLyrics))) {height(screenWidth)}
-                        .conditional((screenWidth > (screenHeight / 2)) || expandedplayer || (isShowingLyrics && !showlyricsthumbnail)) {weight(1f)}
-                ) {
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            
+        // Show logs if enabled - FIX THIS SECTION
+        if (showSpotifyCanvasLogs) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 40.dp, start = 8.dp)
+                    .background(Color.Black.copy(alpha = 0.7f))
+                    .padding(4.dp)
+                    .width(280.dp) // Limit width
+            ) {
+                if (SpotifyCanvasState.logMessages.isEmpty()) {
+                    BasicText(
+                        text = "No logs yet",
+                        style = typography().xxs.copy(
+                            color = Color.White.copy(alpha = 0.5f),
+                            fontSize = 8.sp
+                        )
+                    )
+                } else {
+                    SpotifyCanvasState.logMessages.takeLast(5).forEach { log ->
+                        BasicText(
+                            text = "• $log",
+                            style = typography().xxs.copy(
+                                color = Color.White.copy(alpha = 0.7f),
+                                fontSize = 8.sp
+                            ),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(vertical = 2.dp)
+                        )
+                    }
+                }
+            }
+        }
+            
+            // Show loading indicator
+            if (SpotifyCanvasState.isLoading) {
+                BasicText(
+                    text = "Loading canvas...",
+                    style = typography().xs.copy(
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 10.sp
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 8.dp)
+                        .background(Color.Black.copy(alpha = 0.5f))
+                        .padding(horizontal = 8.dp, vertical = 4.dp)
+                )
+            }
+            
+            // Small canvas indicator at bottom
+            BasicText(
+                text = "🎵 Spotify Canvas",
+                style = typography().xxs.copy(
+                    color = Color.White.copy(alpha = 0.5f),
+                    fontSize = 8.sp
+                ),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 8.dp, bottom = 8.dp)
+                    .background(Color.Black.copy(alpha = 0.3f))
+                    .padding(horizontal = 6.dp, vertical = 2.dp)
+            )
+        }
+    } else if (showthumbnail) {
+        // Fall back to original thumbnail if no canvas
+        if ((!isShowingLyrics && !isShowingVisualizer) || (isShowingVisualizer && showvisthumbnail) || (isShowingLyrics && showlyricsthumbnail)) {
+            if (playerType == PlayerType.Modern) {
+                val fling = PagerDefaults.flingBehavior(state = pagerState,snapPositionalThreshold = 0.25f)
 
-                      if (showthumbnail) {
-                         if ((!isShowingLyrics && !isShowingVisualizer) || (isShowingVisualizer && showvisthumbnail) || (isShowingLyrics && showlyricsthumbnail)) {
-                             if (playerType == PlayerType.Modern) {
-                                 val fling = PagerDefaults.flingBehavior(state = pagerState,snapPositionalThreshold = 0.25f)
+                pagerState.LaunchedEffectScrollToPage(binder.player.currentMediaItemIndex)
 
-                                 pagerState.LaunchedEffectScrollToPage(binder.player.currentMediaItemIndex)
-
-                                 LaunchedEffect(pagerState) {
-                                     var previousPage = pagerState.settledPage
-                                     snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect {
-                                         if ( previousPage != it && it != binder.player.currentMediaItemIndex )
-                                             binder.player.playAtIndex(it)
-                                         previousPage = it
-                                     }
-                                 }
+                LaunchedEffect(pagerState) {
+                    var previousPage = pagerState.settledPage
+                    snapshotFlow { pagerState.settledPage }.distinctUntilChanged().collect {
+                        if ( previousPage != it && it != binder.player.currentMediaItemIndex )
+                            binder.player.playAtIndex(it)
+                        previousPage = it
+                    }
+                }
 
                                  val pageSpacing = (thumbnailSpacing.toInt()*0.01*(screenHeight) - if (carousel) (3*carouselSize.size.dp) else (2*playerThumbnailSize.size.dp))
                                  val animatePageSpacing by animateDpAsState(

@@ -17,6 +17,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.width
+
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Icon
 import androidx.compose.ui.res.painterResource
@@ -132,7 +136,14 @@ import it.fast4x.rimusic.ui.components.themed.InputTextDialog
 
 import me.knighthat.component.dialog.RestartAppDialog
 import me.knighthat.component.tab.Search
-
+// ADD THESE IMPORTS FOR SPOTIFY CANVAS
+import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.sp
+import it.fast4x.rimusic.ui.components.themed.DefaultDialog
+import android.content.Intent
+import android.net.Uri
 
 @ExperimentalAnimationApi
 @UnstableApi
@@ -149,6 +160,7 @@ fun GeneralSettings(
         exoPlayerMinTimeForEventKey,
         ExoPlayerMinTimeForEvent.`20s`
     )
+// If you don't see these lines, ADD THEM HERE
     var persistentQueue by rememberPreference(persistentQueueKey, false)
     var resumePlaybackOnStart by rememberPreference(resumePlaybackOnStartKey, false)
     var closebackgroundPlayer by rememberPreference(closebackgroundPlayerKey, false)
@@ -343,6 +355,222 @@ fun GeneralSettings(
          }
 
          Spacer(modifier = Modifier.height(16.dp))
+
+// ============================================================
+// SPOTIFY CANVAS SECTION - ADD THIS BETWEEN LANGUAGE & NOTIFICATIONS
+// ============================================================
+AnimatedVisibility(
+    visible = true,
+    enter = androidx.compose.animation.fadeIn(animationSpec = androidx.compose.animation.core.tween(650)) + androidx.compose.animation.scaleIn(
+        animationSpec = androidx.compose.animation.core.tween(650),
+        initialScale = 0.9f
+    )
+) {
+    SettingsSectionCard(
+        title = "Spotify Canvas",
+        icon = R.drawable.spotifycanvas,  // You need to add this drawable
+        content = {
+            val context = LocalContext.current
+            
+            // Use var for mutable preferences
+            var spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
+            var spotifyUserEmail by rememberPreference("spotifyUserEmail", "")
+            var showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
+            
+            // Dialog states
+            var showEmailDialog by remember { mutableStateOf(false) }
+            var showDisconnectDialog by remember { mutableStateOf(false) }
+            var tempEmail by remember { mutableStateOf(spotifyUserEmail) }
+            
+            // Main toggle for Spotify Canvas
+            if (search.inputValue.isBlank() || "Spotify Canvas".contains(search.inputValue, true)) {
+                OtherSwitchSettingEntry(
+                    title = "Spotify Canvas",
+                    text = "Show animated canvas videos in player",
+                    isChecked = spotifyCanvasEnabled,
+                    onCheckedChange = { newValue ->
+                        // Use a separate variable to avoid reassignment issues
+                        val shouldShowDisconnect = !newValue && spotifyUserEmail.isNotEmpty()
+                        spotifyCanvasEnabled = newValue
+                        
+                        if (shouldShowDisconnect) {
+                            showDisconnectDialog = true
+                        }
+                    },
+                    icon = R.drawable.spotifycanvas
+                )
+            }
+            
+            // Email settings (only shown when enabled)
+            if (spotifyCanvasEnabled) {
+                // Email display/input
+                Column(
+                    modifier = Modifier.padding(start = 25.dp)
+                ) {
+                    // Email status
+                    OtherSettingsEntry(
+                        title = if (spotifyUserEmail.isEmpty()) "Not connected" else "Connected",
+                        text = if (spotifyUserEmail.isEmpty()) "Tap to add email" else spotifyUserEmail,
+                        onClick = { 
+                            if (spotifyUserEmail.isEmpty()) {
+                                // Open browser for authentication
+                                try {
+                                    val intent = Intent(Intent.ACTION_VIEW)
+                                    intent.data = Uri.parse("https://v0-spotify-playlist-csv.vercel.app/")
+                                    context.startActivity(intent)
+                                } catch (e: Exception) {
+                                    // Handle error
+                                }
+                                // Then show email dialog
+                                tempEmail = ""
+                                showEmailDialog = true
+                            } else {
+                                // Edit existing email
+                                tempEmail = spotifyUserEmail
+                                showEmailDialog = true
+                            }
+                        },
+                        icon = if (spotifyUserEmail.isEmpty()) R.drawable.message else R.drawable.information
+                    )
+                    
+                    // Instructions
+                    if (spotifyUserEmail.isEmpty()) {
+                        SettingsDescription(
+                            text = "1. Tap above to open website\n2. Sign in with Spotify\n3. Return here and enter email",
+                            modifier = Modifier.fillMaxWidth(),
+                            textAlign = TextAlign.Start
+                        )
+                    }
+                    
+                    // Debug logs toggle
+                    OtherSwitchSettingEntry(
+                        title = "Show debug logs",
+                        text = "Show canvas fetching information",
+                        isChecked = showSpotifyCanvasLogs,
+                        onCheckedChange = { newValue -> showSpotifyCanvasLogs = newValue },
+                        icon = R.drawable.information
+                    )
+                    
+                    // Disconnect button (only if connected)
+                    if (spotifyUserEmail.isNotEmpty()) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color.Red.copy(alpha = 0.1f))
+                                .clickable { showDisconnectDialog = true }
+                                .padding(horizontal = 12.dp, vertical = 8.dp)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.close),
+                                    contentDescription = null,
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                                Spacer(modifier = Modifier.width(8.dp))
+                                androidx.compose.foundation.text.BasicText(
+                                    text = "Disconnect Spotify",
+                                    style = typography().s.semiBold.copy(
+                                        color = Color.Red
+                                    )
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Email input dialog
+            if (showEmailDialog) {
+                // Create a simple dialog instead of DefaultDialog if it doesn't have buttons parameter
+                androidx.compose.material3.AlertDialog(
+                    onDismissRequest = { showEmailDialog = false },
+                    title = {
+                        androidx.compose.foundation.text.BasicText(
+                            text = "Spotify Canvas Email",
+                            style = typography().l.semiBold
+                        )
+                    },
+                    text = {
+                        Column {
+                            androidx.compose.foundation.text.BasicText(
+                                text = "Enter the email you used to sign in to Spotify Canvas website",
+                                style = typography().s,
+                                modifier = Modifier.padding(bottom = 16.dp)
+                            )
+                            
+                            androidx.compose.material3.OutlinedTextField(
+                                value = tempEmail,
+                                onValueChange = { tempEmail = it },
+                                label = { androidx.compose.material3.Text("Email address") },
+                                placeholder = { androidx.compose.material3.Text("user@example.com") },
+                                modifier = Modifier.fillMaxWidth()
+                            )
+                            
+                            Spacer(modifier = Modifier.height(16.dp))
+                            
+                            androidx.compose.foundation.text.BasicText(
+                                text = "Note: You must first authenticate at:\nv0-spotify-playlist-csv.vercel.app",
+                                style = typography().xs.copy(
+                                    color = Color.Gray,
+                                    fontSize = 10.sp
+                                )
+                            )
+                        }
+                    },
+                    confirmButton = {
+                        androidx.compose.material3.TextButton(
+                            onClick = {
+                                if (tempEmail.isNotBlank() && tempEmail.contains("@")) {
+                                    spotifyUserEmail = tempEmail
+                                    showEmailDialog = false
+                                }
+                            },
+                            enabled = tempEmail.isNotBlank() && tempEmail.contains("@")
+                        ) {
+                            androidx.compose.material3.Text("Save")
+                        }
+                    },
+                    dismissButton = {
+                        androidx.compose.material3.TextButton(
+                            onClick = { showEmailDialog = false }
+                        ) {
+                            androidx.compose.material3.Text("Cancel")
+                        }
+                    }
+                )
+            }
+            
+            // Disconnect confirmation dialog
+            if (showDisconnectDialog) {
+                ConfirmationDialog(
+                    text = "Disconnect Spotify Canvas?\nThis will remove your email and disable the feature.",
+                    onDismiss = { showDisconnectDialog = false },
+                    onConfirm = {
+                        // Create mutable copies to reassign
+                        val mutableEmail = spotifyUserEmail
+                        val mutableEnabled = spotifyCanvasEnabled
+                        
+                        // Clear values
+                        spotifyUserEmail = ""
+                        spotifyCanvasEnabled = false
+                        showDisconnectDialog = false
+                    },
+                    confirmText = "Disconnect"
+                )
+            }
+        }
+    )
+}
+
+Spacer(modifier = Modifier.height(16.dp))
+// ============================================================
+// END OF SPOTIFY CANVAS SECTION
+// ============================================================
 
          // Notifications Section
          AnimatedVisibility(
