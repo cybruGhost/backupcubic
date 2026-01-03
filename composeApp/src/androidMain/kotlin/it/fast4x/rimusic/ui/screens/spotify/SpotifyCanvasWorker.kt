@@ -9,10 +9,10 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
+import androidx.media3.common.Player
 import it.fast4x.rimusic.LocalPlayerServiceBinder
 import it.fast4x.rimusic.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cache
@@ -40,7 +40,8 @@ object SpotifyCanvasState {
     var logEntries: MutableList<LogEntry> by mutableStateOf(mutableListOf())
     var currentTrackId: String? by mutableStateOf(null)
     var currentMediaItemId: String? by mutableStateOf(null)
-    var isPlaying: Boolean by mutableStateOf(false) // Track if video should be playing
+    var isPlaying: Boolean by mutableStateOf(false)
+    var shouldFetch: Boolean by mutableStateOf(true) // NEW: Control when to fetch
     
     private const val MAX_LOG_ENTRIES = 15
     
@@ -61,11 +62,16 @@ object SpotifyCanvasState {
         error = null
         isLoading = false
         isPlaying = false
+        shouldFetch = true // Reset fetch flag
         addLog("Canvas state cleared", LogType.INFO)
     }
     
     fun clearError() {
         error = null
+    }
+    
+    fun markForFetch() {
+        shouldFetch = true
     }
 }
 
@@ -85,17 +91,28 @@ fun SpotifyCanvasWorker() {
         }
         
         snapshotFlow { 
-            binder.player.currentMediaItem?.mediaId
-        }.collect { mediaId ->
+            Triple(
+                binder.player.currentMediaItem?.mediaId,
+                binder.player.currentMediaItem?.mediaMetadata?.title?.toString() ?: "",
+                binder.player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
+            )
+        }.collect { (mediaId, title, artist) ->
             if (mediaId == null) return@collect
             
-            // Clear previous canvas only if song changed
-            if (mediaId != SpotifyCanvasState.currentMediaItemId) {
+            // Check if song changed OR if we need to fetch for current song
+            if (mediaId != SpotifyCanvasState.currentMediaItemId || SpotifyCanvasState.shouldFetch) {
+                if (showLogs) {
+                    if (mediaId != SpotifyCanvasState.currentMediaItemId) {
+                        SpotifyCanvasState.addLog("Song changed: $title - $artist", LogType.INFO)
+                    } else {
+                        SpotifyCanvasState.addLog("Refetching canvas for current song", LogType.INFO)
+                    }
+                }
+                
+                // Clear previous state
                 SpotifyCanvasState.clear()
                 SpotifyCanvasState.currentMediaItemId = mediaId
-                
-                val title = binder.player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
-                val artist = binder.player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
+                SpotifyCanvasState.shouldFetch = false // Reset fetch flag
                 
                 if (title.isNotBlank() && artist.isNotBlank()) {
                     fetchCanvasForSong(context, title, artist, userEmail, showLogs, mediaId)
@@ -110,7 +127,16 @@ fun SpotifyCanvasWorker() {
         
         snapshotFlow { binder.player.playWhenReady }.collect { isPlaying ->
             SpotifyCanvasState.isPlaying = isPlaying
-            SpotifyCanvasState.addLog("Player state: ${if (isPlaying) "Playing" else "Paused"}", LogType.INFO)
+            if (showLogs) {
+                SpotifyCanvasState.addLog("Player state: ${if (isPlaying) "Playing" else "Paused"}", LogType.INFO)
+            }
+        }
+    }
+    
+    // Force refetch when enabled or email changes
+    LaunchedEffect(isCanvasEnabled, userEmail) {
+        if (isCanvasEnabled && userEmail.isNotEmpty()) {
+            SpotifyCanvasState.markForFetch()
         }
     }
     
@@ -172,21 +198,19 @@ private fun fetchSpotifyCanvas(
     userEmail: String,
     showLogs: Boolean
 ): String? {
-    // Use smaller cache to save memory
     val cacheDir = File(context.cacheDir, "spotify_canvas")
     if (!cacheDir.exists()) cacheDir.mkdirs()
     
-    // Optimized OkHttpClient with memory constraints
     val client = OkHttpClient.Builder()
-        .cache(Cache(cacheDir, 5 * 1024 * 1024)) // Reduced to 5MB
-        .connectTimeout(10, TimeUnit.SECONDS)    // Reduced timeout
+        .cache(Cache(cacheDir, 5 * 1024 * 1024))
+        .connectTimeout(10, TimeUnit.SECONDS)
         .readTimeout(10, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .addInterceptor { chain ->
             val request = chain.request()
             val response = chain.proceed(request)
             response.newBuilder()
-                .header("Cache-Control", "public, max-age=300") // 5 minute cache
+                .header("Cache-Control", "public, max-age=300")
                 .build()
         }
         .build()
@@ -236,6 +260,8 @@ private fun fetchSpotifyCanvas(
         }
         return null
     }
+    
+    SpotifyCanvasState.currentTrackId = trackId
     
     if (showLogs) {
         SpotifyCanvasState.addLog("Found track ID: ${trackId.take(8)}...", LogType.SUCCESS)
