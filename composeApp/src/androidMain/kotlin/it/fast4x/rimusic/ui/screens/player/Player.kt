@@ -265,6 +265,15 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.unit.sp
 import androidx.compose.foundation.layout.width
 
+// Add these imports with your other imports:
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.CornerRadius
+import it.fast4x.rimusic.ui.screens.spotify.LogEntry
+import it.fast4x.rimusic.ui.screens.spotify.LogType
+import android.content.Context
+
 
 @OptIn(ExperimentalMaterial3Api::class)
 @ExperimentalTextApi
@@ -1972,8 +1981,12 @@ SpotifyCanvasWorker()
 BoxWithConstraints(
     contentAlignment = Alignment.Center,
     modifier = Modifier
-        .conditional((screenWidth <= (screenHeight / 2)) && (showlyricsthumbnail || (!expandedplayer && !isShowingLyrics))) {height(screenWidth)}
-        .conditional((screenWidth > (screenHeight / 2)) || expandedplayer || (isShowingLyrics && !showlyricsthumbnail)) {weight(1f)}
+        .conditional((screenWidth <= (screenHeight / 2)) && (showlyricsthumbnail || (!expandedplayer && !isShowingLyrics))) { 
+            height(screenWidth) 
+        }
+        .conditional((screenWidth > (screenHeight / 2)) || expandedplayer || (isShowingLyrics && !showlyricsthumbnail)) { 
+            weight(1f) 
+        }
 ) {
     
     // Check if we should show Spotify Canvas
@@ -1984,132 +1997,280 @@ BoxWithConstraints(
         showthumbnail
 
     if (shouldShowCanvas) {
-        // Show Spotify Canvas video (full screen)
+        // Professional Spotify Canvas Video Player
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color.Black.copy(alpha = 0.9f),
+                            Color.Black.copy(alpha = 0.7f),
+                            Color.Black.copy(alpha = 0.5f)
+                        ),
+                        center = Offset(0.5f, 0.5f),
+                        radius = maxWidth.value * 0.8f
+                    )
+                )
         ) {
-            // Video player implementation
-            val canvasUrl = SpotifyCanvasState.currentCanvasUrl
-            if (canvasUrl != null) {
-                // Use ExoPlayer for video playback
-                AndroidView(
-                    factory = { context ->
-                        val playerView = PlayerView(context)
-                        val player = ExoPlayer.Builder(context).build()
+            // Edge fade gradients for depth
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .drawBehind {
+                        // Top edge fade
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Black.copy(alpha = 0.8f),
+                                    Color.Transparent
+                                ),
+                                startY = 0f,
+                                endY = size.height * 0.1f
+                            )
+                        )
+                        // Bottom edge fade
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.8f)
+                                ),
+                                startY = size.height * 0.9f,
+                                endY = size.height
+                            )
+                        )
+                        // Radial edge fade
+                        drawCircle(
+                            brush = Brush.radialGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Black.copy(alpha = 0.6f)
+                                ),
+                                center = Offset(size.width / 2, size.height / 2),
+                                radius = size.minDimension * 0.45f
+                            ),
+                            blendMode = BlendMode.DstOut
+                        )
+                    }
+            )
+            
+// Video player with proper scaling and continuous looping
+val canvasUrl = SpotifyCanvasState.currentCanvasUrl
+if (canvasUrl != null) {
+    // Optimized ExoPlayer with proper configuration
+    AndroidView(
+        factory = { context ->
+            val playerView = PlayerView(context).apply {
+                // Configure for optimal performance
+                resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                useController = false
+                setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+                setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                
+                // Player configuration for smooth playback
+                val player = ExoPlayer.Builder(context)
+                    .setSeekForwardIncrementMs(15000)
+                    .setSeekBackIncrementMs(5000)
+                    .build().apply {
+                        // Set playWhenReady based on player state
+                        playWhenReady = SpotifyCanvasState.isPlaying
                         
-                        // Configure player
-                        player.playWhenReady = true
-                        player.repeatMode = Player.REPEAT_MODE_ALL
+                        // Loop INFINITELY until song changes
+                        repeatMode = Player.REPEAT_MODE_ALL
                         
-                        // Create media item
+                        // Create media item with better configuration
                         val mediaItem = MediaItem.Builder()
                             .setUri(canvasUrl)
                             .setMimeType(MimeTypes.VIDEO_MP4)
                             .build()
                         
-                        player.setMediaItem(mediaItem)
-                        player.prepare()
-                        playerView.player = player
+                        setMediaItem(mediaItem)
+                        prepare()
                         
-                        // Set video scaling
-                        playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FILL
-                        playerView.useController = false // Hide controls for canvas
+                        // Performance optimizations for better video quality
+                        videoScalingMode = 2 // C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING = 2
                         
-                        playerView
-                    },
-                    modifier = Modifier.fillMaxSize()
-                )
-                
-                // Clean up player when leaving
-                DisposableEffect(Unit) {
-                    onDispose {
-                        // Player cleanup will be handled by AndroidView
+                        // Add listener to handle playback state
+                        addListener(object : Player.Listener {
+                            override fun onPlaybackStateChanged(playbackState: Int) {
+                                when (playbackState) {
+                                    Player.STATE_ENDED -> {
+                                        // Video ended, seek to start and play again
+                                        seekTo(0)
+                                        play()
+                                    }
+                                    Player.STATE_READY -> {
+                                        // Video ready, play if should be playing
+                                        if (SpotifyCanvasState.isPlaying) {
+                                            play()
+                                        }
+                                    }
+                                }
+                            }
+                        })
                     }
+                
+                this.player = player
+            }
+            playerView
+        },
+        update = { playerView ->
+            // Update player state when SpotifyCanvasState.isPlaying changes
+            playerView.player?.playWhenReady = SpotifyCanvasState.isPlaying
+            if (SpotifyCanvasState.isPlaying) {
+                playerView.player?.play()
+            } else {
+                playerView.player?.pause()
+            }
+        },
+        modifier = Modifier
+            .fillMaxSize()
+            .clip(RoundedCornerShape(16.dp))
+            .graphicsLayer {
+                // Subtle scale for depth
+                scaleX = 0.98f
+                scaleY = 0.98f
+                shape = RoundedCornerShape(16.dp)
+                clip = true
+            }
+    )
+    
+    // Clean up player when song changes or component disposes
+    DisposableEffect(Unit) {
+        onDispose {
+            // Player will be cleaned up by AndroidView lifecycle
+        }
+    }
+}
+            // Professional Log Panel
+            if (showSpotifyCanvasLogs) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(top = 48.dp, start = 12.dp)
+                        .width(300.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(Color.Black.copy(alpha = 0.85f))
+                        .drawBehind {
+                            drawRoundRect(
+                                color = Color.White.copy(alpha = 0.1f),
+                                style = Stroke(width = 1f),
+                                cornerRadius = CornerRadius(12.dp.toPx())
+                            )
+                        }
+                        .padding(12.dp)
+                ) {
+                    // Log Header
+                    Row(
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        BasicText(
+                            text = "Canvas Logs",
+                            style = typography().xs.copy(
+                                color = Color.White.copy(alpha = 0.8f),
+                                fontSize = 12.sp
+                            )
+                        )
+                        
+                        Box(
+                            modifier = Modifier
+                                .background(Color.White.copy(alpha = 0.1f), RoundedCornerShape(4.dp))
+                                .padding(horizontal = 6.dp, vertical = 2.dp)
+                        ) {
+                            BasicText(
+                                text = "${SpotifyCanvasState.logEntries.size}",
+                                style = typography().xxs.copy(
+                                    color = Color.White.copy(alpha = 0.6f),
+                                    fontSize = 10.sp
+                                )
+                            )
+                        }
+                    }
+                    
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Scrollable Log Entries
+                    if (SpotifyCanvasState.logEntries.isNotEmpty()) {
+                        val lastLogs = SpotifyCanvasState.logEntries.takeLast(8)
+                        Column(
+                            modifier = Modifier
+                                .height(180.dp)
+                                .fillMaxWidth()
+                                .verticalScroll(rememberScrollState())
+                        ) {
+                            lastLogs.forEach { log ->
+                                LogEntryItem(log)
+                            }
+                        }
+                    } else {
+                        BasicText(
+                            text = "No logs yet",
+                            style = typography().xxs.copy(
+                                color = Color.White.copy(alpha = 0.5f),
+                                fontSize = 10.sp
+                            ),
+                            modifier = Modifier.padding(vertical = 16.dp)
+                        )
+                    }
+                    
+                    // Fade effect at bottom
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(20.dp)
+                            .align(Alignment.CenterHorizontally)
+                            .drawBehind {
+                                drawRect(
+                                    brush = Brush.verticalGradient(
+                                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.85f)),
+                                        startY = 0f,
+                                        endY = size.height
+                                    )
+                                )
+                            }
+                    )
                 }
             }
             
-            // Show error or loading state
-            SpotifyCanvasState.error?.let { error ->
-                BasicText(
-                    text = error,
-                    style = typography().xs.copy(
-                        color = Color.Red.copy(alpha = 0.8f),
-                        fontSize = 10.sp
-                    ),
-                    modifier = Modifier
-                        .align(Alignment.TopCenter)
-                        .padding(top = 8.dp)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-            
-        // Show logs if enabled - FIX THIS SECTION
-        if (showSpotifyCanvasLogs) {
-            Column(
+            // Clean Cubic Canvas Badge
+            Box(
                 modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(top = 40.dp, start = 8.dp)
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 16.dp)
+                    .clip(RoundedCornerShape(8.dp))
                     .background(Color.Black.copy(alpha = 0.7f))
-                    .padding(4.dp)
-                    .width(280.dp) // Limit width
+                    .drawBehind {
+                        drawRoundRect(
+                            color = Color.White.copy(alpha = 0.15f),
+                            style = Stroke(width = 1f),
+                            cornerRadius = CornerRadius(8.dp.toPx())
+                        )
+                    }
+                    .shadow(4.dp, RoundedCornerShape(8.dp))
+                    .padding(horizontal = 12.dp, vertical = 8.dp)
             ) {
-                if (SpotifyCanvasState.logMessages.isEmpty()) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
                     BasicText(
-                        text = "No logs yet",
+                        text = "CUBIC CANVAS",
                         style = typography().xxs.copy(
-                            color = Color.White.copy(alpha = 0.5f),
+                            color = Color.White,
+                            fontSize = 10.sp
+                        )
+                    )
+                    BasicText(
+                        text = "VISUAL EXPERIENCE",
+                        style = typography().xxs.copy(
+                            color = Color.White.copy(alpha = 0.6f),
                             fontSize = 8.sp
                         )
                     )
-                } else {
-                    SpotifyCanvasState.logMessages.takeLast(5).forEach { log ->
-                        BasicText(
-                            text = "• $log",
-                            style = typography().xxs.copy(
-                                color = Color.White.copy(alpha = 0.7f),
-                                fontSize = 8.sp
-                            ),
-                            maxLines = 2,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(vertical = 2.dp)
-                        )
-                    }
                 }
             }
-        }
-            
-            // Show loading indicator
-            if (SpotifyCanvasState.isLoading) {
-                BasicText(
-                    text = "Loading canvas...",
-                    style = typography().xs.copy(
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 10.sp
-                    ),
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(bottom = 8.dp)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .padding(horizontal = 8.dp, vertical = 4.dp)
-                )
-            }
-            
-            // Small canvas indicator at bottom
-            BasicText(
-                text = "🎵 Spotify Canvas",
-                style = typography().xxs.copy(
-                    color = Color.White.copy(alpha = 0.5f),
-                    fontSize = 8.sp
-                ),
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 8.dp)
-                    .background(Color.Black.copy(alpha = 0.3f))
-                    .padding(horizontal = 6.dp, vertical = 2.dp)
-            )
         }
     } else if (showthumbnail) {
         // Fall back to original thumbnail if no canvas
@@ -2479,6 +2640,106 @@ BoxWithConstraints(
 
     }
 
+}
+@Composable
+private fun LogEntryItem(log: LogEntry) {
+    val logColor = when (log.type) {
+        LogType.ERROR -> Color.Red
+        LogType.SUCCESS -> Color.Green
+        LogType.LOADING -> Color.Cyan
+        LogType.WARNING -> Color.Yellow
+        LogType.INFO -> Color.White
+        else -> Color.White // Add this else branch to make when exhaustive
+    }
+    
+    val timestampColor = Color.White.copy(alpha = 0.4f)
+    
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 2.dp)
+    ) {
+        // Timestamp indicator dot
+        Box(
+            modifier = Modifier
+                .size(6.dp)
+                .clip(CircleShape)
+                .background(logColor.copy(alpha = 0.7f))
+        )
+        
+        Spacer(modifier = Modifier.width(8.dp))
+        
+        Column(modifier = Modifier.weight(1f)) {
+            BasicText(
+                text = log.message,
+                style = typography().xxs.copy(
+                    color = logColor.copy(alpha = 0.9f),
+                    fontSize = 10.sp
+                ),
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+            
+            // Faded timestamp
+            BasicText(
+                text = formatAsTime(log.timestamp),
+                style = typography().xxs.copy(
+                    color = timestampColor,
+                    fontSize = 8.sp
+                )
+            )
+        }
+    }
+}
+// Helper function to format timestamp
+private fun formatAsTime(timestamp: Long): String {
+    val minutes = (timestamp / 60000) % 60
+    val seconds = (timestamp / 1000) % 60
+    return String.format("%02d:%02d", minutes, seconds)
+}
+
+private fun setupCanvasPlayer(
+    context: Context,
+    canvasUrl: String,
+    isPlaying: Boolean
+): PlayerView {
+    return PlayerView(context).apply {
+        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+        useController = false
+        setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
+        setBackgroundColor(android.graphics.Color.TRANSPARENT)
+        
+        val player = ExoPlayer.Builder(context)
+            .setSeekForwardIncrementMs(15000)
+            .setSeekBackIncrementMs(5000)
+            .build().apply {
+                playWhenReady = isPlaying
+                repeatMode = Player.REPEAT_MODE_ALL
+                
+                val mediaItem = MediaItem.Builder()
+                    .setUri(canvasUrl)
+                    .setMimeType(MimeTypes.VIDEO_MP4)
+                    .build()
+                
+                setMediaItem(mediaItem)
+                prepare()
+                videoScalingMode = 2
+                
+                addListener(object : Player.Listener {
+                    override fun onPlaybackStateChanged(playbackState: Int) {
+                        when (playbackState) {
+                            Player.STATE_ENDED -> {
+                                seekTo(0)
+                                if (isPlaying) play()
+                            }
+                        }
+                    }
+                })
+            }
+        
+        this.player = player
+    }
 }
 
 @Composable
