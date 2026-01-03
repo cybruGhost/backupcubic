@@ -874,12 +874,14 @@ notificationInit?.let { notification ->
                         )
                     }
                 } else {
-                    // YOU HAVE LATEST VERSION
-                    BasicText(
-                        text = "Latest version: $currentVersion",
-                        style = typography().xs.secondary,
-                        maxLines = 1
-                    )
+                // YOU HAVE LATEST VERSION
+                BasicText(
+                    text = "Latest version: $currentVersion",
+                    style = typography().xs.secondary.copy(
+                        color = Color(0xFF4CAF50) // Material Green
+                    ),
+                    maxLines = 1
+                )
                 }
             }
         }
