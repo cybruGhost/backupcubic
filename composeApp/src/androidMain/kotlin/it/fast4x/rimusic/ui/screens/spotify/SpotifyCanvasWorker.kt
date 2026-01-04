@@ -121,14 +121,41 @@ fun SpotifyCanvasWorker() {
         }
     }
     
-    // Monitor player state to control video playback
+    // Monitor player state to control video playback AND detect song end
     LaunchedEffect(binder?.player) {
         if (binder == null) return@LaunchedEffect
         
-        snapshotFlow { binder.player.playWhenReady }.collect { isPlaying ->
-            SpotifyCanvasState.isPlaying = isPlaying
-            if (showLogs) {
-                SpotifyCanvasState.addLog("Player state: ${if (isPlaying) "Playing" else "Paused"}", LogType.INFO)
+        snapshotFlow { 
+            Triple(
+                binder.player.currentMediaItem?.mediaId,
+                binder.player.playbackState,
+                binder.player.playWhenReady
+            )
+        }.collect { (mediaId, playbackState, playWhenReady) ->
+            when {
+                // Song ended - stop canvas loop
+                playbackState == Player.STATE_ENDED -> {
+                    CanvasPlayerManager.stopLooping()
+                    if (showLogs) {
+                        SpotifyCanvasState.addLog("Song ended - canvas loop stopped", LogType.INFO)
+                    }
+                }
+                
+                // Song paused - pause canvas
+                !playWhenReady && mediaId == SpotifyCanvasState.currentMediaItemId -> {
+                    CanvasPlayerManager.updatePlayState(false)
+                    if (showLogs) {
+                        SpotifyCanvasState.addLog("Song paused - canvas paused", LogType.INFO)
+                    }
+                }
+                
+                // Song resumed - resume canvas
+                playWhenReady && mediaId == SpotifyCanvasState.currentMediaItemId -> {
+                    CanvasPlayerManager.updatePlayState(true)
+                    if (showLogs) {
+                        SpotifyCanvasState.addLog("Song resumed - canvas resumed", LogType.INFO)
+                    }
+                }
             }
         }
     }
@@ -139,10 +166,11 @@ fun SpotifyCanvasWorker() {
             SpotifyCanvasState.markForFetch()
         }
     }
-    
+        
     DisposableEffect(Unit) {
         onDispose {
             SpotifyCanvasState.clear()
+            CanvasPlayerManager.releasePlayer()  // ← ADD THIS LINE!
         }
     }
 }
