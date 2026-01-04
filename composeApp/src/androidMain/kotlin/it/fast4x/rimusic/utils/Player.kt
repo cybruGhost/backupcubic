@@ -1,6 +1,5 @@
 package it.fast4x.rimusic.utils
 
-
 import android.annotation.SuppressLint
 import android.content.Context
 import androidx.compose.ui.util.fastDistinctBy
@@ -16,6 +15,7 @@ import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import it.fast4x.rimusic.enums.DurationInMinutes
+import it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,6 +26,126 @@ import java.util.ArrayDeque
 
 var GlobalVolume: Float = 0.5f
 
+// CANVAS TRIGGER STATE - Simplified without mutableStateOf
+object CanvasTrigger {
+    private var _shouldUpdateCanvas = false
+    private val listeners = mutableListOf<() -> Unit>()
+    
+    fun shouldUpdateCanvas(): Boolean = _shouldUpdateCanvas
+    
+    fun triggerCanvasUpdate() {
+        _shouldUpdateCanvas = true
+        SpotifyCanvasState.markForFetch()
+        listeners.forEach { it() }
+    }
+    
+    fun resetCanvasTrigger() {
+        _shouldUpdateCanvas = false
+    }
+    
+    fun addListener(listener: () -> Unit) {
+        listeners.add(listener)
+    }
+    
+    fun removeListener(listener: () -> Unit) {
+        listeners.remove(listener)
+    }
+}
+
+// CANVAS-ENHANCED PLAYER EXTENSIONS
+fun Player.forcePlayWithCanvas(mediaItem: MediaItem) {
+    setMediaItem(mediaItem.cleaned, true)
+    prepare()
+    restoreGlobalVolume()
+    playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
+}
+
+fun Player.playAtIndexWithCanvas(mediaItemIndex: Int) {
+    seekTo(mediaItemIndex, C.TIME_UNSET)
+    prepare()
+    restoreGlobalVolume()
+    playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
+}
+
+@UnstableApi
+fun Player.forcePlayAtIndexWithCanvas(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
+    if (mediaItems.isEmpty()) return
+
+    CoroutineScope(Dispatchers.Default).launch {
+        val cleanedMediaItems = mediaItems.fastMap(MediaItem::cleaned).fastDistinctBy(MediaItem::mediaId)
+        
+        runBlocking(Dispatchers.Main) {
+            setMediaItems(cleanedMediaItems, mediaItemIndex, C.TIME_UNSET)
+            prepare()
+            restoreGlobalVolume()
+            playWhenReady = true
+            CanvasTrigger.triggerCanvasUpdate()
+        }
+    }
+}
+
+fun Player.playNextWithCanvas() {
+    seekToNextMediaItem()
+    prepare()
+    restoreGlobalVolume()
+    playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
+}
+
+fun Player.playPreviousWithCanvas() {
+    seekToPreviousMediaItem()
+    prepare()
+    restoreGlobalVolume()
+    playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
+}
+
+@UnstableApi
+fun Player.addNextWithCanvas(mediaItem: MediaItem, context: Context? = null) {
+    if (context != null && excludeMediaItem(mediaItem, context)) return
+
+    val itemIndex = findMediaItemIndexById(mediaItem.mediaId)
+    if (itemIndex >= 0) removeMediaItem(itemIndex)
+
+    if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+        forcePlayWithCanvas(mediaItem)
+    } else {
+        addMediaItem(currentMediaItemIndex + 1, mediaItem.cleaned)
+        CanvasTrigger.triggerCanvasUpdate()
+    }
+}
+
+fun Player.enqueueWithCanvas(mediaItem: MediaItem, context: Context? = null) {
+    if (context != null && excludeMediaItem(mediaItem, context)) return
+
+    if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+        forcePlayWithCanvas(mediaItem)
+    } else {
+        addMediaItem(mediaItemCount, mediaItem.cleaned)
+        CanvasTrigger.triggerCanvasUpdate()
+    }
+}
+
+@UnstableApi
+fun Player.enqueueWithCanvas(mediaItems: List<MediaItem>, context: Context? = null) {
+    val filteredMediaItems = if (context != null) excludeMediaItems(mediaItems, context)
+    else mediaItems
+
+    if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
+        forcePlayFromBeginningWithCanvas(filteredMediaItems)
+    } else {
+        addMediaItems(mediaItemCount, filteredMediaItems.map { it.cleaned })
+        CanvasTrigger.triggerCanvasUpdate()
+    }
+}
+
+@UnstableApi
+fun Player.forcePlayFromBeginningWithCanvas(mediaItems: List<MediaItem>) =
+    forcePlayAtIndexWithCanvas(mediaItems, 0)
+
+// ORIGINAL FUNCTIONS (with canvas trigger support where applicable)
 fun Player.restoreGlobalVolume() {
     volume = GlobalVolume
 }
@@ -64,15 +184,6 @@ val Player.shouldBePlaying: Boolean
 
 fun Player.removeMediaItems(range: IntRange) = removeMediaItems(range.first, range.last + 1)
 
-//fun Player.seamlessPlay(mediaItem: MediaItem) {
-//    if (mediaItem.mediaId == currentMediaItem?.mediaId) {
-//        if (currentMediaItemIndex > 0) removeMediaItems(0, currentMediaItemIndex)
-//        if (currentMediaItemIndex < mediaItemCount - 1) removeMediaItems(currentMediaItemIndex + 1, mediaItemCount)
-//    } else {
-//        forcePlay(mediaItem)
-//    }
-//}
-
 fun Player.seamlessPlay(mediaItem: MediaItem) {
     if (mediaItem.mediaId == currentMediaItem?.mediaId) {
         if (currentMediaItemIndex > 0) removeMediaItems(0 until currentMediaItemIndex)
@@ -80,7 +191,6 @@ fun Player.seamlessPlay(mediaItem: MediaItem) {
             removeMediaItems(currentMediaItemIndex + 1 until mediaItemCount)
     } else forcePlay(mediaItem)
 }
-
 
 fun Player.shuffleQueue() {
     val mediaItems = currentTimeline.mediaItems.toMutableList().apply { removeAt(currentMediaItemIndex) }
@@ -92,16 +202,16 @@ fun Player.shuffleQueue() {
 @SuppressLint("Range")
 @UnstableApi
 fun Player.playAtMedia(mediaItems: List<MediaItem>, mediaId: String) {
-    Log.d("mediaItem-playAtMedia","${mediaItems.size}")
+    Log.d("mediaItem-playAtMedia", "${mediaItems.size}")
     if (mediaItems.isEmpty()) return
     val itemIndex = findMediaItemIndexById(mediaId)
 
-    Log.d("mediaItem-playAtMedia",itemIndex.toString())
+    Log.d("mediaItem-playAtMedia", itemIndex.toString())
     setMediaItems(mediaItems, itemIndex, C.TIME_UNSET)
     prepare()
     restoreGlobalVolume()
     playWhenReady = true
-
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 fun Player.forcePlay(mediaItem: MediaItem) {
@@ -109,11 +219,13 @@ fun Player.forcePlay(mediaItem: MediaItem) {
     prepare()
     restoreGlobalVolume()
     playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 fun Player.playVideo(mediaItem: MediaItem) {
     setMediaItem(mediaItem.cleaned, true)
     pause()
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 fun Player.playAtIndex(mediaItemIndex: Int) {
@@ -121,25 +233,27 @@ fun Player.playAtIndex(mediaItemIndex: Int) {
     prepare()
     restoreGlobalVolume()
     playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 @SuppressLint("Range")
 @UnstableApi
 fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
-    if ( mediaItems.isEmpty() ) return
+    if (mediaItems.isEmpty()) return
 
-    // This will prevent UI from freezing up during conversion
-    CoroutineScope( Dispatchers.Default ).launch {
-        val cleanedMediaItems = mediaItems.fastMap( MediaItem::cleaned ).fastDistinctBy( MediaItem::mediaId )
+    CoroutineScope(Dispatchers.Default).launch {
+        val cleanedMediaItems = mediaItems.fastMap(MediaItem::cleaned).fastDistinctBy(MediaItem::mediaId)
 
-        runBlocking( Dispatchers.Main ) {
-            setMediaItems( cleanedMediaItems, mediaItemIndex, C.TIME_UNSET )
+        runBlocking(Dispatchers.Main) {
+            setMediaItems(cleanedMediaItems, mediaItemIndex, C.TIME_UNSET)
             prepare()
             restoreGlobalVolume()
             playWhenReady = true
+            CanvasTrigger.triggerCanvasUpdate()
         }
     }
 }
+
 @UnstableApi
 fun Player.forcePlayFromBeginning(mediaItems: List<MediaItem>) =
     forcePlayAtIndex(mediaItems, 0)
@@ -157,18 +271,18 @@ fun Player.forceSeekToNext() =
 
 fun Player.playNext() {
     seekToNextMediaItem()
-    //seekToNext()
     prepare()
     restoreGlobalVolume()
     playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 fun Player.playPrevious() {
     seekToPreviousMediaItem()
-    //seekToPrevious()
     prepare()
     restoreGlobalVolume()
     playWhenReady = true
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 @UnstableApi
@@ -182,6 +296,7 @@ fun Player.addNext(mediaItem: MediaItem, context: Context? = null) {
         forcePlay(mediaItem)
     } else {
         addMediaItem(currentMediaItemIndex + 1, mediaItem.cleaned)
+        CanvasTrigger.triggerCanvasUpdate()
     }
 }
 
@@ -198,27 +313,27 @@ fun Player.addNext(mediaItems: List<MediaItem>, context: Context? = null) {
     if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
         setMediaItems(filteredMediaItems.map { it.cleaned })
 
-        if( playbackState == Player.STATE_IDLE )
+        if (playbackState == Player.STATE_IDLE)
             prepare()
 
         play()
+        CanvasTrigger.triggerCanvasUpdate()
     } else {
         addMediaItems(currentMediaItemIndex + 1, filteredMediaItems.map { it.cleaned })
+        CanvasTrigger.triggerCanvasUpdate()
     }
-
 }
 
-
 fun Player.enqueue(mediaItem: MediaItem, context: Context? = null) {
-     if (context != null && excludeMediaItem(mediaItem, context)) return
+    if (context != null && excludeMediaItem(mediaItem, context)) return
 
     if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
         forcePlay(mediaItem)
     } else {
         addMediaItem(mediaItemCount, mediaItem.cleaned)
+        CanvasTrigger.triggerCanvasUpdate()
     }
 }
-
 
 @UnstableApi
 fun Player.enqueue(mediaItems: List<MediaItem>, context: Context? = null) {
@@ -226,24 +341,12 @@ fun Player.enqueue(mediaItems: List<MediaItem>, context: Context? = null) {
     else mediaItems
 
     if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
-        //forcePlayFromBeginning(mediaItems)
         forcePlayFromBeginning(filteredMediaItems)
     } else {
-        //addMediaItems(mediaItemCount, mediaItems)
         addMediaItems(mediaItemCount, filteredMediaItems.map { it.cleaned })
+        CanvasTrigger.triggerCanvasUpdate()
     }
 }
-
-/*
-fun Player.findNextMediaItemById(mediaId: String): MediaItem? {
-    for (i in currentMediaItemIndex until mediaItemCount) {
-        if (getMediaItemAt(i).mediaId == mediaId) {
-            return getMediaItemAt(i)
-        }
-    }
-    return null
-}
-*/
 
 fun Player.findNextMediaItemById(mediaId: String): MediaItem? = runCatching {
     for (i in currentMediaItemIndex until mediaItemCount) {
@@ -277,7 +380,7 @@ fun Player.excludeMediaItems(mediaItems: List<MediaItem>, context: Context): Lis
 
             val excludedSongs = mediaItems.size - filteredMediaItems.size
             if (excludedSongs > 0)
-                Toaster.n( R.string.message_excluded_s_songs, arrayOf( excludedSongs ) )
+                Toaster.n(R.string.message_excluded_s_songs, arrayOf(excludedSongs))
         }
     }.onFailure {
         Timber.e(it.message)
@@ -285,6 +388,7 @@ fun Player.excludeMediaItems(mediaItems: List<MediaItem>, context: Context): Lis
 
     return filteredMediaItems
 }
+
 fun Player.excludeMediaItem(mediaItem: MediaItem, context: Context): Boolean {
     runCatching {
         val preferences = context.preferences
@@ -292,22 +396,20 @@ fun Player.excludeMediaItem(mediaItem: MediaItem, context: Context): Boolean {
             preferences.getEnum(excludeSongsWithDurationLimitKey, DurationInMinutes.Disabled)
         if (excludeSongWithDurationLimit != DurationInMinutes.Disabled) {
             val excludedSong = mediaItem.mediaMetadata.extras?.getString("durationText")?.let { it1 ->
-                    durationTextToMillis(it1)
-                }!! <= excludeSongWithDurationLimit.asMillis
+                durationTextToMillis(it1)
+            }!! <= excludeSongWithDurationLimit.asMillis
 
             if (excludedSong)
-                Toaster.n( R.string.message_excluded_s_songs, arrayOf( 1 ) )
+                Toaster.n(R.string.message_excluded_s_songs, arrayOf(1))
 
             return excludedSong
         }
     }.onFailure {
-        //it.printStackTrace()
         Timber.e(it.message)
         return false
     }
 
     return false
-
 }
 
 val Player.mediaItems: List<MediaItem>
@@ -338,6 +440,7 @@ fun Player.togglePlayPause() {
         prepare()
     }
     playWhenReady = !playWhenReady
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 fun Player.toggleRepeatMode() {
@@ -351,6 +454,7 @@ fun Player.toggleRepeatMode() {
 
 fun Player.toggleShuffleMode() {
     shuffleModeEnabled = !shuffleModeEnabled
+    CanvasTrigger.triggerCanvasUpdate()
 }
 
 fun Player.getQueueWindows(): List<Timeline.Window> {
