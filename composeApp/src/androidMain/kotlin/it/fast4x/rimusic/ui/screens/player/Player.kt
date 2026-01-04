@@ -2511,42 +2511,57 @@ private fun OptimizedCanvasVideoPlayer(
     val context = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     
-    // OPTIMIZED: Use derivedStateOf to minimize recompositions
-    val shouldReleasePlayer = remember(mediaItemId) {
-        derivedStateOf {
-            !CanvasPlayerManager.isPlayingForMediaItem(mediaItemId)
+    // FIXED: Add this LaunchedEffect to properly handle canvas URL changes
+    LaunchedEffect(canvasUrl, mediaItemId, isPlaying) {
+        // Force release player when media item changes
+        if (mediaItemId != CanvasPlayerManager.getCurrentMediaItemId()) {
+            CanvasPlayerManager.releasePlayer()
         }
+        
+        // Give a small delay to ensure clean state
+        delay(50)
+        
+        // Log the canvas loading
+        SpotifyCanvasState.addLog("Loading canvas for media: ${mediaItemId?.take(8)}...", LogType.INFO)
     }
     
     // 🧹 OPTIMIZED CLEANUP: Only release when necessary
     DisposableEffect(playerKey) {
         onDispose {
-            if (shouldReleasePlayer.value) {
+            // Only release if this is no longer the active media item
+            if (mediaItemId != CanvasPlayerManager.getCurrentMediaItemId()) {
                 CanvasPlayerManager.releasePlayer()
+                SpotifyCanvasState.addLog("Canvas player disposed for: ${mediaItemId?.take(8)}...", LogType.INFO)
             }
         }
     }
     
-    // 🎮 OPTIMIZED PLAY STATE UPDATES: Debounce rapid changes
+    // 🎮 FIXED: Proper play state updates
     LaunchedEffect(isPlaying) {
         // Small delay to prevent rapid toggling
-        if (isPlaying != CanvasPlayerManager.isActive()) {
-            delay(100) // 100ms debounce
-            CanvasPlayerManager.updatePlayState(isPlaying)
-        }
+        delay(50)
+        CanvasPlayerManager.updatePlayState(isPlaying)
     }
     
     // 📺 OPTIMIZED ANDROID VIEW: With proper lifecycle
     AndroidView(
         factory = { context ->
+            // FIXED: Always create new player when URL or media item changes
             CanvasPlayerManager.setupPlayer(
                 context = context,
                 canvasUrl = canvasUrl,
                 isPlaying = isPlaying,
                 mediaItemId = mediaItemId
-            )
+            ).also {
+                SpotifyCanvasState.addLog("Canvas player created for: ${mediaItemId?.take(8)}...", LogType.SUCCESS)
+            }
         },
-        update = { /* Manager handles updates */ },
+        update = { playerView ->
+            // FIXED: Update play state when recomposed
+            if (isPlaying != CanvasPlayerManager.isActive()) {
+                CanvasPlayerManager.updatePlayState(isPlaying)
+            }
+        },
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .graphicsLayer {
@@ -2559,7 +2574,7 @@ private fun OptimizedCanvasVideoPlayer(
             .drawWithCache {
                 onDrawWithContent {
                     drawContent()
-                    // Subtle shadow for depth (FIXED: .toPx() without parentheses)
+                    // Subtle shadow for depth
                     drawRoundRect(
                         color = Color.Black.copy(alpha = 0.1f),
                         style = Stroke(width = 1.dp.toPx()),

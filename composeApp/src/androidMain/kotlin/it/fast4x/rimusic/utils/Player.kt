@@ -16,6 +16,7 @@ import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import it.fast4x.rimusic.enums.DurationInMinutes
 import it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasState
+import it.fast4x.rimusic.ui.screens.spotify.CanvasPlayerManager
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -26,21 +27,25 @@ import java.util.ArrayDeque
 
 var GlobalVolume: Float = 0.5f
 
-// CANVAS TRIGGER STATE - Simplified without mutableStateOf
+// CANVAS TRIGGER STATE - FIXED: Add proper synchronization
 object CanvasTrigger {
     private var _shouldUpdateCanvas = false
     private val listeners = mutableListOf<() -> Unit>()
     
-    fun shouldUpdateCanvas(): Boolean = _shouldUpdateCanvas
+    fun shouldUpdateCanvas(): Boolean = synchronized(this) { _shouldUpdateCanvas }
     
     fun triggerCanvasUpdate() {
-        _shouldUpdateCanvas = true
+        synchronized(this) {
+            _shouldUpdateCanvas = true
+        }
         SpotifyCanvasState.markForFetch()
-        listeners.forEach { it() }
+        listeners.forEach { it.invoke() }
     }
     
     fun resetCanvasTrigger() {
-        _shouldUpdateCanvas = false
+        synchronized(this) {
+            _shouldUpdateCanvas = false
+        }
     }
     
     fun addListener(listener: () -> Unit) {
@@ -52,8 +57,11 @@ object CanvasTrigger {
     }
 }
 
-// CANVAS-ENHANCED PLAYER EXTENSIONS
+// CANVAS-ENHANCED PLAYER EXTENSIONS - FIXED: Add proper state handling
 fun Player.forcePlayWithCanvas(mediaItem: MediaItem) {
+    // Stop current canvas first
+    CanvasPlayerManager.stopLooping()
+    
     setMediaItem(mediaItem.cleaned, true)
     prepare()
     restoreGlobalVolume()
@@ -62,6 +70,9 @@ fun Player.forcePlayWithCanvas(mediaItem: MediaItem) {
 }
 
 fun Player.playAtIndexWithCanvas(mediaItemIndex: Int) {
+    // Stop current canvas first
+    CanvasPlayerManager.stopLooping()
+    
     seekTo(mediaItemIndex, C.TIME_UNSET)
     prepare()
     restoreGlobalVolume()
@@ -72,6 +83,9 @@ fun Player.playAtIndexWithCanvas(mediaItemIndex: Int) {
 @UnstableApi
 fun Player.forcePlayAtIndexWithCanvas(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
     if (mediaItems.isEmpty()) return
+
+    // Stop current canvas first
+    CanvasPlayerManager.stopLooping()
 
     CoroutineScope(Dispatchers.Default).launch {
         val cleanedMediaItems = mediaItems.fastMap(MediaItem::cleaned).fastDistinctBy(MediaItem::mediaId)
@@ -86,20 +100,54 @@ fun Player.forcePlayAtIndexWithCanvas(mediaItems: List<MediaItem>, mediaItemInde
     }
 }
 
+// FIXED: playNextWithCanvas - properly handles song transitions
 fun Player.playNextWithCanvas() {
-    seekToNextMediaItem()
-    prepare()
-    restoreGlobalVolume()
-    playWhenReady = true
-    CanvasTrigger.triggerCanvasUpdate()
+    if (hasNextMediaItem()) {
+        // Stop current canvas first
+        CanvasPlayerManager.stopLooping()
+        
+        seekToNextMediaItem()
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    } else if (repeatMode == REPEAT_MODE_ALL) {
+        // If repeat all is on, go to first song
+        CanvasPlayerManager.stopLooping()
+        
+        seekTo(0, C.TIME_UNSET)
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    } else {
+        // Song ended - clear canvas
+        CanvasPlayerManager.stopAndClearForSongEnd()
+        SpotifyCanvasState.clear()
+    }
 }
 
+// FIXED: playPreviousWithCanvas - properly handles song transitions
 fun Player.playPreviousWithCanvas() {
-    seekToPreviousMediaItem()
-    prepare()
-    restoreGlobalVolume()
-    playWhenReady = true
-    CanvasTrigger.triggerCanvasUpdate()
+    if (hasPreviousMediaItem() || currentPosition > maxSeekToPreviousPosition) {
+        // Stop current canvas first
+        CanvasPlayerManager.stopLooping()
+        
+        seekToPrevious()
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    } else if (mediaItemCount > 0 && repeatMode == REPEAT_MODE_ALL) {
+        // If at first song with repeat all, go to last song
+        CanvasPlayerManager.stopLooping()
+        
+        seekTo(mediaItemCount - 1, C.TIME_UNSET)
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    }
 }
 
 @UnstableApi
@@ -145,7 +193,7 @@ fun Player.enqueueWithCanvas(mediaItems: List<MediaItem>, context: Context? = nu
 fun Player.forcePlayFromBeginningWithCanvas(mediaItems: List<MediaItem>) =
     forcePlayAtIndexWithCanvas(mediaItems, 0)
 
-// ORIGINAL FUNCTIONS (with canvas trigger support where applicable)
+// ORIGINAL FUNCTIONS - FIXED: Add canvas handling
 fun Player.restoreGlobalVolume() {
     volume = GlobalVolume
 }
@@ -189,7 +237,9 @@ fun Player.seamlessPlay(mediaItem: MediaItem) {
         if (currentMediaItemIndex > 0) removeMediaItems(0 until currentMediaItemIndex)
         if (currentMediaItemIndex < mediaItemCount - 1)
             removeMediaItems(currentMediaItemIndex + 1 until mediaItemCount)
-    } else forcePlay(mediaItem)
+    } else {
+        forcePlay(mediaItem)
+    }
 }
 
 fun Player.shuffleQueue() {
@@ -215,6 +265,9 @@ fun Player.playAtMedia(mediaItems: List<MediaItem>, mediaId: String) {
 }
 
 fun Player.forcePlay(mediaItem: MediaItem) {
+    // Stop current canvas first
+    CanvasPlayerManager.stopLooping()
+    
     setMediaItem(mediaItem.cleaned, true)
     prepare()
     restoreGlobalVolume()
@@ -229,6 +282,9 @@ fun Player.playVideo(mediaItem: MediaItem) {
 }
 
 fun Player.playAtIndex(mediaItemIndex: Int) {
+    // Stop current canvas first
+    CanvasPlayerManager.stopLooping()
+    
     seekTo(mediaItemIndex, C.TIME_UNSET)
     prepare()
     restoreGlobalVolume()
@@ -240,6 +296,9 @@ fun Player.playAtIndex(mediaItemIndex: Int) {
 @UnstableApi
 fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
     if (mediaItems.isEmpty()) return
+
+    // Stop current canvas first
+    CanvasPlayerManager.stopLooping()
 
     CoroutineScope(Dispatchers.Default).launch {
         val cleanedMediaItems = mediaItems.fastMap(MediaItem::cleaned).fastDistinctBy(MediaItem::mediaId)
@@ -269,20 +328,54 @@ fun Player.forceSeekToPrevious() {
 fun Player.forceSeekToNext() =
     if (hasNextMediaItem()) seekToNext() else seekTo(0, C.TIME_UNSET)
 
+// FIXED: playNext - properly handles canvas transitions
 fun Player.playNext() {
-    seekToNextMediaItem()
-    prepare()
-    restoreGlobalVolume()
-    playWhenReady = true
-    CanvasTrigger.triggerCanvasUpdate()
+    if (hasNextMediaItem()) {
+        // Stop current canvas first
+        CanvasPlayerManager.stopLooping()
+        
+        seekToNextMediaItem()
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    } else if (repeatMode == REPEAT_MODE_ALL) {
+        // If repeat all is on, go to first song
+        CanvasPlayerManager.stopLooping()
+        
+        seekTo(0, C.TIME_UNSET)
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    } else {
+        // Song ended - clear canvas
+        CanvasPlayerManager.stopAndClearForSongEnd()
+        SpotifyCanvasState.clear()
+    }
 }
 
+// FIXED: playPrevious - properly handles canvas transitions
 fun Player.playPrevious() {
-    seekToPreviousMediaItem()
-    prepare()
-    restoreGlobalVolume()
-    playWhenReady = true
-    CanvasTrigger.triggerCanvasUpdate()
+    if (hasPreviousMediaItem() || currentPosition > maxSeekToPreviousPosition) {
+        // Stop current canvas first
+        CanvasPlayerManager.stopLooping()
+        
+        seekToPrevious()
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    } else if (mediaItemCount > 0 && repeatMode == REPEAT_MODE_ALL) {
+        // If at first song with repeat all, go to last song
+        CanvasPlayerManager.stopLooping()
+        
+        seekTo(mediaItemCount - 1, C.TIME_UNSET)
+        prepare()
+        restoreGlobalVolume()
+        playWhenReady = true
+        CanvasTrigger.triggerCanvasUpdate()
+    }
 }
 
 @UnstableApi

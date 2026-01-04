@@ -8,22 +8,25 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import timber.log.Timber
 
 object CanvasPlayerManager {
     private var currentPlayer: ExoPlayer? = null
     private var currentPlayerView: PlayerView? = null
     private var currentCanvasUrl: String? = null
-    private var currentMediaItemId: String? = null
+    private var _currentMediaItemId: String? = null
+    private var isPlayerActive = false
+    private var lastSetupTime = 0L
     
-    // PUBLIC getter for current URL (fixes the private access error)
+    // Memory optimization
+    private const val PLAYER_RECYCLE_THRESHOLD = 5000L // 5 seconds
+    
     fun getCurrentCanvasUrl(): String? = currentCanvasUrl
+    fun getCurrentMediaItemId(): String? = _currentMediaItemId
     
     fun isPlayingForMediaItem(mediaItemId: String?): Boolean {
-        return currentMediaItemId == mediaItemId && currentCanvasUrl != null
+        return _currentMediaItemId == mediaItemId && currentCanvasUrl != null
     }
-    
-    // OPTIMIZED: Add lifecycle tracking
-    private var isPlayerActive = false
     
     fun setupPlayer(
         context: Context,
@@ -31,18 +34,27 @@ object CanvasPlayerManager {
         isPlaying: Boolean,
         mediaItemId: String? = null
     ): PlayerView {
-        currentMediaItemId = mediaItemId
+        val now = System.currentTimeMillis()
         
-        // OPTIMIZATION: Reuse player if same media
-        if (currentMediaItemId == mediaItemId && currentCanvasUrl == canvasUrl && 
-            currentPlayerView != null && isPlayerActive) {
+        // Check if we should reuse player (same media and within threshold)
+        val shouldReuse = currentCanvasUrl == canvasUrl && 
+                         _currentMediaItemId == mediaItemId &&
+                         isPlayerActive &&
+                         (now - lastSetupTime) < PLAYER_RECYCLE_THRESHOLD
+        
+        if (shouldReuse && currentPlayerView != null) {
+            Timber.d("CanvasPlayer: Reusing player for mediaId: ${mediaItemId?.take(8)}")
             currentPlayer?.playWhenReady = isPlaying
             currentPlayer?.repeatMode = if (isPlaying) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
             return currentPlayerView!!
         }
         
-        // Release old player properly
-        releasePlayer()
+        // Release old player if exists
+        if (currentCanvasUrl != canvasUrl || _currentMediaItemId != mediaItemId) {
+            releasePlayer()
+        }
+        
+        Timber.d("CanvasPlayer: Creating new player for mediaId: ${mediaItemId?.take(8)}")
         
         val player = ExoPlayer.Builder(context)
             .setSeekForwardIncrementMs(15000)
@@ -56,19 +68,14 @@ object CanvasPlayerManager {
         
         player.setMediaItem(mediaItem)
         player.playWhenReady = isPlaying
-        player.prepare()
         player.videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
-        
-        // 🎯 OPTIMIZED LOOPING: Sync with song playback
         player.repeatMode = if (isPlaying) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
         
-        // Add listener to stop infinite loops
+        // Memory efficient listener - only tracks errors
         player.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                // If player ended and we're not playing audio, don't restart
-                if (playbackState == Player.STATE_ENDED && !isPlaying) {
-                    player.repeatMode = Player.REPEAT_MODE_OFF
-                }
+            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                Timber.e("CanvasPlayer error: ${error.message}")
+                releasePlayer()
             }
         })
         
@@ -80,41 +87,68 @@ object CanvasPlayerManager {
             setBackgroundColor(android.graphics.Color.TRANSPARENT)
         }
         
+        // Prepare but don't auto-start
+        player.prepare()
+        if (!isPlaying) {
+            player.pause()
+        }
+        
         currentPlayer = player
         currentPlayerView = playerView
         currentCanvasUrl = canvasUrl
-        currentMediaItemId = mediaItemId
+        _currentMediaItemId = mediaItemId
         isPlayerActive = true
+        lastSetupTime = now
         
         return playerView
     }
     
     fun releasePlayer() {
-        currentPlayer?.release()
+        currentPlayer?.let { player ->
+            Timber.d("CanvasPlayer: Releasing player for mediaId: ${_currentMediaItemId?.take(8)}")
+            player.stop()
+            player.release()
+        }
         currentPlayer = null
         currentPlayerView = null
         currentCanvasUrl = null
-        currentMediaItemId = null
+        _currentMediaItemId = null
         isPlayerActive = false
     }
     
     fun updatePlayState(isPlaying: Boolean) {
         currentPlayer?.let { player ->
             player.playWhenReady = isPlaying
-            // OPTIMIZED: Only update repeat mode if it needs to change
-            val currentRepeatMode = player.repeatMode
-            val desiredRepeatMode = if (isPlaying) Player.REPEAT_MODE_ONE else Player.REPEAT_MODE_OFF
-            
-            if (currentRepeatMode != desiredRepeatMode) {
-                player.repeatMode = desiredRepeatMode
+            if (isPlaying && !player.isPlaying) {
+                player.play()
+                player.repeatMode = Player.REPEAT_MODE_ONE
+            } else if (!isPlaying) {
+                player.pause()
+                player.repeatMode = Player.REPEAT_MODE_OFF
             }
         }
     }
     
     fun stopLooping() {
-        currentPlayer?.repeatMode = Player.REPEAT_MODE_OFF
+        currentPlayer?.let { player ->
+            player.repeatMode = Player.REPEAT_MODE_OFF
+            player.pause()
+        }
     }
     
-    // NEW: Check if player is active
+    fun stopAndClearForSongEnd() {
+        currentPlayer?.let { player ->
+            player.stop()
+            player.repeatMode = Player.REPEAT_MODE_OFF
+        }
+        currentCanvasUrl = null
+        _currentMediaItemId = null
+    }
+    
     fun isActive(): Boolean = isPlayerActive
+    
+    fun forceCleanup() {
+        releasePlayer()
+        Timber.d("CanvasPlayer: Force cleanup complete")
+    }
 }
