@@ -15,6 +15,7 @@ import it.fast4x.rimusic.LocalPlayerServiceBinder
 import it.fast4x.rimusic.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.Cache
@@ -36,37 +37,37 @@ enum class LogType {
     ERROR, SUCCESS, LOADING, INFO, WARNING
 }
 
-// API Configuration - loads from JSON first, falls back to defaults if needed
+// API Configuration
 object SpotifyApiConfig {
     // Configuration URL
     private const val CONFIG_URL = "https://v0-spotify-playlist-csv.vercel.app/carolwillbemywife_config.json"
     
-    // Default URLs (only used if JSON fails to load)
+    // Default URLs
     private const val DEFAULT_MATCH_API = "https://v0-spotifyapishit.vercel.app/api/spotify/match"
     private const val DEFAULT_CANVAS_API = "https://v0-spotifyapishit.vercel.app/api/canvas"
     
-    // Actual URLs used (loaded from JSON or defaults)
+    // Actual URLs used
     var MATCH_API: String = DEFAULT_MATCH_API
     var CANVAS_API: String = DEFAULT_CANVAS_API
     
     // Thresholds for detection
-    const val THUMBNAIL_CHANGE_DEBOUNCE_MS = 1000L
-    const val MIN_MATCH_SCORE = 100.0
+    const val THUMBNAIL_CHANGE_DEBOUNCE_MS = 500L // Faster response
+    const val MIN_MATCH_SCORE = 80.0
     
     // Configuration state
     var isConfigLoaded: Boolean = false
     var usingJsonConfig: Boolean = false
     
-    // Load configuration once on app start
+    // Track cache for canvas URLs
+    private val canvasCache = mutableMapOf<String, String>() // trackId -> canvasUrl
+    
     suspend fun loadConfigIfNeeded(context: android.content.Context) {
         if (isConfigLoaded) return
         
         try {
-            // Try to load from JSON config
             val config = fetchConfigFromUrl(context)
             if (config != null) {
                 try {
-                    // Try to parse the JSON structure
                     val endpoints = config.optJSONObject("api_endpoints")
                     if (endpoints != null) {
                         val matchApi = endpoints.optString("match_api", DEFAULT_MATCH_API)
@@ -79,12 +80,10 @@ object SpotifyApiConfig {
                         }
                     }
                 } catch (e: Exception) {
-                    // JSON parsing failed, use defaults
                     usingJsonConfig = false
                 }
             }
         } catch (e: Exception) {
-            // Network or other error, use defaults
             usingJsonConfig = false
         } finally {
             isConfigLoaded = true
@@ -119,6 +118,22 @@ object SpotifyApiConfig {
             null
         }
     }
+    
+    fun getCanvasFromCache(trackId: String): String? {
+        return canvasCache[trackId]
+    }
+    
+    fun cacheCanvas(trackId: String, canvasUrl: String) {
+        canvasCache[trackId] = canvasUrl
+    }
+    
+    fun clearCacheForTrack(trackId: String) {
+        canvasCache.remove(trackId)
+    }
+    
+    fun clearAllCache() {
+        canvasCache.clear()
+    }
 }
 
 object SpotifyCanvasState {
@@ -128,13 +143,13 @@ object SpotifyCanvasState {
     var logEntries: MutableList<LogEntry> by mutableStateOf(mutableListOf())
     var currentTrackId: String? by mutableStateOf(null)
     var currentMediaItemId: String? by mutableStateOf(null)
-    var currentThumbnail: String? by mutableStateOf(null)
+    var currentSongTitle: String? by mutableStateOf(null)
     var isPlaying: Boolean by mutableStateOf(false)
-    var shouldFetch: Boolean by mutableStateOf(true)
     var lastFetchTime: Long by mutableStateOf(0L)
     var configSource: String by mutableStateOf("Loading...")
+    var lastProcessedMediaId: String? by mutableStateOf(null)
     
-    private const val MAX_LOG_ENTRIES = 15
+    private const val MAX_LOG_ENTRIES = 20
     
     fun addLog(message: String, type: LogType = LogType.INFO) {
         synchronized(logEntries) {
@@ -145,41 +160,28 @@ object SpotifyCanvasState {
         }
     }
     
-    fun clearCanvas() {
+    fun clearForNewSong(mediaId: String) {
         currentCanvasUrl = null
         currentTrackId = null
         error = null
         isLoading = false
         isPlaying = false
-        addLog("Canvas cleared - ready for new song", LogType.INFO)
+        currentMediaItemId = mediaId
+        lastProcessedMediaId = mediaId
+        addLog("Cleared for new song: $mediaId", LogType.INFO)
     }
     
-    fun clearFull() {
-        clearCanvas()
+    fun clearAll() {
+        currentCanvasUrl = null
+        currentTrackId = null
         currentMediaItemId = null
-        currentThumbnail = null
-        shouldFetch = true
-        lastFetchTime = 0L
-        addLog("Full canvas state cleared", LogType.INFO)
-    }
-    
-    fun clearError() {
+        currentSongTitle = null
         error = null
-    }
-    
-    fun markForFetch() {
-        shouldFetch = true
-        addLog("Marked for fetch on next thumbnail change", LogType.INFO)
-    }
-    
-    fun updateThumbnail(thumbnail: String?) {
-        if (thumbnail != currentThumbnail) {
-            currentThumbnail = thumbnail
-            shouldFetch = true
-            if (thumbnail != null) {
-                addLog("Thumbnail changed - will fetch new canvas", LogType.INFO)
-            }
-        }
+        isLoading = false
+        isPlaying = false
+        lastFetchTime = 0L
+        lastProcessedMediaId = null
+        addLog("All canvas state cleared", LogType.INFO)
     }
     
     fun updateConfigSource(source: String) {
@@ -194,6 +196,7 @@ fun SpotifyCanvasWorker() {
     val binder = LocalPlayerServiceBinder.current
     
     val isCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
+    val showLogs by rememberPreference("showSpotifyCanvasLogs", false)
     
     // Load configuration once when enabled
     LaunchedEffect(isCanvasEnabled) {
@@ -204,75 +207,68 @@ fun SpotifyCanvasWorker() {
             
             if (SpotifyApiConfig.usingJsonConfig) {
                 SpotifyCanvasState.updateConfigSource("JSON Config")
-                SpotifyCanvasState.addLog("Loaded APIs from JSON config", LogType.SUCCESS)
+                if (showLogs) {
+                    SpotifyCanvasState.addLog("Loaded APIs from JSON config", LogType.SUCCESS)
+                }
             } else {
                 SpotifyCanvasState.updateConfigSource("Default URLs")
-                SpotifyCanvasState.addLog("Using default API URLs", LogType.INFO)
+                if (showLogs) {
+                    SpotifyCanvasState.addLog("Using default API URLs", LogType.INFO)
+                }
             }
         }
     }
     
     LaunchedEffect(isCanvasEnabled) {
         if (!isCanvasEnabled) {
-            SpotifyCanvasState.clearFull()
+            SpotifyCanvasState.clearAll()
             CanvasPlayerManager.stopAndClear()
+            SpotifyApiConfig.clearAllCache()
         }
     }
     
-    // Thumbnail detection state
-    val currentThumbnail by remember {
-        derivedStateOf {
-            binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri?.toString()
-        }
-    }
-    
-    // Monitor player state for thumbnail changes
+    // Monitor player state for song changes
     LaunchedEffect(binder?.player, isCanvasEnabled) {
         if (binder == null || !isCanvasEnabled) return@LaunchedEffect
         
         snapshotFlow { 
             Triple(
                 binder.player.currentMediaItem?.mediaId,
-                binder.player.currentMediaItem?.mediaMetadata?.artworkUri?.toString(),
-                binder.player.currentMediaItem?.mediaMetadata?.title?.toString() ?: ""
+                binder.player.currentMediaItem?.mediaMetadata?.title?.toString() ?: "",
+                binder.player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
             )
-        }.collect { (mediaId, thumbnail, title) ->
-            if (mediaId == null) return@collect
-            
-            // Update thumbnail in state
-            SpotifyCanvasState.updateThumbnail(thumbnail)
-            
-            // Check if we should fetch new canvas
-            val shouldFetch = isCanvasEnabled && 
-                thumbnail != null && 
-                SpotifyCanvasState.shouldFetch &&
-                title.isNotBlank() &&
-                System.currentTimeMillis() - SpotifyCanvasState.lastFetchTime > SpotifyApiConfig.THUMBNAIL_CHANGE_DEBOUNCE_MS
-            
-            if (shouldFetch) {
-                SpotifyCanvasState.addLog("Detected thumbnail for: $title", LogType.LOADING)
-                SpotifyCanvasState.shouldFetch = false
-                SpotifyCanvasState.lastFetchTime = System.currentTimeMillis()
-                
-                // Clear previous canvas immediately
-                SpotifyCanvasState.clearCanvas()
-                CanvasPlayerManager.stopAndClear()
-                
-                // Fetch new canvas
-                val artist = binder.player.currentMediaItem?.mediaMetadata?.artist?.toString() ?: ""
-                if (artist.isNotBlank()) {
-                    fetchCanvasForSong(context, title, artist, isCanvasEnabled)
-                }
+        }.collect { (mediaId, title, artist) ->
+            if (mediaId == null || title.isBlank() || artist.isBlank()) {
+                return@collect
             }
             
-            // Update current media item ID
-            if (mediaId != SpotifyCanvasState.currentMediaItemId) {
-                SpotifyCanvasState.currentMediaItemId = mediaId
+            // Check if song changed
+            val songChanged = mediaId != SpotifyCanvasState.lastProcessedMediaId
+            
+            if (songChanged) {
+                if (showLogs) {
+                    SpotifyCanvasState.addLog("Song changed: $title - $artist", LogType.INFO)
+                }
+                
+                // Clear everything for the new song
+                SpotifyCanvasState.clearForNewSong(mediaId)
+                CanvasPlayerManager.stopAndClear()
+                
+                // Start fetching canvas for new song
+                launch(Dispatchers.IO) {
+                    fetchCanvasForSong(context, title, artist, showLogs, mediaId)
+                }
+            } else {
+                // Same song, check if we need to update play state
+                if (binder.player.playWhenReady != SpotifyCanvasState.isPlaying) {
+                    SpotifyCanvasState.isPlaying = binder.player.playWhenReady
+                    CanvasPlayerManager.updatePlayState(binder.player.playWhenReady)
+                }
             }
         }
     }
     
-    // Monitor player playback state
+    // Monitor playback state
     LaunchedEffect(binder?.player) {
         if (binder == null) return@LaunchedEffect
         
@@ -282,22 +278,13 @@ fun SpotifyCanvasWorker() {
                 binder.player.playWhenReady
             )
         }.collect { (playbackState, playWhenReady) ->
-            when {
-                // Song ended - stop canvas
-                playbackState == Player.STATE_ENDED -> {
+            when (playbackState) {
+                Player.STATE_ENDED -> {
                     CanvasPlayerManager.stopAndClear()
-                    SpotifyCanvasState.clearCanvas()
-                    SpotifyCanvasState.addLog("Song ended - canvas stopped", LogType.INFO)
-                }
-                
-                // Song paused - pause canvas
-                !playWhenReady -> {
-                    CanvasPlayerManager.updatePlayState(false)
-                }
-                
-                // Song resumed - resume canvas
-                playWhenReady && SpotifyCanvasState.currentCanvasUrl != null -> {
-                    CanvasPlayerManager.updatePlayState(true)
+                    SpotifyCanvasState.isPlaying = false
+                    if (showLogs) {
+                        SpotifyCanvasState.addLog("Song ended - canvas stopped", LogType.INFO)
+                    }
                 }
             }
         }
@@ -305,7 +292,7 @@ fun SpotifyCanvasWorker() {
         
     DisposableEffect(Unit) {
         onDispose {
-            SpotifyCanvasState.clearFull()
+            SpotifyCanvasState.clearAll()
             CanvasPlayerManager.stopAndClear()
         }
     }
@@ -315,7 +302,8 @@ private suspend fun fetchCanvasForSong(
     context: android.content.Context,
     title: String,
     artist: String,
-    showLogs: Boolean
+    showLogs: Boolean,
+    mediaId: String
 ) {
     SpotifyCanvasState.isLoading = true
     
@@ -331,12 +319,20 @@ private suspend fun fetchCanvasForSong(
         }
         
         if (canvasUrl != null) {
-            SpotifyCanvasState.currentCanvasUrl = canvasUrl
-            SpotifyCanvasState.isPlaying = true
-            SpotifyCanvasState.error = null
-            
-            if (showLogs) {
-                SpotifyCanvasState.addLog("Canvas loaded successfully", LogType.SUCCESS)
+            // Only update if still the same song
+            if (mediaId == SpotifyCanvasState.currentMediaItemId) {
+                SpotifyCanvasState.currentCanvasUrl = canvasUrl
+                SpotifyCanvasState.isPlaying = true
+                SpotifyCanvasState.error = null
+                SpotifyCanvasState.lastFetchTime = System.currentTimeMillis()
+                
+                if (showLogs) {
+                    SpotifyCanvasState.addLog("Canvas loaded successfully", LogType.SUCCESS)
+                }
+            } else {
+                if (showLogs) {
+                    SpotifyCanvasState.addLog("Canvas fetched but song changed, discarding", LogType.WARNING)
+                }
             }
         } else {
             SpotifyCanvasState.error = "No canvas available"
@@ -364,10 +360,18 @@ private fun fetchSpotifyCanvas(
     if (!cacheDir.exists()) cacheDir.mkdirs()
     
     val client = OkHttpClient.Builder()
-        .cache(Cache(cacheDir, 10 * 1024 * 1024))
+        .cache(Cache(cacheDir, 20 * 1024 * 1024)) // 20MB cache
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(15, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val response = chain.proceed(request)
+            // Cache for 10 minutes
+            response.newBuilder()
+                .header("Cache-Control", "public, max-age=600")
+                .build()
+        }
         .build()
     
     try {
@@ -375,11 +379,10 @@ private fun fetchSpotifyCanvas(
         val encodedTitle = URLEncoder.encode(title, "UTF-8")
         val encodedArtist = URLEncoder.encode(artist, "UTF-8")
         
-        val matchUrl = "${SpotifyApiConfig.MATCH_API}?videoTitle=$encodedTitle&author=$encodedArtist"
+        val matchUrl = "${SpotifyApiConfig.MATCH_API}?videoTitle=$encodedTitle&author=$encodedArtist&authorVerified=true"
         
         if (showLogs) {
-            SpotifyCanvasState.addLog("Step 1: Finding Spotify track...", LogType.LOADING)
-            SpotifyCanvasState.addLog("Using API: ${SpotifyApiConfig.MATCH_API}", LogType.INFO)
+            SpotifyCanvasState.addLog("Finding Spotify track...", LogType.LOADING)
         }
         
         val matchRequest = Request.Builder()
@@ -416,15 +419,23 @@ private fun fetchSpotifyCanvas(
         SpotifyCanvasState.currentTrackId = trackId
         
         if (showLogs) {
-            SpotifyCanvasState.addLog("Found track: ${trackId.take(8)}... (score: ${matchScore ?: "N/A"})", LogType.SUCCESS)
+            SpotifyCanvasState.addLog("Found track: ${trackId.take(8)}...", LogType.SUCCESS)
+        }
+        
+        // Check cache first
+        val cachedCanvas = SpotifyApiConfig.getCanvasFromCache(trackId)
+        if (cachedCanvas != null) {
+            if (showLogs) {
+                SpotifyCanvasState.addLog("Using cached canvas", LogType.INFO)
+            }
+            return cachedCanvas
         }
         
         // Step 2: Fetch Canvas URL
         val canvasUrl = "${SpotifyApiConfig.CANVAS_API}?trackId=$trackId"
         
         if (showLogs) {
-            SpotifyCanvasState.addLog("Step 2: Loading canvas video...", LogType.LOADING)
-            SpotifyCanvasState.addLog("Using API: ${SpotifyApiConfig.CANVAS_API}", LogType.INFO)
+            SpotifyCanvasState.addLog("Loading canvas video...", LogType.LOADING)
         }
         
         val canvasRequest = Request.Builder()
@@ -442,7 +453,14 @@ private fun fetchSpotifyCanvas(
         }
         
         val canvasJson = canvasResponse.body?.use { it.string() } ?: ""
-        return parseCanvasUrl(canvasJson)
+        val canvasUrlResult = parseCanvasUrl(canvasJson)
+        
+        // Cache the result
+        if (canvasUrlResult != null) {
+            SpotifyApiConfig.cacheCanvas(trackId, canvasUrlResult)
+        }
+        
+        return canvasUrlResult
         
     } catch (e: IOException) {
         if (showLogs) {
