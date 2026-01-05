@@ -19,7 +19,7 @@ object CanvasPlayerManager {
     private var lastSetupTime = 0L
     
     // Memory optimization
-    private const val PLAYER_RECYCLE_THRESHOLD = 3000L // 3 seconds
+    private const val PLAYER_RECYCLE_THRESHOLD = 2000L // Reduced for faster switching
     
     fun getCurrentCanvasUrl(): String? = currentCanvasUrl
     fun getCurrentMediaItemId(): String? = currentMediaItemId
@@ -101,7 +101,7 @@ object CanvasPlayerManager {
         isPlayerActive = true
         lastSetupTime = now
         
-        Timber.d("CanvasPlayer: New player setup complete")
+        Timber.d("CanvasPlayer: New player setup complete for: ${mediaItemId?.take(8)}")
         
         return playerView
     }
@@ -123,8 +123,24 @@ object CanvasPlayerManager {
         Timber.d("CanvasPlayer: Cleanup complete")
     }
     
+    fun stopAndClearForNewSong() {
+        Timber.d("CanvasPlayer: Clearing player for new song")
+        
+        currentPlayer?.let { player ->
+            player.stop()
+            player.release()
+        }
+        
+        currentPlayer = null
+        currentPlayerView = null
+        currentCanvasUrl = null
+        // Keep currentMediaItemId so we know which song we're fetching for
+        isPlayerActive = false
+        
+        Timber.d("CanvasPlayer: Ready for new song")
+    }
+    
     fun releasePlayer() {
-        // Alias for stopAndClear
         stopAndClear()
     }
     
@@ -135,11 +151,11 @@ object CanvasPlayerManager {
             
             if (isPlaying && !player.isPlaying) {
                 player.play()
+                Timber.d("CanvasPlayer: Started playing")
             } else if (!isPlaying) {
                 player.pause()
+                Timber.d("CanvasPlayer: Paused")
             }
-            
-            Timber.d("CanvasPlayer: Play state updated to $isPlaying")
         }
     }
     
