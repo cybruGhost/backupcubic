@@ -364,7 +364,6 @@ fun Player(
     var expandedplayer by expandPlayerState
     // ADD THIS FOR SPOTIFY CANVAS
     val spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
-    val spotifyUserEmail by rememberPreference("spotifyUserEmail", "")
     val showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
 
 
@@ -2020,7 +2019,7 @@ BoxWithConstraints(
     if (shouldShowCanvas) {
         OptimizedSpotifyCanvasPlayer(
             canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
-            mediaItemId = SpotifyCanvasState.currentMediaItemId,  // Pass this
+            mediaItemId = SpotifyCanvasState.currentMediaItemId,
             isPlaying = SpotifyCanvasState.isPlaying,
             showLogs = showSpotifyCanvasLogs,
             maxWidth = maxWidth,
@@ -2511,57 +2510,42 @@ private fun OptimizedCanvasVideoPlayer(
     val context = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
     
-    // FIXED: Add this LaunchedEffect to properly handle canvas URL changes
-    LaunchedEffect(canvasUrl, mediaItemId, isPlaying) {
-        // Force release player when media item changes
-        if (mediaItemId != CanvasPlayerManager.getCurrentMediaItemId()) {
-            CanvasPlayerManager.releasePlayer()
+    // OPTIMIZED: Use derivedStateOf to minimize recompositions
+    val shouldReleasePlayer = remember(mediaItemId) {
+        derivedStateOf {
+            !CanvasPlayerManager.isPlayingForMediaItem(mediaItemId)
         }
-        
-        // Give a small delay to ensure clean state
-        delay(50)
-        
-        // Log the canvas loading
-        SpotifyCanvasState.addLog("Loading canvas for media: ${mediaItemId?.take(8)}...", LogType.INFO)
     }
     
     // 🧹 OPTIMIZED CLEANUP: Only release when necessary
     DisposableEffect(playerKey) {
         onDispose {
-            // Only release if this is no longer the active media item
-            if (mediaItemId != CanvasPlayerManager.getCurrentMediaItemId()) {
+            if (shouldReleasePlayer.value) {
                 CanvasPlayerManager.releasePlayer()
-                SpotifyCanvasState.addLog("Canvas player disposed for: ${mediaItemId?.take(8)}...", LogType.INFO)
             }
         }
     }
     
-    // 🎮 FIXED: Proper play state updates
+    // 🎮 OPTIMIZED PLAY STATE UPDATES: Debounce rapid changes
     LaunchedEffect(isPlaying) {
         // Small delay to prevent rapid toggling
-        delay(50)
-        CanvasPlayerManager.updatePlayState(isPlaying)
+        if (isPlaying != CanvasPlayerManager.isActive()) {
+            delay(100) // 100ms debounce
+            CanvasPlayerManager.updatePlayState(isPlaying)
+        }
     }
     
     // 📺 OPTIMIZED ANDROID VIEW: With proper lifecycle
     AndroidView(
         factory = { context ->
-            // FIXED: Always create new player when URL or media item changes
             CanvasPlayerManager.setupPlayer(
                 context = context,
                 canvasUrl = canvasUrl,
                 isPlaying = isPlaying,
                 mediaItemId = mediaItemId
-            ).also {
-                SpotifyCanvasState.addLog("Canvas player created for: ${mediaItemId?.take(8)}...", LogType.SUCCESS)
-            }
+            )
         },
-        update = { playerView ->
-            // FIXED: Update play state when recomposed
-            if (isPlaying != CanvasPlayerManager.isActive()) {
-                CanvasPlayerManager.updatePlayState(isPlaying)
-            }
-        },
+        update = { /* Manager handles updates */ },
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .graphicsLayer {
@@ -2574,7 +2558,7 @@ private fun OptimizedCanvasVideoPlayer(
             .drawWithCache {
                 onDrawWithContent {
                     drawContent()
-                    // Subtle shadow for depth
+                    // Subtle shadow for depth (FIXED: .toPx() without parentheses)
                     drawRoundRect(
                         color = Color.Black.copy(alpha = 0.1f),
                         style = Stroke(width = 1.dp.toPx()),
