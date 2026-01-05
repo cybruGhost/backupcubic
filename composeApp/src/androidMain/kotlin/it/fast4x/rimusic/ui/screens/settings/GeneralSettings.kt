@@ -386,79 +386,87 @@ AnimatedVisibility(
 ) {
     SettingsSectionCard(
         title = "Spotify Canvas",
-        icon = R.drawable.spotifycanvas,  // You need to add this drawable
+        icon = R.drawable.spotifycanvas,
         content = {
             val context = LocalContext.current
             
             // Use var for mutable preferences
             var spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
-            var spotifyUserEmail by rememberPreference("spotifyUserEmail", "")
             var showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
             
-            // Dialog states
-            var showEmailDialog by remember { mutableStateOf(false) }
-            var showDisconnectDialog by remember { mutableStateOf(false) }
-            var tempEmail by remember { mutableStateOf(spotifyUserEmail) }
+            // Beta warning state
+            var showBetaWarning by remember { mutableStateOf(false) }
+            
+            // Reset dialog state
+            var showResetDialog by remember { mutableStateOf(false) }
             
             // Main toggle for Spotify Canvas
             if (search.inputValue.isBlank() || "Spotify Canvas".contains(search.inputValue, true)) {
-                OtherSwitchSettingEntry(
-                    title = "Spotify Canvas",
-                    text = "Show animated canvas videos in player",
-                    isChecked = spotifyCanvasEnabled,
-                    onCheckedChange = { newValue ->
-                        // Use a separate variable to avoid reassignment issues
-                        val shouldShowDisconnect = !newValue && spotifyUserEmail.isNotEmpty()
-                        spotifyCanvasEnabled = newValue
-                        
-                        if (shouldShowDisconnect) {
-                            showDisconnectDialog = true
+                Column {
+                    // Beta badge and warning
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(4.dp))
+                                .background(Color.Yellow.copy(alpha = 0.2f))
+                                .padding(horizontal = 8.dp, vertical = 4.dp)
+                        ) {
+                            androidx.compose.foundation.text.BasicText(
+                                text = "BETA",
+                                style = typography().xs.semiBold.copy(
+                                    color = Color.Yellow
+                                )
+                            )
                         }
-                    },
-                    icon = R.drawable.spotifycanvas
-                )
-            }
-            
-            // Email settings (only shown when enabled)
-            if (spotifyCanvasEnabled) {
-                // Email display/input
-                Column(
-                    modifier = Modifier.padding(start = 25.dp)
-                ) {
-                    // Email status
-                    OtherSettingsEntry(
-                        title = if (spotifyUserEmail.isEmpty()) "Not connected" else "Connected",
-                        text = if (spotifyUserEmail.isEmpty()) "Tap to add email" else spotifyUserEmail,
-                        onClick = { 
-                            if (spotifyUserEmail.isEmpty()) {
-                                // Open browser for authentication
-                                try {
-                                    val intent = Intent(Intent.ACTION_VIEW)
-                                    intent.data = Uri.parse("https://v0-spotify-playlist-csv.vercel.app/")
-                                    context.startActivity(intent)
-                                } catch (e: Exception) {
-                                    // Handle error
-                                }
-                                // Then show email dialog
-                                tempEmail = ""
-                                showEmailDialog = true
-                            } else {
-                                // Edit existing email
-                                tempEmail = spotifyUserEmail
-                                showEmailDialog = true
-                            }
-                        },
-                        icon = if (spotifyUserEmail.isEmpty()) R.drawable.message else R.drawable.information
-                    )
-                    
-                    // Instructions
-                    if (spotifyUserEmail.isEmpty()) {
-                        SettingsDescription(
-                            text = "1. Tap above to open website\n2. Sign in with Spotify\n3. Return here and enter email",
-                            modifier = Modifier.fillMaxWidth(),
-                            textAlign = TextAlign.Start
+                        Spacer(modifier = Modifier.width(8.dp))
+                        androidx.compose.foundation.text.BasicText(
+                            text = "Experimental feature",
+                            style = typography().xs.copy(color = Color.Gray)
                         )
                     }
+                    
+                    OtherSwitchSettingEntry(
+                        title = "Spotify Canvas",
+                        text = "Show animated canvas videos in player",
+                        isChecked = spotifyCanvasEnabled,
+                        onCheckedChange = { newValue ->
+                            if (newValue && !spotifyCanvasEnabled) {
+                                // Show beta warning when enabling for the first time
+                                showBetaWarning = true
+                            }
+                            spotifyCanvasEnabled = newValue
+                        },
+                        icon = R.drawable.spotifycanvas
+                    )
+                }
+            }
+            
+            // Additional settings (only shown when enabled)
+            if (spotifyCanvasEnabled) {
+                Column(
+                    modifier = Modifier.padding(start = 25.dp, top = 8.dp)
+                ) {
+                    // Beta disclaimer - using Box with background instead of SettingsDescription with color
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Yellow.copy(alpha = 0.1f))
+                            .border(1.dp, Color.Yellow.copy(alpha = 0.3f), RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        androidx.compose.foundation.text.BasicText(
+                            text = "⚠️ This is a beta feature and may be unstable, removed, or changed at any time. Use at your own risk.",
+                            style = typography().xs.copy(
+                                color = Color.Yellow.copy(alpha = 0.9f)
+                            )
+                        )
+                    }
+                    
+                    Spacer(modifier = Modifier.height(12.dp))
                     
                     // Debug logs toggle
                     OtherSwitchSettingEntry(
@@ -469,116 +477,145 @@ AnimatedVisibility(
                         icon = R.drawable.information
                     )
                     
-                    // Disconnect button (only if connected)
-                    if (spotifyUserEmail.isNotEmpty()) {
-                        Spacer(modifier = Modifier.height(8.dp))
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .background(Color.Red.copy(alpha = 0.1f))
-                                .clickable { showDisconnectDialog = true }
-                                .padding(horizontal = 12.dp, vertical = 8.dp)
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.close),
-                                    contentDescription = null,
-                                    tint = Color.Red,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                                Spacer(modifier = Modifier.width(8.dp))
-                                androidx.compose.foundation.text.BasicText(
-                                    text = "Disconnect Spotify",
-                                    style = typography().s.semiBold.copy(
-                                        color = Color.Red
-                                    )
-                                )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    
+                    // Report issues on GitHub - use existing icon if github_logo doesn't exist
+                    OtherSettingsEntry(
+                        title = "Report issues",
+                        text = "Open GitHub issues page",
+                        onClick = {
+                            try {
+                                val intent = Intent(Intent.ACTION_VIEW)
+                                intent.data = Uri.parse("https://github.com/cybruGhost/Cubic-Music/issues")
+                                context.startActivity(intent)
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open browser", Toast.LENGTH_SHORT).show()
                             }
+                        },
+                        // Use R.drawable.bug or R.drawable.information if github_logo doesn't exist
+                        icon = try {
+                            R.drawable.github_icon // Change this to whatever your actual drawable name is
+                        } catch (e: Exception) {
+                            R.drawable.alert // Fallback icon
+                        }
+                    )
+                    
+                    // Optional: Add a reset button
+                    Spacer(modifier = Modifier.height(12.dp))
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color.Red.copy(alpha = 0.1f))
+                            .clickable { showResetDialog = true }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.refresh),
+                                contentDescription = null,
+                                tint = Color.Red,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            androidx.compose.foundation.text.BasicText(
+                                text = "Reset Settings",
+                                style = typography().s.semiBold.copy(
+                                    color = Color.Red
+                                )
+                            )
                         }
                     }
                 }
             }
             
-            // Email input dialog
-            if (showEmailDialog) {
-                // Create a simple dialog instead of DefaultDialog if it doesn't have buttons parameter
-                androidx.compose.material3.AlertDialog(
-                    onDismissRequest = { showEmailDialog = false },
-                    title = {
-                        androidx.compose.foundation.text.BasicText(
-                            text = "Spotify Canvas Email",
-                            style = typography().l.semiBold
-                        )
-                    },
-                    text = {
-                        Column {
-                            androidx.compose.foundation.text.BasicText(
-                                text = "Enter the email you used to sign in to Spotify Canvas website",
-                                style = typography().s,
-                                modifier = Modifier.padding(bottom = 16.dp)
-                            )
-                            
-                            androidx.compose.material3.OutlinedTextField(
-                                value = tempEmail,
-                                onValueChange = { tempEmail = it },
-                                label = { androidx.compose.material3.Text("Email address") },
-                                placeholder = { androidx.compose.material3.Text("user@example.com") },
-                                modifier = Modifier.fillMaxWidth()
-                            )
-                            
-                            Spacer(modifier = Modifier.height(16.dp))
-                            
-                            androidx.compose.foundation.text.BasicText(
-                                text = "Note: You must first authenticate at:\nv0-spotify-playlist-csv.vercel.app",
-                                style = typography().xs.copy(
-                                    color = Color.Gray,
-                                    fontSize = 10.sp
-                                )
-                            )
-                        }
-                    },
-                    confirmButton = {
-                        androidx.compose.material3.TextButton(
-                            onClick = {
-                                if (tempEmail.isNotBlank() && tempEmail.contains("@")) {
-                                    spotifyUserEmail = tempEmail
-                                    showEmailDialog = false
-                                }
-                            },
-                            enabled = tempEmail.isNotBlank() && tempEmail.contains("@")
-                        ) {
-                            androidx.compose.material3.Text("Save")
-                        }
-                    },
-                    dismissButton = {
-                        androidx.compose.material3.TextButton(
-                            onClick = { showEmailDialog = false }
-                        ) {
-                            androidx.compose.material3.Text("Cancel")
-                        }
-                    }
+// Beta warning dialog (shows when first enabling)
+if (showBetaWarning) {
+    AlertDialog(
+        onDismissRequest = { showBetaWarning = false },
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    painter = painterResource(R.drawable.alert_circle),
+                    contentDescription = null,
+                    tint = Color.Yellow,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Beta Feature Warning",
+                    style = typography().l.semiBold.copy(color = colorPalette().text),
+                    color = colorPalette().text // Add this line
                 )
             }
+        },
+        text = {
+            Column {
+                Text(
+                    text = "Spotify Canvas is currently in beta testing.",
+                    style = typography().s.copy(color = colorPalette().text),
+                    modifier = Modifier.padding(bottom = 8.dp),
+                    color = colorPalette().text // Add this line
+                )
+                
+                Text(
+                    text = "Important notes:",
+                    style = typography().s.semiBold.copy(color = colorPalette().text),
+                    modifier = Modifier.padding(bottom = 4.dp),
+                    color = colorPalette().text // Add this line
+                )
+                
+                Text(
+                    text = "• This feature may not work for all tracks\n" +
+                          "• It requires an active internet connection\n" +
+                          "• Performance may vary on older devices\n" +
+                          "• The feature may be removed in future updates\n" +
+                          "• Data usage may be higher when enabled",
+                    style = typography().xs.copy(color = colorPalette().text),
+                    modifier = Modifier.padding(start = 8.dp),
+                    color = colorPalette().text // Add this line
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                Text(
+                    text = "By enabling this feature, you acknowledge these limitations.",
+                    style = typography().xs.copy(color = colorPalette().textSecondary),
+                    color = colorPalette().textSecondary // Add this line
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { showBetaWarning = false }
+            ) {
+                Text(
+                    text = "I Understand",
+                    color = colorPalette().accent
+                )
+            }
+        },
+        containerColor = colorPalette().background1, // Add background color
+        titleContentColor = colorPalette().text, // Add title color
+        textContentColor = colorPalette().text // Add text color
+    )
+}
             
-            // Disconnect confirmation dialog
-            if (showDisconnectDialog) {
+            // Reset confirmation dialog
+            if (showResetDialog) {
                 ConfirmationDialog(
-                    text = "Disconnect Spotify Canvas?\nThis will remove your email and disable the feature.",
-                    onDismiss = { showDisconnectDialog = false },
+                    text = "Reset Spotify Canvas settings?\nThis will clear all canvas data and preferences.",
+                    onDismiss = { showResetDialog = false },
                     onConfirm = {
-                        // Create mutable copies to reassign
-                        val mutableEmail = spotifyUserEmail
-                        val mutableEnabled = spotifyCanvasEnabled
-                        
-                        // Clear values
-                        spotifyUserEmail = ""
                         spotifyCanvasEnabled = false
-                        showDisconnectDialog = false
+                        showSpotifyCanvasLogs = false
+                        // Clear any cached canvas data if needed
+                        // clearCanvasCache()
+                        showResetDialog = false
                     },
-                    confirmText = "Disconnect"
+                    confirmText = "Reset"
                 )
             }
         }
