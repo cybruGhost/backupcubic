@@ -554,8 +554,7 @@ if (showBetaWarning) {
         text = {
             Column {
                 Text(
-                    text = "Cubic Canvas is currently in beta testing.",
-                     text = "Cubic Canvas is a short, looping visual (3–8 second video) that appears in place of static album artwork while a song is playing in the Spotify mobile app. Instead of a still image, listeners see a subtle, animated visual that enhances the mood and identity of the track..",
+                    text = "Cubic Canvas is currently in beta testing.",    
                     style = typography().s.copy(color = colorPalette().text),
                     modifier = Modifier.padding(bottom = 8.dp),
                     color = colorPalette().text // Add this line
