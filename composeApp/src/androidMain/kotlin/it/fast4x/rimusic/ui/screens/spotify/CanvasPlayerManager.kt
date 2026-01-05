@@ -1,3 +1,4 @@
+
 package it.fast4x.rimusic.ui.screens.spotify
 
 import android.content.Context
@@ -173,3 +174,4 @@ object CanvasPlayerManager {
         Timber.d("CanvasPlayer: Force cleanup complete")
     }
 }
+
