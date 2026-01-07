@@ -42,7 +42,7 @@ object SpotifyApiConfig {
     // Configuration URL
     private const val CONFIG_URL = "https://v0-spotify-playlist-csv.vercel.app/carolwillbemywife_config.json"
     
-    // Default URLs
+    // Default URLs tuseme fallback and quick fetching
     private const val DEFAULT_MATCH_API = "https://v0-spotifyapishit.vercel.app/api/spotify/match"
     private const val DEFAULT_CANVAS_API = "https://v0-spotifyapishit.vercel.app/api/canvas"
     
