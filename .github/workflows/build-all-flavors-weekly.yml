@@ -214,8 +214,8 @@ jobs:
             ## ✨ What's New in v${{ needs.versioning.outputs.downstream }}
             ---
             <div align="center">
-              <img alt="N-Zik Logo" src="https://github.com/NEVARLeVrai/N-Zik/blob/main/assets/design/ic_banner2.png?raw=true" width="1000" />
-              <p><b>N-Zik</b> - by @NEVARLeVrai</p>
+              <img alt="Cubic-Music Logo" src="https://github.com/cybruGhost/Cubic-Music/blob/main/assets/design/ic_banner2.png?raw=true" width="1000" />
+              <p><b>Cubic-Music</b> - by @cybruGhost</p>
             </div>
             
             ## 🔎 Verification
@@ -275,8 +275,8 @@ jobs:
             
             ## 🔗 Changelog & Downloads
             
-            - Full changelog: [Compare v${{ needs.versioning.outputs.upstream }}...v${{ needs.versioning.outputs.downstream }}](https://github.com/NEVARLeVrai/N-Zik/compare/v${{ needs.versioning.outputs.upstream }}...v${{ needs.versioning.outputs.downstream }})  
-            - [Changelog text file](https://github.com/NEVARLeVrai/N-Zik/blob/main/fastlane/metadata/android/en-US/changelogs/${{ needs.versioning.outputs.code }}.txt)
+            - Full changelog: [Compare v${{ needs.versioning.outputs.upstream }}...v${{ needs.versioning.outputs.downstream }}](https://github.com/cybruGhost/Cubic-Music/compare/v${{ needs.versioning.outputs.upstream }}...v${{ needs.versioning.outputs.downstream }})  
+            - [Changelog text file](https://github.com/cybruGhost/Cubic-Music/blob/main/fastlane/metadata/android/en-US/changelogs/${{ needs.versioning.outputs.code }}.txt)
 
 
           token: ${{ secrets.GITHUB_TOKEN }}

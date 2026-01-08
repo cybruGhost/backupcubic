@@ -70,9 +70,9 @@ body:
   - type: input
     id: app-version
     attributes:
-      label: Version of N-Zik
+      label: Version of Cubic-Music
       description: >-
-        Please specify what version of N-Zik are you on. Note: Don't use
+        Please specify what version of Cubic-Music are you on. Note: Don't use
         "latest" or similar terms, we have apps on multiple stores with some are
         lagged behind
       placeholder: v.1.0.0, v.1.1.0, etc.
@@ -119,8 +119,8 @@ body:
   - type: markdown
     attributes:
       value: >-
-        If you install N-Zik with APK from releases page. Please go to
-        [releases/lastest](https://github.com/NEVARLeVrai/N-Zik/releases) and
+        If you install Cubic-Music with APK from releases page. Please go to
+        [releases/lastest](https://github.com/cybruGhost/Cubic-Music/releases) and
         check if it matches your install version.
 
 
@@ -153,7 +153,7 @@ body:
       label: Tell us how to trigger this bug
       description: 'Each step should be on its own line. You can use simple sentences like:'
       value: |-
-        1. Open N-Zik
+        1. Open Cubic-Music
         2. Click on A 
         3. Click on B
         4. Boom! Crash happens
