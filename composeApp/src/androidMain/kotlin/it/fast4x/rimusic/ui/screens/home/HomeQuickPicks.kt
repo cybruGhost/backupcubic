@@ -145,9 +145,10 @@ import kotlin.time.Duration
 import kotlin.time.Duration.Companion.days
 import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
-import coil.compose.AsyncImage
-import coil.compose.rememberAsyncImagePainter
-import coil.request.ImageRequest
+import coil3.compose.AsyncImage
+import coil3.compose.rememberAsyncImagePainter
+import coil3.request.ImageRequest
+import coil3.request.crossfade
 // checkupdate
 import app.kreate.android.BuildConfig
 
@@ -161,6 +162,7 @@ import com.mikepenz.hypnoticcanvas.shaders.BlackCherryCosmos
 import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
 import kotlin.random.Random
 import java.time.LocalDate
+
 
 // ===== NOTIFICATION DATA CLASS =====
 data class NotificationData(
@@ -856,6 +858,8 @@ notificationInit?.let { notification ->
         ) {
             Column(modifier = Modifier.padding(16.dp)) {
                 // IMAGE (only if exists and not blank)
+
+                // Update AsyncImage usage for Coil 3
                 notification.imageUrl?.takeIf { it.isNotBlank() }?.let { imageUrl ->
                     AsyncImage(
                         model = ImageRequest.Builder(context)

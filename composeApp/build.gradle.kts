@@ -15,7 +15,6 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.room)
 
-
     alias(libs.plugins.kotlin.ksp)
     alias(libs.plugins.kotlin.serialization)
 }
@@ -27,17 +26,25 @@ repositories {
 }
 
 kotlin {
+    // Keep your Java 21 toolchain
+    jvmToolchain(21)
+
     androidTarget {
         @OptIn(ExperimentalKotlinGradlePluginApi::class)
         compilerOptions {
+            // Keep your JVM 21 target for Android
             jvmTarget.set(JvmTarget.JVM_21)
             freeCompilerArgs.add("-Xcontext-receivers")
         }
     }
 
-    jvm("desktop")
-
-
+    jvm("desktop") {
+        compilations.all {
+            compilerOptions.configure {
+                jvmTarget.set(JvmTarget.JVM_21)
+            }
+        }
+    }
 
     sourceSets {
         all {
@@ -46,64 +53,83 @@ kotlin {
             }
         }
 
-        val desktopMain by getting
-        desktopMain.dependencies {
-            implementation(compose.components.resources)
-            implementation(compose.desktop.currentOs)
+        val commonMain by getting {
+            dependencies {
+                implementation(compose.runtime)
+                implementation(compose.foundation)
+                implementation(compose.material3)
+                implementation(compose.ui)
+                implementation(compose.components.resources)
+                implementation(compose.components.uiToolingPreview)
 
-            implementation(libs.material.icon.desktop)
-            implementation(libs.vlcj)
+                implementation(projects.innertube)
+                implementation(projects.piped)
+                implementation(projects.invidious)
 
-            implementation(libs.coil.network.okhttp)
-            runtimeOnly(libs.kotlinx.coroutines.swing)
+                implementation(libs.room)
+                implementation(libs.room.runtime)
+                implementation(libs.room.sqlite.bundled)
 
-            /*
-            // Uncomment only for build jvm desktop version
-            // Comment before build android version
-            configurations.commonMainApi {
-                exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-android")
+                implementation(libs.mediaplayer.kmp)
+                implementation(libs.navigation.kmp)
+
+                // coil3 mp
+                implementation(libs.coil.compose.core)
+                implementation(libs.coil.compose)
+                implementation(libs.coil.mp)
+                implementation(libs.coil.network.okhttp)
+
+                implementation(libs.translator)
             }
-            */
         }
 
-        androidMain.dependencies {
-            implementation(libs.media3.session)
-            implementation(libs.kotlinx.coroutines.guava)
-            implementation(libs.newpipe.extractor)
-            implementation(libs.nanojson)
-            implementation(libs.androidx.webkit)
+        val androidMain by getting {
+            dependencies {
+                implementation(libs.media3.session)
+                implementation(libs.kotlinx.coroutines.guava)
+                implementation(libs.newpipe.extractor)
+                implementation(libs.nanojson)
+                implementation(libs.androidx.webkit)
 
-            // Related to built-in game, maybe removed in future?
-            implementation(libs.compose.runtime.livedata)
+                // Related to built-in game, maybe removed in future?
+                implementation(libs.compose.runtime.livedata)
+                
+                // Add his dependencies while keeping yours
+                implementation(libs.media3.exoplayer)
+                implementation(libs.media3.datasource.okhttp)
+                implementation(libs.media3.ui)
+                
+                // Add common network dependencies
+                implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                implementation("com.google.code.gson:gson:2.10.1")
+                implementation("org.jsoup:jsoup:1.17.2")
+            }
         }
-        commonMain.dependencies {
-            implementation(compose.runtime)
-            implementation(compose.foundation)
-            implementation(compose.material3)
-            implementation(compose.ui)
-            implementation(compose.components.resources)
-            implementation(compose.components.uiToolingPreview)
 
-            implementation(projects.innertube)
-            implementation(projects.piped)
-            implementation(projects.invidious)
+        val desktopMain by getting {
+            dependencies {
+                implementation(compose.components.resources)
+                implementation(compose.desktop.currentOs)
 
-            implementation(libs.room)
-            implementation(libs.room.runtime)
-            implementation(libs.room.sqlite.bundled)
+                implementation(libs.material.icon.desktop)
+                implementation(libs.vlcj)
 
-            implementation(libs.mediaplayer.kmp)
+                implementation(libs.coil.network.okhttp)
+                runtimeOnly(libs.kotlinx.coroutines.swing)
 
-            implementation(libs.navigation.kmp)
+                // Add common network dependencies
+                implementation("com.squareup.okhttp3:okhttp:4.12.0")
+                implementation("com.google.code.gson:gson:2.10.1")
+                implementation("org.jsoup:jsoup:1.17.2")
 
-            //coil3 mp
-            implementation(libs.coil.compose.core)
-            implementation(libs.coil.compose)
-            implementation(libs.coil.mp)
-            implementation(libs.coil.network.okhttp)
-
-            implementation(libs.translator)
-
+                /*
+                // Uncomment only for build jvm desktop version
+                // Comment before build android version
+                configurations.commonMainApi {
+                    exclude(group = "org.jetbrains.kotlinx", module = "kotlinx-coroutines-android")
+                }
+                */
+            }
         }
     }
 }
@@ -130,9 +156,11 @@ android {
     compileSdk = 35
 
     defaultConfig {
+        // Keep your package name
         applicationId = "com.Cubic.music"
         minSdk = 23
         targetSdk = 36
+        // Keep your version
         versionCode = 108
         versionName = "1.7.6"
 
@@ -141,6 +169,19 @@ android {
          */
         buildConfigField( "Boolean", "IS_AUTOUPDATE", "true" )
         buildConfigField( "String", "APP_NAME", "\"$APP_NAME\"" )
+        
+        // Add his GENIUS_API_KEY reading from .env
+        val envFile = rootProject.file(".env")
+        val geniusApiKey = if (envFile.exists()) {
+            envFile.readLines()
+                .firstOrNull { it.startsWith("GENIUS_API_KEY=") }
+                ?.substringAfter("GENIUS_API_KEY=")
+                ?.trim()
+                ?: ""
+        } else {
+            ""
+        }
+        buildConfigField("String", "GENIUS_API_KEY", "\"$geniusApiKey\"")
     }
 
     splits {
@@ -209,6 +250,7 @@ android {
 
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
+        // Keep your Java 21 version
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
     }
@@ -282,7 +324,6 @@ dependencies {
     implementation (libs.hypnoticcanvas)
     implementation (libs.hypnoticcanvas.shaders)
     implementation(libs.github.jeziellago.compose.markdown)
-// In your build.gradle.kts or build.gradle
     implementation("io.coil-kt:coil-compose:2.6.0")
     implementation("androidx.media3:media3-exoplayer:1.2.0")
     implementation("androidx.media3:media3-ui:1.2.0")
