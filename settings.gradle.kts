@@ -35,5 +35,3 @@ project(":invidious").projectDir = file("extensions/invidious")
 // Submodules
 include(":innertube")
 project(":innertube").projectDir = file("modules/innertube")
-include(":genius")
-include(":genius")
