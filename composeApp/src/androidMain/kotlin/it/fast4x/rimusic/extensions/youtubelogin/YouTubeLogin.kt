@@ -29,7 +29,6 @@ import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.utils.parseCookieString
 import it.fast4x.rimusic.LocalPlayerAwareWindowInsets
 import app.kreate.android.R
-import it.fast4x.rimusic.extensions.youtubelogin.AccountInfoFetcher
 import it.fast4x.rimusic.ui.components.themed.Title
 import it.fast4x.rimusic.utils.rememberPreference
 import kotlinx.coroutines.delay
@@ -66,13 +65,17 @@ fun YouTubeLogin(
             
             // Try to fetch fresh account info
             isLoading = true
-            val accountInfo = AccountInfoFetcher.fetchAccountInfo()
-            accountInfo?.let {
-                accountName = it.name.orEmpty()
-                accountEmail = it.email.orEmpty()
-                accountChannelHandle = it.channelHandle.orEmpty()
-                accountThumbnail = it.thumbnailUrl.orEmpty()
-                Timber.d("YouTubeLogin: Updated account info from existing login")
+            try {
+                val accountInfo = AccountInfoFetcher.fetchAccountInfo()
+                accountInfo?.let {
+                    accountName = it.name.orEmpty()
+                    accountEmail = it.email.orEmpty()
+                    accountChannelHandle = it.channelHandle.orEmpty()
+                    accountThumbnail = it.thumbnailUrl.orEmpty()
+                    Timber.d("YouTubeLogin: Updated account info from existing login")
+                }
+            } catch (e: Exception) {
+                Timber.e("YouTubeLogin: Error fetching account info: ${e.message}")
             }
             
             hasLoggedIn = true
@@ -136,7 +139,7 @@ fun YouTubeLogin(
                             if (combinedCookies.isNotEmpty()) {
                                 cookie = combinedCookies
                                 
-                                // Check for SAPISID cookie - FIXED: Use containsKey
+                                // Check for SAPISID cookie
                                 if (parseCookieString(combinedCookies).containsKey("SAPISID") && !hasLoggedIn && !loginAttempted) {
                                     Timber.d("YouTubeLogin: Found SAPISID cookie, attempting login!")
                                     
@@ -172,6 +175,7 @@ fun YouTubeLogin(
                                                 Timber.d("  Name: $accountName")
                                                 Timber.d("  Email: $accountEmail")
                                                 Timber.d("  Channel: $accountChannelHandle")
+                                                Timber.d("  Thumbnail: $accountThumbnail")
                                                 
                                                 android.widget.Toast.makeText(context, "Logged in as ${it.name}", android.widget.Toast.LENGTH_SHORT).show()
                                                 hasLoggedIn = true
