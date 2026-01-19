@@ -387,7 +387,7 @@
   <string name="sort_date_liked">Date Favorited</string>
   <string name="export_playlist">ייצוא רשימת השמעה</string>
   <string name="lang_afrikaans">Afrikaans (Afrikaans)</string>
-  <string name="playlist_top">Top Playlist</string>
+  <string name="playlist_top">Top</string>
   <string name="my_playlist_top">הטופ שלי %s</string>
   <string name="navigation_bar_position">מיקום סרגל הניווט</string>
   <string name="direction_left">שמאל</string>
