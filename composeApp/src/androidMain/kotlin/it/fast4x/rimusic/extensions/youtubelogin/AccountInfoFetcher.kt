@@ -1,8 +1,8 @@
-// AccountInfoFetcher.kt - IMPROVED VERSION
 package it.fast4x.rimusic.extensions.youtubelogin
 
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.models.AccountInfo
+import it.fast4x.innertube.models.AccountMenuResponse
 import timber.log.Timber
 
 class AccountInfoFetcher {
@@ -21,7 +21,7 @@ class AccountInfoFetcher {
                 }
                 
                 // Check if menuResult is an AccountMenuResponse
-                if (menuResult is it.fast4x.innertube.models.AccountMenuResponse) {
+                if (menuResult is AccountMenuResponse) {
                     Timber.d("AccountInfoFetcher: Got AccountMenuResponse")
                     
                     // Extract account info using the toAccountInfo() method
