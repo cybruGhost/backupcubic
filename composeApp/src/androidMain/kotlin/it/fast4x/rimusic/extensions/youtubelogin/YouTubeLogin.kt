@@ -20,6 +20,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import it.fast4x.rimusic.extensions.youtubelogin.AccountInfoFetcher 
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -66,7 +67,8 @@ fun YouTubeLogin(
             // Try to fetch fresh account info
             isLoading = true
             try {
-                val accountInfo = AccountInfoFetcher.fetchAccountInfo()
+                // PASS THE COOKIE TO FETCHER
+                val accountInfo = AccountInfoFetcher.fetchAccountInfo(cookie)
                 accountInfo?.let {
                     accountName = it.name.orEmpty()
                     accountEmail = it.email.orEmpty()
@@ -162,8 +164,8 @@ fun YouTubeLogin(
                                             loginAttempted = true
                                             delay(2000) // Give time for cookies to be fully set
                                             
-                                            // Use AccountInfoFetcher to get account info
-                                            val accountInfo = AccountInfoFetcher.fetchAccountInfo()
+                                            // Use AccountInfoFetcher to get account info - PASS THE COOKIE!
+                                            val accountInfo = AccountInfoFetcher.fetchAccountInfo(cookie)
                                             
                                             accountInfo?.let {
                                                 accountName = it.name.orEmpty()
