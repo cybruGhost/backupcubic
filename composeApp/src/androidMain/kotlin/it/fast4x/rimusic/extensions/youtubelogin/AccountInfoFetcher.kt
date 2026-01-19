@@ -1,4 +1,4 @@
-// AccountInfoFetcher.kt - FINAL WORKING VERSION
+// AccountInfoFetcher.kt - IMPROVED VERSION
 package it.fast4x.rimusic.extensions.youtubelogin
 
 import it.fast4x.innertube.Innertube
@@ -12,7 +12,7 @@ class AccountInfoFetcher {
             return try {
                 Timber.d("AccountInfoFetcher: Starting account info fetch")
                 
-                // Try to get account menu
+                // Try to get account menu first (more reliable for logged-in users)
                 val menuResult = try {
                     Innertube.accountMenu()
                 } catch (e: Exception) {
@@ -25,12 +25,32 @@ class AccountInfoFetcher {
                     Timber.d("AccountInfoFetcher: Got AccountMenuResponse")
                     
                     // Extract account info using the toAccountInfo() method
-                    return menuResult.actions?.firstOrNull()?.openPopupAction?.popup
+                    val accountInfo = menuResult.actions?.firstOrNull()?.openPopupAction?.popup
                         ?.multiPageMenuRenderer?.header?.activeAccountHeaderRenderer?.toAccountInfo()
+                    
+                    if (accountInfo != null) {
+                        Timber.d("AccountInfoFetcher: Successfully extracted account info from menu")
+                        return accountInfo
+                    }
                 }
                 
-                Timber.d("AccountInfoFetcher: Could not extract account info")
+                // Fallback to accountInfo() if menu fails
+                Timber.d("AccountInfoFetcher: Trying accountInfo() as fallback")
+                val accountInfoResult = try {
+                    Innertube.accountInfo()
+                } catch (e: Exception) {
+                    Timber.e("AccountInfoFetcher: Error calling accountInfo: ${e.message}")
+                    null
+                }
+                
+                accountInfoResult?.getOrNull()?.let {
+                    Timber.d("AccountInfoFetcher: Got account info from fallback")
+                    return it
+                }
+                
+                Timber.d("AccountInfoFetcher: Could not extract account info from any method")
                 null
+                
             } catch (e: Exception) {
                 Timber.e("AccountInfoFetcher: Error fetching account info: ${e.message}")
                 null
