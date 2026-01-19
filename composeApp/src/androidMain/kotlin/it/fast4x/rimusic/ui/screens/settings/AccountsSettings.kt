@@ -177,8 +177,8 @@ fun AccountsSettings() {
                     )
                     var accountThumbnail by rememberPreference(key = "yt_account_thumbnail", defaultValue = "")
 
-                    var isLoggedIn = remember(cookie) {
-                        "SAPISID" in parseCookieString(cookie)
+                   var isLoggedIn = remember(cookie) {
+                        parseCookieString(cookie).containsKey("SAPISID")
                     }
 
                     OtherSwitchSettingEntry(
