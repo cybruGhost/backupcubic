@@ -75,6 +75,10 @@ import it.fast4x.rimusic.utils.rememberPreference
 import it.fast4x.rimusic.utils.thumbnailRoundnessKey
 import it.fast4x.rimusic.utils.transitionEffectKey
 import it.fast4x.rimusic.ui.screens.welcome.WelcomeScreen
+import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamManager
+import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamScreen
+import androidx.compose.runtime.remember
+import android.content.Context
 
 
 @androidx.annotation.OptIn()
@@ -294,6 +298,25 @@ fun AppNavigation(
                 miniPlayer = miniPlayer,
             )
         }
+
+        // In your AppNavigation.kt, add this route:
+composable(route = NavRoutes.cubicjam.name) {
+    val context = LocalContext.current
+    val cubicJamManager = remember {
+        CubicJamManager(
+            context = context,
+            getToken = {
+                context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
+                    .getString("bearer_token", null)
+            }
+        )
+    }
+    
+    CubicJamScreen(
+        navController = navController,
+        cubicJamManager = cubicJamManager
+    )
+}
 
         // Add Rewind screen here
         composable(route = NavRoutes.rewind.name) {
