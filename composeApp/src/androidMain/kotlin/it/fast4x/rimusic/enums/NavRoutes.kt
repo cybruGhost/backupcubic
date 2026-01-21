@@ -13,6 +13,7 @@ enum class NavRoutes {
     artist,
     games,
     gamePacman,
+    cubicjam,
     gameSnake,
     history,
     localPlaylist,
