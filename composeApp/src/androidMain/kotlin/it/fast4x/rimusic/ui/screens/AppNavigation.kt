@@ -79,6 +79,8 @@ import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamManager
 import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamScreen
 import androidx.compose.runtime.remember
 import android.content.Context
+// i should add this import at the top of your AppNavigation.kt file
+import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamWebView
 
 
 @androidx.annotation.OptIn()
@@ -315,6 +317,13 @@ composable(route = NavRoutes.cubicjam.name) {
     CubicJamScreen(
         navController = navController,
         cubicJamManager = cubicJamManager
+    )
+}
+ // forwebview
+composable(route = NavRoutes.cubicjam_web.name) {
+    CubicJamWebView(
+        navController = navController,
+        initialUrl = "https://jam-wave-connect.lovable.app/feed"
     )
 }
 
