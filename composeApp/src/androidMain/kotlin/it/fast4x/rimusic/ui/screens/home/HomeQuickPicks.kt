@@ -685,11 +685,10 @@ if (showTips) {
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .padding(top = 24.dp, bottom = 8.dp),
-        horizontalArrangement = Arrangement.SpaceBetween,
+            .padding(top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // Title with dropdown (left side) - same as onClick1
+        // Tips title + dropdown button (grouped together on left)
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.clickable {
@@ -730,18 +729,35 @@ if (showTips) {
             Spacer(modifier = Modifier.width(8.dp))
             Icon(
                 painter = painterResource(R.drawable.chevron_down),
-                contentDescription = null,
+                contentDescription = "Play events type",
                 tint = colorPalette().text,
                 modifier = Modifier.size(16.dp)
             )
         }
         
-        // Action icons (Play + CubicJam) - right side
+        // Spacer to push icons to the right
+        Spacer(modifier = Modifier.weight(1f))
+        
+        // CubicJam + Play icons (grouped together on right)
         Row(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            // Play icon - same as icon2/onClick2
+            // CubicJam icon
+            IconButton(
+                onClick = {
+                    navController.navigate(NavRoutes.cubicjam.name)
+                },
+                modifier = Modifier.size(24.dp)
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.multipage),
+                    contentDescription = "Cubic Jam",
+                    tint = MaterialTheme.colorScheme.primary
+                )
+            }
+            
+            // Play icon
             IconButton(
                 onClick = {
                     binder?.stopRadio()
@@ -755,20 +771,6 @@ if (showTips) {
                     painter = painterResource(R.drawable.play),
                     contentDescription = "Play",
                     tint = colorPalette().text
-                )
-            }
-            
-            // CubicJam icon - NEW
-            IconButton(
-                onClick = {
-                    navController.navigate(NavRoutes.cubicjam.name)
-                },
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.multipage),
-                    contentDescription = "Cubic Jam",
-                    tint = MaterialTheme.colorScheme.primary
                 )
             }
         }
