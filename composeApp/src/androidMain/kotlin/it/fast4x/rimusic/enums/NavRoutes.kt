@@ -15,6 +15,7 @@ enum class NavRoutes {
     gamePacman,
     cubicjam,
     cubicjam_web,
+    cubicjam_swipe,         
     gameSnake,
     history,
     localPlaylist,
