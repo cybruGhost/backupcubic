@@ -9,9 +9,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import androidx.compose.ui.res.painterResource
-import app.kreate.android.R
 import me.knighthat.utils.isNetworkAvailable
 import timber.log.Timber
 import it.fast4x.innertube.Innertube
@@ -19,8 +16,6 @@ import io.ktor.client.call.*
 import io.ktor.client.request.*
 import io.ktor.http.*
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
 
 @Serializable
 data class AuthResponse(
@@ -84,17 +79,17 @@ class CubicJamManager(
 
     private var lastToken: String? = null
     private var lastMediaItem: MediaItem? = null
-    private var lastPosition: Long = 0L
     private var isStopped = false
-    private val cubicJamScope = externalScope
     private var refreshJob: Job? = null
+    private var lastUpdateTime = 0L
+    private val UPDATE_INTERVAL = 15000L // 15 seconds
 
     fun onPlayingStateChanged(
         mediaItem: MediaItem?,
         isPlaying: Boolean,
         position: Long = 0L,
         duration: Long = 0L,
-        now: Long = System.currentTimeMillis(),
+        now: Long = System.currentTimeMillis(), // Added this parameter
         getCurrentPosition: (() -> Long)? = null,
         isPlayingProvider: (() -> Boolean)? = null
     ) {
@@ -108,103 +103,63 @@ class CubicJamManager(
         }
 
         refreshJob?.cancel()
-        refreshJob = null
-
+        
         if (token != lastToken) {
             lastToken = token
         }
 
         lastMediaItem = mediaItem
-        lastPosition = position
+        
         if (mediaItem == null) {
             sendStoppedActivity()
             return
         }
         
+        // Send initial update
+        sendActivityUpdate(mediaItem, position, duration, isPlaying)
+        
+        // Start periodic updates if playing
         if (isPlaying) {
-            sendPlayingPresence(mediaItem, position, duration, now)
-            val currentIsPlaying = isPlaying
-            val currentPosition = position
-            startRefreshJob(
-                isPlayingProvider = { currentIsPlaying },
-                mediaItem = mediaItem,
-                getCurrentPosition = { currentPosition },
-                pausedPosition = position,
-                duration = duration,
-                startTime = now
-            )
-        } else {
-            sendPausedPresence(duration, now, position)
-            val currentIsPlaying = isPlaying
-            val currentPosition = position
-            startRefreshJob(
-                isPlayingProvider = { currentIsPlaying },
-                mediaItem = mediaItem,
-                getCurrentPosition = { currentPosition },
-                pausedPosition = position,
-                duration = duration,
-                startTime = now
-            )
+            startPeriodicUpdates(mediaItem, getCurrentPosition, duration, isPlayingProvider)
         }
     }
 
-    private fun sendPausedPresence(duration: Long, now: Long, pausedPosition: Long) {
-        if (isStopped) return
-        val mediaItem = lastMediaItem ?: return
-        cubicJamScope.launch {
-            if (isStopped) return@launch
-            sendActivityUpdate(
-                mediaItem = mediaItem,
-                position = pausedPosition,
-                duration = duration,
-                isPlaying = false
-            )
+    private fun sendActivityUpdate(mediaItem: MediaItem, position: Long, duration: Long, isPlaying: Boolean) {
+        val token = lastToken ?: return
+        val currentTime = System.currentTimeMillis()
+        
+        // Throttle updates
+        if (currentTime - lastUpdateTime < 5000 && isPlaying) {
+            return
         }
-    }
-
-    private fun sendPlayingPresence(mediaItem: MediaItem, position: Long, duration: Long, now: Long) {
-        cubicJamScope.launch {
-            sendActivityUpdate(
-                mediaItem = mediaItem,
-                position = position,
-                duration = duration,
-                isPlaying = true
-            )
-        }
-    }
-
-    private suspend fun sendActivityUpdate(
-        mediaItem: MediaItem,
-        position: Long,
-        duration: Long,
-        isPlaying: Boolean
-    ) {
-        val token = getToken() ?: return
-        if (token.isEmpty()) return
-
-        try {
-            val activityData = createActivityData(mediaItem, position, duration, isPlaying)
-            
-            Timber.tag("CubicJam").d("Sending activity: ${activityData.title} by ${activityData.artist}")
-            
-            val response = Innertube.client.post("$BASE_URL/update-activity") {
-                header("Authorization", "Bearer $token")
-                contentType(ContentType.Application.Json)
-                setBody(activityData)
-            }
-
-            if (response.status.value in 200..299) {
-                Timber.tag("CubicJam").d("✅ Activity updated successfully")
-            } else {
-                val error = try {
-                    response.body<String>()
-                } catch (e: Exception) {
-                    "Failed to parse error"
+        
+        lastUpdateTime = currentTime
+        
+        externalScope.launch {
+            try {
+                val activityData = createActivityData(mediaItem, position, duration, isPlaying)
+                
+                Timber.tag("CubicJam").d("Sending activity: ${activityData.title} by ${activityData.artist}")
+                
+                val response = Innertube.client.post("$BASE_URL/update-activity") {
+                    header("Authorization", "Bearer $token")
+                    contentType(ContentType.Application.Json)
+                    setBody(activityData)
                 }
-                Timber.tag("CubicJam").e("❌ Activity update failed: ${response.status}, $error")
+
+                if (response.status.value in 200..299) {
+                    Timber.tag("CubicJam").d("✅ Activity updated successfully")
+                } else {
+                    val error = try {
+                        response.body<String>()
+                    } catch (e: Exception) {
+                        "Failed to parse error"
+                    }
+                    Timber.tag("CubicJam").e("❌ Activity update failed: ${response.status}, $error")
+                }
+            } catch (e: Exception) {
+                Timber.tag("CubicJam").e(e, "❌ Network error: ${e.message}")
             }
-        } catch (e: Exception) {
-            Timber.tag("CubicJam").e(e, "❌ Network error: ${e.message}")
         }
     }
 
@@ -240,32 +195,26 @@ class CubicJamManager(
     }
 
     private fun sendStoppedActivity() {
-        cubicJamScope.launch {
+        externalScope.launch {
             Timber.tag("CubicJam").d("Media stopped, not sending update")
         }
     }
 
-    private fun startRefreshJob(
-        isPlayingProvider: () -> Boolean,
+    private fun startPeriodicUpdates(
         mediaItem: MediaItem,
-        getCurrentPosition: () -> Long,
-        pausedPosition: Long,
+        getCurrentPosition: (() -> Long)?,
         duration: Long,
-        startTime: Long
+        isPlayingProvider: (() -> Boolean)?
     ) {
-        refreshJob = cubicJamScope.launch {
+        refreshJob = externalScope.launch {
             while (isActive && !isStopped) {
-                delay(15_000L)
+                delay(UPDATE_INTERVAL)
                 if (!isNetworkAvailable(context)) {
                     continue
                 }
-                val isPlaying = isPlayingProvider()
-                if (isPlaying) {
-                    val pos = getCurrentPosition()
-                    sendPlayingPresence(mediaItem, pos, duration, startTime)
-                } else {
-                    sendPausedPresence(duration, System.currentTimeMillis(), pausedPosition)
-                }
+                val isPlaying = isPlayingProvider?.invoke() ?: true
+                val currentPosition = getCurrentPosition?.invoke() ?: 0L
+                sendActivityUpdate(mediaItem, currentPosition, duration, isPlaying)
             }
         }
     }
@@ -273,7 +222,6 @@ class CubicJamManager(
     fun onStop() {
         isStopped = true
         refreshJob?.cancel()
-        cubicJamScope.cancel()
     }
 }
 
