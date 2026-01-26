@@ -6,6 +6,7 @@ import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.parameter
 import io.ktor.client.statement.HttpResponse
+import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.models.AccountInfo
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -17,39 +18,15 @@ class AccountInfoFetcher {
         suspend fun fetchAccountInfo(cookie: String? = null): AccountInfo? {
             return withContext(Dispatchers.IO) {
                 try {
-                    Timber.d("AccountInfoFetcher: Starting account info fetch via Invidious API")
+                    Timber.d("AccountInfoFetcher: Starting account info fetch with cookie length: ${cookie?.length ?: 0}")
                     
-                    // We'll try multiple Invidious instances in case one is down
-                    val instances = listOf(
-                        "https://yt.omada.cafe",
-                        "https://inv.riverside.rocks",
-                        "https://invidious.nerdvpn.de",
-                        "https://yt.funami.tech",
-                        "https://inv.nadeko.net"
-                    )
-                    
-                    var accountInfo: AccountInfo? = null
-                    
-                    for (instance in instances) {
-                        try {
-                            Timber.d("AccountInfoFetcher: Trying instance: $instance")
-                            accountInfo = fetchFromInstance(instance, cookie)
-                            if (accountInfo != null) {
-                                Timber.d("AccountInfoFetcher: Successfully fetched from $instance")
-                                break
-                            }
-                        } catch (e: Exception) {
-                            Timber.e("AccountInfoFetcher: Failed with $instance: ${e.message}")
-                            continue
-                        }
+                    if (cookie.isNullOrEmpty()) {
+                        Timber.e("AccountInfoFetcher: No cookie provided")
+                        return@withContext null
                     }
                     
-                    if (accountInfo == null) {
-                        Timber.d("AccountInfoFetcher: All instances failed, trying YouTube Music directly")
-                        accountInfo = tryYouTubeMusicDirect(cookie)
-                    }
-                    
-                    accountInfo
+                    // Try to get account info using InnerTube directly
+                    return@withContext tryGetAccountInfoViaInnerTube(cookie)
                     
                 } catch (e: Exception) {
                     Timber.e("AccountInfoFetcher: Error fetching account info: ${e.message}")
@@ -58,70 +35,55 @@ class AccountInfoFetcher {
             }
         }
         
-        private suspend fun fetchFromInstance(instanceUrl: String, cookie: String?): AccountInfo? {
+        private suspend fun tryGetAccountInfoViaInnerTube(cookie: String): AccountInfo? {
             return try {
-                val client = HttpClient()
+                Timber.d("AccountInfoFetcher: Trying to get account info via InnerTube")
                 
-                // Try to get subscription feed (requires auth)
-                val response: HttpResponse = client.get("$instanceUrl/api/v1/auth/feed") {
-                    cookie?.let { header("Cookie", it) }
-                    header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36")
+                // Parse SAPISID from cookie
+                val cookies = parseCookieString(cookie)
+                val sapisid = cookies["SAPISID"]
+                
+                if (sapisid == null) {
+                    Timber.e("AccountInfoFetcher: No SAPISID found in cookie")
+                    return null
                 }
                 
-                if (response.status.value == 200) {
-                    // If we get a successful response, we're logged in
-                    // Now try to get subscriptions to get account info
-                    val subsResponse: HttpResponse = client.get("$instanceUrl/api/v1/auth/subscriptions") {
-                        cookie?.let { header("Cookie", it) }
-                    }
-                    
-                    if (subsResponse.status.value == 200) {
-                        // We're authenticated, create account info
-                        // Note: Invidious doesn't directly expose account name/email
-                        // We'll need to parse from cookie or use a different endpoint
-                        return try {
-                            // Try to get preferences which might have some account info
-                            val prefsResponse: HttpResponse = client.get("$instanceUrl/api/v1/auth/preferences") {
-                                cookie?.let { header("Cookie", it) }
-                            }
-                            
-                            if (prefsResponse.status.value == 200) {
-                                // Parse account name from cookie if possible
-                                val accountName = parseAccountNameFromCookie(cookie)
-                                
-                                AccountInfo(
-                                    name = accountName ?: "YouTube Account",
-                                    email = "", // Invidious doesn't expose email
-                                    channelHandle = "", // Would need to parse from cookie
-                                    thumbnailUrl = getThumbnailFromName(accountName)
-                                )
-                            } else {
-                                null
-                            }
-                        } catch (e: Exception) {
-                            Timber.e("AccountInfoFetcher: Error getting preferences: ${e.message}")
-                            null
-                        }
-                    }
+                Timber.d("AccountInfoFetcher: Found SAPISID: ${sapisid.take(10)}...")
+                
+                // Try to use InnerTube to get account info
+                // This assumes InnerTube has methods to fetch account info
+                // You might need to adjust based on your actual InnerTube implementation
+                val accountInfo = try {
+                    // Try to get account info from music.youtube.com homepage
+                    getAccountInfoFromYTMHomepage(cookie)
+                } catch (e: Exception) {
+                    Timber.e("AccountInfoFetcher: Failed to get account info via homepage: ${e.message}")
+                    null
                 }
                 
-                null
+                accountInfo ?: try {
+                    // Fallback: Create basic account info from cookie
+                    createAccountInfoFromCookie(cookie)
+                } catch (e: Exception) {
+                    Timber.e("AccountInfoFetcher: Failed to create account info from cookie: ${e.message}")
+                    null
+                }
+                
             } catch (e: Exception) {
-                Timber.e("AccountInfoFetcher: Error fetching from $instanceUrl: ${e.message}")
+                Timber.e("AccountInfoFetcher: InnerTube method failed: ${e.message}")
                 null
             }
         }
         
-        private suspend fun tryYouTubeMusicDirect(cookie: String?): AccountInfo? {
+        private suspend fun getAccountInfoFromYTMHomepage(cookie: String): AccountInfo? {
             return try {
-                if (cookie.isNullOrEmpty()) return null
-                
                 val client = HttpClient()
                 
-                // Try to get YouTube Music homepage which shows account info when logged in
                 val response: HttpResponse = client.get("https://music.youtube.com") {
                     header("Cookie", cookie)
                     header("User-Agent", "Mozilla/5.0 (Linux; Android 10; Mobile) AppleWebKit/537.36")
+                    header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                    header("Accept-Language", "en-US,en;q=0.9")
                 }
                 
                 val html = response.body<String>()
@@ -133,110 +95,130 @@ class AccountInfoFetcher {
                     AccountInfo(
                         name = accountName,
                         email = "", // Can't get email from HTML
-                        channelHandle = "", // Can't get channel handle from HTML
-                        thumbnailUrl = getThumbnailFromName(accountName)
+                        channelHandle = parseChannelHandleFromCookie(cookie),
+                        thumbnailUrl = parseThumbnailUrlFromHTML(html)
                     )
                 } else {
                     null
                 }
                 
             } catch (e: Exception) {
-                Timber.e("AccountInfoFetcher: Error trying YouTube Music direct: ${e.message}")
+                Timber.e("AccountInfoFetcher: Error getting YTM homepage: ${e.message}")
                 null
             }
         }
         
-        private fun parseAccountNameFromCookie(cookie: String?): String? {
-            if (cookie.isNullOrEmpty()) return null
+        private fun createAccountInfoFromCookie(cookie: String): AccountInfo? {
+            // Extract basic info from cookie
+            val cookies = parseCookieString(cookie)
             
-            // Try to extract account name from SAPISID cookie
-            // SAPISID cookie format: SAPISID=xxx/yyy_zzz
-            val sapisidMatch = Regex("SAPISID=[^/]+/([^_]+)").find(cookie)
-            sapisidMatch?.let {
-                return it.groupValues.getOrNull(1)?.replace("%20", " ")?.trim()
+            // Try to get account identifier from SAPISID
+            val sapisid = cookies["SAPISID"] ?: return null
+            
+            // SAPISID format: SAPISID=xxx/account_name@timestamp
+            val sapisidParts = sapisid.split("/")
+            val accountIdentifier = if (sapisidParts.size > 1) {
+                sapisidParts[1].split("@").firstOrNull() ?: "YouTube User"
+            } else {
+                "YouTube User"
             }
             
-            // Try to extract from other cookies
-            val googleAccountMatch = Regex("GoogleAccounts=([^;]+)").find(cookie)
-            googleAccountMatch?.let {
-                return it.groupValues.getOrNull(1)?.replace("%20", " ")?.trim()
-            }
+            // Clean up the identifier
+            val cleanName = accountIdentifier
+                .replace("%20", " ")
+                .replace("%40", "@")
+                .replace("_", " ")
+                .trim()
             
-            return null
+            return AccountInfo(
+                name = if (cleanName.isNotEmpty()) cleanName else "YouTube Account",
+                email = "", // Can't get email from cookie
+                channelHandle = "", // Can't get channel handle from cookie
+                thumbnailUrl = "" // Can't get thumbnail from cookie
+            )
+        }
+        
+        private fun parseCookieString(cookie: String): Map<String, String> {
+            return cookie.split(";")
+                .map { it.trim() }
+                .filter { it.contains("=") }
+                .associate {
+                    val parts = it.split("=", limit = 2)
+                    parts[0] to (parts.getOrNull(1) ?: "")
+                }
         }
         
         private fun parseAccountNameFromHTML(html: String): String? {
             // Try to find account name in YouTube Music HTML
             val patterns = listOf(
                 Regex("\"accountName\":\"([^\"]+)\""),
+                Regex("\"displayName\":\"([^\"]+)\""),
                 Regex("ytmAccountName[^>]*>([^<]+)<"),
                 Regex("account-name[^>]*>([^<]+)<"),
-                Regex("ytmusic-user-email-renderer[^>]*title=\"([^\"]+)\"")
+                Regex("ytmusic-user-email-renderer[^>]*title=\"([^\"]+)\""),
+                Regex("\"authorName\":\"([^\"]+)\"")
             )
             
             for (pattern in patterns) {
                 val match = pattern.find(html)
                 match?.let {
                     val name = it.groupValues.getOrNull(1)?.trim()
-                    if (!name.isNullOrEmpty() && name.length < 100) {
+                    if (!name.isNullOrEmpty() && name.length < 100 && name != "null") {
+                        Timber.d("AccountInfoFetcher: Found account name: $name")
                         return name
                     }
+                }
+            }
+            
+            // Try to find in ytInitialData
+            val ytInitialDataMatch = Regex("ytInitialData\\s*=\\s*({[^;]+});").find(html)
+            ytInitialDataMatch?.let {
+                try {
+                    val jsonStr = it.groupValues.getOrNull(1)
+                    if (jsonStr != null) {
+                        // Simple extraction from JSON
+                        val nameMatch = Regex("\"displayName\":\"([^\"]+)\"").find(jsonStr)
+                        nameMatch?.let { match ->
+                            val name = match.groupValues.getOrNull(1)?.trim()
+                            if (!name.isNullOrEmpty() && name != "null") {
+                                Timber.d("AccountInfoFetcher: Found displayName in ytInitialData: $name")
+                                return name
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    Timber.e("AccountInfoFetcher: Error parsing ytInitialData: ${e.message}")
                 }
             }
             
             return null
         }
         
-        private fun getThumbnailFromName(name: String?): String {
-            if (name.isNullOrEmpty()) return ""
-            
-            // Generate a simple avatar based on name initials
-            // You could also try to fetch actual thumbnail from YouTube
-            val initials = name.take(2).uppercase()
-            return "" // Return empty for now, or use a generated avatar URL
+        private fun parseChannelHandleFromCookie(cookie: String): String {
+            // Try to extract from cookie if possible
+            // This is a placeholder - actual implementation depends on cookie structure
+            return ""
         }
         
-        // Alternative: Get account info from YouTube Data API if you have API key
-        suspend fun fetchAccountInfoWithAPI(apiKey: String, cookie: String): AccountInfo? {
-            return try {
-                val client = HttpClient()
-                
-                // Get channel info using YouTube Data API
-                val response: HttpResponse = client.get("https://www.googleapis.com/youtube/v3/channels") {
-                    header("Authorization", "Bearer $cookie") // Use cookie as token if valid
-                    parameter("part", "snippet")
-                    parameter("mine", "true")
-                    parameter("key", apiKey)
-                }
-                
-                if (response.status.value == 200) {
-                    val json = response.body<String>()
-                    
-                    // Parse JSON response
-                    val titleMatch = Regex("\"title\":\"([^\"]+)\"").find(json)
-                    val thumbnailMatch = Regex("\"url\":\"([^\"]+)\"").find(json)
-                    
-                    val name = titleMatch?.groupValues?.getOrNull(1)
-                    val thumbnail = thumbnailMatch?.groupValues?.getOrNull(1)
-                    
-                    if (name != null) {
-                        AccountInfo(
-                            name = name,
-                            email = "", // YouTube Data API doesn't expose email
-                            channelHandle = "", // Would need additional call
-                            thumbnailUrl = thumbnail ?: ""
-                        )
-                    } else {
-                        null
+        private fun parseThumbnailUrlFromHTML(html: String): String {
+            // Try to find thumbnail URL in HTML
+            val patterns = listOf(
+                Regex("\"thumbnailUrl\":\"([^\"]+)\""),
+                Regex("avatar-img[^>]*src=\"([^\"]+)\""),
+                Regex("yt-img-shadow[^>]*src=\"([^\"]+)\"")
+            )
+            
+            for (pattern in patterns) {
+                val match = pattern.find(html)
+                match?.let {
+                    val url = it.groupValues.getOrNull(1)?.trim()
+                    if (!url.isNullOrEmpty() && url.startsWith("http")) {
+                        return url
                     }
-                } else {
-                    null
                 }
-                
-            } catch (e: Exception) {
-                Timber.e("AccountInfoFetcher: Error with YouTube Data API: ${e.message}")
-                null
             }
+            
+            return ""
         }
     }
 }
