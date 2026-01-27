@@ -82,6 +82,8 @@ import android.content.Context
 // i should add this import at the top of your AppNavigation.kt file
 import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamWebView
 import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamSwipeScreen
+import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamAddFriend
+
 
 
 @androidx.annotation.OptIn()
@@ -301,8 +303,7 @@ fun AppNavigation(
                 miniPlayer = miniPlayer,
             )
         }
-
-        // In your AppNavigation.kt, add this route:
+// In your AppNavigation.kt, add these routes:
 composable(route = NavRoutes.cubicjam.name) {
     val context = LocalContext.current
     val cubicJamManager = remember {
@@ -321,15 +322,15 @@ composable(route = NavRoutes.cubicjam.name) {
     )
 }
 
-composable(route = NavRoutes.cubicjam_swipe.name) {
-    CubicJamSwipeScreen(navController = navController)
+composable(route = NavRoutes.cubicjam_add_friend.name) {
+    CubicJamAddFriend(navController = navController)
 }
 
- // forwebview
-composable(route = NavRoutes.cubicjam_web.name) {
+composable(route = NavRoutes.cubicjam_web.name) { backStackEntry ->
+    val url = backStackEntry.arguments?.getString("url") ?: "https://jam-wave-connect.lovable.app/feed"
     CubicJamWebView(
         navController = navController,
-        initialUrl = "https://swipes.lovable.app/"
+        initialUrl = url
     )
 }
 

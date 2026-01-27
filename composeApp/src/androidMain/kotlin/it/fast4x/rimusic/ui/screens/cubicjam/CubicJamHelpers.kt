@@ -14,14 +14,44 @@ suspend fun refreshFriendsActivity(
     preferences: android.content.SharedPreferences,
     json: Json
 ): FriendsActivityResponse? {
-    val token = preferences.getString("bearer_token", null)
-    if (token == null) return null
-    
     return try {
+        val token = ensureValidToken(preferences) ?: return null
+        
+        Timber.tag("CubicJam").d("Fetching friends activity from functions API...")
+        
         val response = Innertube.client.get("https://dkbvirgavjojuyaazzun.supabase.co/functions/v1/friends-activity") {
             header("Authorization", "Bearer $token")
         }
-        json.decodeFromString<FriendsActivityResponse>(response.body())
+        
+        Timber.tag("CubicJam").d("Friends activity response status: ${response.status}")
+        
+        if (response.status.value in 200..299) {
+            val responseBody = response.body<String>()
+            Timber.tag("CubicJam").d("Friends activity raw response: $responseBody")
+            
+            try {
+                val result = json.decodeFromString<FriendsActivityResponse>(responseBody)
+                Timber.tag("CubicJam").d("Successfully parsed ${result.friends.size} friends")
+                return result
+            } catch (e: Exception) {
+                Timber.tag("CubicJam").e(e, "Failed to parse friends activity response")
+                // Try to parse as generic response to see what we got
+                try {
+                    val errorResponse = json.decodeFromString<Map<String, Any>>(responseBody)
+                    Timber.tag("CubicJam").e("Error response: $errorResponse")
+                } catch (e2: Exception) {
+                    Timber.tag("CubicJam").e(e2, "Failed to parse error response")
+                }
+            }
+        } else {
+            val error = try {
+                response.body<String>()
+            } catch (e: Exception) {
+                "Failed to parse error"
+            }
+            Timber.tag("CubicJam").e("❌ Friends activity failed: ${response.status}, $error")
+        }
+        null
     } catch (e: Exception) {
         Timber.e(e, "Failed to fetch friends activity")
         null
@@ -29,29 +59,199 @@ suspend fun refreshFriendsActivity(
 }
 
 suspend fun getUserProfile(
-    token: String,
+    preferences: android.content.SharedPreferences,
     username: String,
     json: Json
 ): UserProfileResponse {
+    val token = ensureValidToken(preferences) ?: throw IllegalStateException("Not authenticated")
+    
     val response = Innertube.client.get("https://dkbvirgavjojuyaazzun.supabase.co/functions/v1/user-profile") {
         header("Authorization", "Bearer $token")
         parameter("username", username)
     }
+    
+    if (response.status.value !in 200..299) {
+        val error = try {
+            response.body<String>()
+        } catch (e: Exception) {
+            "Failed to parse error"
+        }
+        throw Exception("Failed to get user profile: ${response.status}, $error")
+    }
+    
     return json.decodeFromString<UserProfileResponse>(response.body())
 }
 
 suspend fun addFriend(
-    token: String,
+    preferences: android.content.SharedPreferences,
     friendCode: String,
     json: Json
-) {
+): FriendResponse {
+    val token = ensureValidToken(preferences) ?: throw IllegalStateException("Not authenticated")
+    
+    Timber.tag("CubicJam").d("Sending friend request with code: $friendCode")
+    
     val response = Innertube.client.post("https://dkbvirgavjojuyaazzun.supabase.co/functions/v1/friends") {
         header("Authorization", "Bearer $token")
         contentType(ContentType.Application.Json)
         setBody(FriendRequest(action = "add", friend_code = friendCode))
     }
+    
+    if (response.status.value !in 200..299) {
+        val error = try {
+            response.body<String>()
+        } catch (e: Exception) {
+            "Failed to parse error"
+        }
+        throw Exception("Failed to add friend: ${response.status}, $error")
+    }
+    
     val result = json.decodeFromString<FriendResponse>(response.body())
     if (!result.success) {
         throw Exception(result.message ?: "Failed to add friend")
     }
+    
+    Timber.tag("CubicJam").d("✅ Friend request sent successfully")
+    return result
 }
+
+suspend fun getFriendsList(
+    preferences: android.content.SharedPreferences,
+    json: Json
+): FriendsListResponse? {
+    return try {
+        val token = ensureValidToken(preferences) ?: return null
+        
+        Timber.tag("CubicJam").d("Fetching friends list from functions API...")
+        
+        val response = Innertube.client.get("https://dkbvirgavjojuyaazzun.supabase.co/functions/v1/friends") {
+            header("Authorization", "Bearer $token")
+        }
+        
+        if (response.status.value in 200..299) {
+            val responseBody = response.body<String>()
+            Timber.tag("CubicJam").d("Friends list response: $responseBody")
+            return json.decodeFromString<FriendsListResponse>(responseBody)
+        } else {
+            val error = try {
+                response.body<String>()
+            } catch (e: Exception) {
+                "Failed to parse error"
+            }
+            Timber.tag("CubicJam").e("❌ Friends list failed: ${response.status}, $error")
+            null
+        }
+    } catch (e: Exception) {
+        Timber.e(e, "Failed to fetch friends list")
+        null
+    }
+}
+
+// Token refresh helper for direct API calls
+suspend fun ensureValidToken(preferences: android.content.SharedPreferences): String? {
+    val currentToken = preferences.getString("bearer_token", null)
+    val refreshToken = preferences.getString("refresh_token", null)
+    val refreshAt = preferences.getLong("refresh_at", 0L)
+    val currentTime = System.currentTimeMillis() / 1000
+
+    // Check if token needs refresh
+    if (currentToken != null && refreshToken != null && currentTime >= refreshAt) {
+        try {
+            Timber.tag("CubicJam").d("Token expired or near expiry, refreshing...")
+            val response = Innertube.client.post("https://dkbvirgavjojuyaazzun.supabase.co/functions/v1/mobile-auth/refresh") {
+                contentType(ContentType.Application.Json)
+                setBody(mapOf("refresh_token" to refreshToken))
+            }
+            
+            val refreshResponse = Json.decodeFromString<RefreshResponse>(response.body())
+            
+            if (refreshResponse.success) {
+                preferences.edit().apply {
+                    putString("bearer_token", refreshResponse.session.access_token)
+                    putString("refresh_token", refreshResponse.session.refresh_token)
+                    putLong("expires_at", refreshResponse.session.expires_at)
+                    val refreshTime = refreshResponse.session.refresh_at ?: 
+                        (refreshResponse.session.expires_at - 300) // 5 minutes before
+                    putLong("refresh_at", refreshTime)
+                    apply()
+                }
+                Timber.tag("CubicJam").d("✅ Token refreshed successfully")
+                return refreshResponse.session.access_token
+            }
+        } catch (e: Exception) {
+            Timber.tag("CubicJam").e(e, "Failed to refresh token")
+            // Token refresh failed, clear stored tokens
+            preferences.edit().apply {
+                remove("bearer_token")
+                remove("refresh_token")
+                remove("refresh_at")
+                apply()
+            }
+            return null
+        }
+    }
+    
+    return currentToken
+}
+
+fun isTokenValid(preferences: android.content.SharedPreferences): Boolean {
+    val refreshAt = preferences.getLong("refresh_at", 0L)
+    val currentTime = System.currentTimeMillis() / 1000
+    val hasToken = preferences.getString("bearer_token", null) != null
+    
+    return hasToken && currentTime < refreshAt
+}
+
+fun logout(context: Context) {
+    val prefs = context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
+    prefs.edit().clear().apply()
+    Timber.tag("CubicJam").d("Logged out")
+}
+
+// Add this test function to debug the API
+suspend fun testFriendsActivityAPI(preferences: android.content.SharedPreferences): Boolean {
+    return try {
+        val token = ensureValidToken(preferences) ?: return false
+        Timber.tag("CubicJam").d("Testing friends activity API with token: ${token.take(20)}...")
+        
+        val response = Innertube.client.get("https://dkbvirgavjojuyaazzun.supabase.co/functions/v1/friends-activity") {
+            header("Authorization", "Bearer $token")
+        }
+        
+        Timber.tag("CubicJam").d("Test response status: ${response.status}")
+        if (response.status.value in 200..299) {
+            val body = response.body<String>()
+            Timber.tag("CubicJam").d("Test response body: $body")
+            true
+        } else {
+            Timber.tag("CubicJam").e("Test failed: ${response.status}")
+            false
+        }
+    } catch (e: Exception) {
+        Timber.tag("CubicJam").e(e, "Test API failed")
+        false
+    }
+}
+
+// Remove these duplicate data classes (they're already in CubicJamComponents.kt)
+// @Serializable
+// data class FriendsListResponse(
+//     val friends: List<FriendShip>,
+//     val pending_received: List<PendingRequest>,
+//     val pending_sent: List<PendingRequest>
+// )
+// 
+// @Serializable
+// data class FriendShip(
+//     val id: String,
+//     val friend: FriendProfile,
+//     val status: String,
+//     val created_at: String
+// )
+// 
+// @Serializable
+// data class PendingRequest(
+//     val id: String,
+//     val from: FriendProfile,
+//     val created_at: String
+// )
