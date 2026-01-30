@@ -338,7 +338,7 @@ fun CubicJamScreen(
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center
                         )
                         Button(
-                            onClick = { navController.navigate("cubicjam_add_friend") },
+                            onClick = { navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/feed/") },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = primaryColor,
                                 contentColor = Color.White
