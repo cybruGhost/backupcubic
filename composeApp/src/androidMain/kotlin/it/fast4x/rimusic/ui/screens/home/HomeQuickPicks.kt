@@ -911,6 +911,9 @@ if (showNewUserMessage && playEventType == PlayEventsType.CasualPlayed) {
         )
     }
 }
+// ===== FRIEND NOW PLAYING SECTION =====
+FriendNowPlayingSection(navController = navController)
+// ===== END FRIEND NOW PLAYING SECTION =====
 // ===== NOTIFICATION MESSAGE SECTION =====
 notificationInit?.let { notification ->
     // Get current app version
@@ -1034,9 +1037,6 @@ notificationInit?.let { notification ->
     }
 }
 // ===== END NOTIFICATION MESSAGE SECTION =====
-// ===== FRIEND NOW PLAYING SECTION =====
-FriendNowPlayingSection(navController = navController)
-// ===== END FRIEND NOW PLAYING SECTION =====
                 discoverPageInit?.let { page ->
                     val artists by remember {
                         Database.artistTable
