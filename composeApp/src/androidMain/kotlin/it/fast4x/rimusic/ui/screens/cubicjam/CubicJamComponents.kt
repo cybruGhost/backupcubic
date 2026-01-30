@@ -18,31 +18,33 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-
-// Data classes for API responses
 import kotlinx.serialization.Serializable
 
-// Add FriendsListResponse and related data classes
+// Add this NEW data class that matches your API response
 @Serializable
-data class FriendsListResponse(
-    val friends: List<FriendShip>,
-    val pending_received: List<PendingRequest>,
-    val pending_sent: List<PendingRequest>
+data class FriendsActivityAPIResponse(
+    val success: Boolean,
+    val activity: List<FriendActivityResponseItem>,
+    val friends_listening: Int,
+    val total_friends: Int
 )
 
 @Serializable
-data class FriendShip(
+data class FriendActivityResponseItem(
     val id: String,
-    val friend: FriendProfile,
-    val status: String,
-    val created_at: String
-)
-
-@Serializable
-data class PendingRequest(
-    val id: String,
-    val from: FriendProfile,
-    val created_at: String
+    val user_id: String,
+    val track_id: String,
+    val title: String,
+    val artist: String,
+    val album: String? = null,
+    val artwork_url: String? = null,
+    val duration_ms: Long,
+    val position_ms: Long,
+    val is_playing: Boolean,
+    val started_at: String,
+    val updated_at: String,
+    val profile: FriendProfile,
+    val is_online: Boolean
 )
 
 // Keep all your existing data classes below
@@ -113,6 +115,7 @@ data class CurrentActivity(
     val artwork_url: String? = null
 )
 
+// You can keep this for backward compatibility if needed elsewhere
 @Serializable
 data class FriendsActivityResponse(
     val friends: List<FriendActivity>
@@ -132,7 +135,7 @@ data class FriendResponse(
     val friendship: Map<String, String>? = null
 )
 
-// Add these authentication data classes based on your API documentation
+// Authentication data classes
 @Serializable
 data class AuthResponse(
     val success: Boolean,
@@ -207,4 +210,27 @@ data class ActivityInfo(
     val artist: String,
     val is_playing: Boolean,
     val updated_at: String
+)
+
+// Add FriendsListResponse and related data classes
+@Serializable
+data class FriendsListResponse(
+    val friends: List<FriendShip>,
+    val pending_received: List<PendingRequest>,
+    val pending_sent: List<PendingRequest>
+)
+
+@Serializable
+data class FriendShip(
+    val id: String,
+    val friend: FriendProfile,
+    val status: String,
+    val created_at: String
+)
+
+@Serializable
+data class PendingRequest(
+    val id: String,
+    val from: FriendProfile,
+    val created_at: String
 )
