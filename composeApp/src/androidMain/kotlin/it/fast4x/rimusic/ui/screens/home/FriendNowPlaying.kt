@@ -2,14 +2,13 @@ package it.fast4x.rimusic.ui.screens.home
 
 import android.content.Context
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -18,7 +17,6 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
@@ -47,6 +45,7 @@ import it.fast4x.rimusic.LocalPlayerServiceBinder
 import it.fast4x.rimusic.utils.forcePlay
 import it.fast4x.rimusic.utils.asMediaItem
 import it.fast4x.rimusic.models.Song
+import kotlinx.serialization.json.Json
 
 // ===== IMPORT THE CUBIC JAM HELPER FUNCTIONS =====
 import it.fast4x.rimusic.ui.screens.cubicjam.refreshFriendsActivity
@@ -85,7 +84,7 @@ data class NowPlayingState(
 fun rememberNowPlayingState(): NowPlayingStateHolder {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val json = remember { kotlinx.serialization.json.Json { ignoreUnknownKeys = true } }
+    val json = remember { Json { ignoreUnknownKeys = true } }
     
     val state = remember { 
         mutableStateOf(NowPlayingState()) 
@@ -166,19 +165,28 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
                             
                             Timber.d("CubicJam - Created playing friend: ${friendNowPlaying.friendName}")
                             
-                            state.value = NowPlayingState(
-                                friendNowPlaying = friendNowPlaying,
-                                friendStatus = FriendStatus(
-                                    friendName = displayName,
-                                    isOnline = true,
-                                    isPlaying = true,
-                                    lastActivity = friendNowPlaying
-                                ),
-                                isDismissed = state.value.isDismissed,
-                                swipeOffset = 0f,
-                                isLoading = false,
-                                lastUpdateTime = currentTime
-                            )
+                            // Smooth update - only update if different
+                            val currentFriend = state.value.friendNowPlaying
+                            if (currentFriend?.id != friendNowPlaying.id || 
+                                currentFriend?.isPlaying != friendNowPlaying.isPlaying ||
+                                currentFriend?.isOnline != friendNowPlaying.isOnline) {
+                                
+                                state.value = NowPlayingState(
+                                    friendNowPlaying = friendNowPlaying,
+                                    friendStatus = FriendStatus(
+                                        friendName = displayName,
+                                        isOnline = true,
+                                        isPlaying = true,
+                                        lastActivity = friendNowPlaying
+                                    ),
+                                    isDismissed = state.value.isDismissed,
+                                    swipeOffset = 0f,
+                                    isLoading = false,
+                                    lastUpdateTime = currentTime
+                                )
+                            } else {
+                                state.value = state.value.copy(isLoading = false)
+                            }
                         } else {
                             // Friend is online but not playing
                             val friendStatus = FriendStatus(
@@ -190,14 +198,22 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
                             
                             Timber.d("CubicJam - Friend online but not playing: $displayName")
                             
-                            state.value = NowPlayingState(
-                                friendNowPlaying = state.value.friendNowPlaying, // Keep last playing info
-                                friendStatus = friendStatus,
-                                isDismissed = state.value.isDismissed,
-                                swipeOffset = 0f,
-                                isLoading = false,
-                                lastUpdateTime = currentTime
-                            )
+                            // Smooth update
+                            if (state.value.friendStatus?.friendName != friendStatus.friendName ||
+                                state.value.friendStatus?.isPlaying != friendStatus.isPlaying ||
+                                state.value.friendStatus?.isOnline != friendStatus.isOnline) {
+                                
+                                state.value = NowPlayingState(
+                                    friendNowPlaying = state.value.friendNowPlaying,
+                                    friendStatus = friendStatus,
+                                    isDismissed = state.value.isDismissed,
+                                    swipeOffset = 0f,
+                                    isLoading = false,
+                                    lastUpdateTime = currentTime
+                                )
+                            } else {
+                                state.value = state.value.copy(isLoading = false)
+                            }
                         }
                     } else {
                         Timber.d("CubicJam - No online friends found")
@@ -221,13 +237,13 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
         }
     }
     
-    // Start periodic updates
+    // Start periodic updates every 20 seconds
     LaunchedEffect(isCubicJamLoggedIn) {
         if (isCubicJamLoggedIn) {
-            Timber.d("CubicJam - Starting periodic updates")
+            Timber.d("CubicJam - Starting 20-second updates")
             while (true) {
                 fetchFriendNowPlaying()
-                delay(15000) // Update every 15 seconds
+                delay(20000) // Update every 20 seconds
             }
         } else {
             Timber.d("CubicJam - Not logged in, skipping periodic updates")
@@ -257,7 +273,123 @@ data class NowPlayingStateHolder(
     val updateState: (NowPlayingState) -> Unit
 )
 
-// ===== COMPONENT =====
+// ===== ANIMATED COMPONENTS =====
+
+@Composable
+private fun GlowingDot(isPlaying: Boolean, modifier: Modifier = Modifier) {
+    val infiniteTransition = rememberInfiniteTransition(label = "glow")
+    
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1200, easing = LinearEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "glowAlpha"
+    )
+    
+    val pulseScale by infiniteTransition.animateFloat(
+        initialValue = 0.9f,
+        targetValue = 1.3f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1800, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "pulseScale"
+    )
+    
+    Box(
+        modifier = modifier
+            .size(18.dp)
+            .drawWithContent {
+                // Outer glow ring
+                drawCircle(
+                    color = if (isPlaying) Color(0xFF00FF88) else Color(0xFF8888FF),
+                    radius = size.minDimension / 2 * pulseScale,
+                    alpha = glowAlpha * 0.4f,
+                    style = Stroke(width = 3.dp.toPx())
+                )
+                
+                // Inner circle with gradient
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            if (isPlaying) Color(0xFF00FF88) else Color(0xFF8888FF),
+                            if (isPlaying) Color(0xFF008844) else Color(0xFF4444AA)
+                        ),
+                        center = Offset(size.width / 2, size.height / 2),
+                        radius = size.minDimension / 3
+                    ),
+                    radius = size.minDimension / 3,
+                    alpha = if (isPlaying) glowAlpha else 0.8f
+                )
+            }
+    )
+}
+
+@Composable
+private fun AnimatedVibingProgressBar(
+    isPlaying: Boolean,
+    progress: Float,
+    modifier: Modifier = Modifier
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "vibing")
+    
+    val gradientOffset by infiniteTransition.animateFloat(
+        initialValue = -1f,
+        targetValue = 1f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(3000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        ),
+        label = "gradientOffset"
+    )
+    
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(4.dp)
+            .clip(RoundedCornerShape(2.dp))
+            .background(Color.White.copy(alpha = 0.15f))
+    ) {
+        if (isPlaying) {
+            // Animated gradient bar for playing
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight()
+                    .drawWithContent {
+                        val brush = Brush.linearGradient(
+                            colors = listOf(
+                                Color(0xFF00FF88),
+                                Color(0xFF0088FF),
+                                Color(0xFF8800FF),
+                                Color(0xFF00FF88)
+                            ),
+                            start = Offset(gradientOffset * size.width, 0f),
+                            end = Offset(size.width + gradientOffset * size.width, 0f)
+                        )
+                        drawRect(brush = brush)
+                    }
+            )
+        } else {
+            // Static progress bar for paused
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(progress.coerceIn(0f, 1f))
+                    .fillMaxHeight()
+                    .background(
+                        Brush.horizontalGradient(
+                            listOf(Color(0xFF00FF88), Color(0xFF0088FF))
+                        )
+                    )
+            )
+        }
+    }
+}
+
+// ===== MAIN COMPONENT =====
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FriendNowPlayingSection(
@@ -268,99 +400,54 @@ fun FriendNowPlayingSection(
     val nowPlayingStateHolder = rememberNowPlayingState()
     val state = nowPlayingStateHolder.state
     
-    Timber.d("CubicJam - Component state: friend=${state.friendNowPlaying != null}, status=${state.friendStatus}, dismissed=${state.isDismissed}")
+    // Use derivedStateOf to prevent unnecessary recompositions
+    val shouldShow by remember(state) {
+        derivedStateOf {
+            !state.isLoading && state.friendStatus != null && !state.isDismissed
+        }
+    }
     
-    // Show if we have friend status and not dismissed
-    if (!state.isLoading && state.friendStatus != null && !state.isDismissed) {
-        Timber.d("CubicJam - Showing friend status: ${state.friendStatus.friendName}")
-        DismissibleFriendNowPlaying(
-            state = state,
+    if (shouldShow) {
+        val friendStatus = state.friendStatus!!
+        val friendNowPlaying = state.friendNowPlaying
+        
+        Timber.d("CubicJam - Showing: ${friendStatus.friendName}")
+        
+        SmoothFriendNowPlaying(
+            friendStatus = friendStatus,
+            friendNowPlaying = friendNowPlaying,
             onDismiss = {
-                Timber.d("CubicJam - Dismissing friend")
                 nowPlayingStateHolder.updateState(state.copy(isDismissed = true))
             },
-            onPlayClick = { friendNowPlaying ->
-                Timber.d("CubicJam - Playing friend's song: ${friendNowPlaying.trackTitle}")
+            onPlayClick = { friend ->
                 binder?.let {
                     val song = Song(
-                        id = friendNowPlaying.id,
-                        title = friendNowPlaying.trackTitle,
-                        artistsText = friendNowPlaying.artistName,
+                        id = friend.id,
+                        title = friend.trackTitle,
+                        artistsText = friend.artistName,
                         durationText = "",
-                        thumbnailUrl = friendNowPlaying.albumArtUrl,
+                        thumbnailUrl = friend.albumArtUrl,
                         likedAt = null
                     )
                     it.stopRadio()
                     it.player?.forcePlay(song.asMediaItem)
                 }
             },
-            onRefresh = {
-                Timber.d("CubicJam - Manual refresh")
-                nowPlayingStateHolder.fetchFriendNowPlaying()
-            }
+            modifier = modifier
         )
-    } else {
-        Timber.d("CubicJam - Not showing (isLoading=${state.isLoading}, status=${state.friendStatus}, dismissed=${state.isDismissed})")
     }
 }
 
 @Composable
-private fun GlowingDot(isPlaying: Boolean) {
-    val infiniteTransition = rememberInfiniteTransition(label = "glow")
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "glowAlpha"
-    )
-    
-    val pulseScale by infiniteTransition.animateFloat(
-        initialValue = 0.8f,
-        targetValue = 1.2f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "pulseScale"
-    )
-    
-    Box(
-        modifier = Modifier
-            .size(16.dp)
-            .drawWithContent {
-                // Draw outer glow
-                drawCircle(
-                    color = if (isPlaying) Color.Green else Color.White.copy(alpha = 0.5f),
-                    radius = size.minDimension / 2 * pulseScale,
-                    alpha = glowAlpha * 0.3f,
-                    style = Stroke(width = 2.dp.toPx())
-                )
-                
-                // Draw inner circle
-                drawCircle(
-                    color = if (isPlaying) Color.Green else Color.White.copy(alpha = 0.8f),
-                    radius = size.minDimension / 3,
-                    alpha = if (isPlaying) glowAlpha else 0.8f
-                )
-            }
-    )
-}
-
-@Composable
-private fun DismissibleFriendNowPlaying(
-    state: NowPlayingState,
+private fun SmoothFriendNowPlaying(
+    friendStatus: FriendStatus,
+    friendNowPlaying: FriendNowPlaying?,
     onDismiss: () -> Unit,
     onPlayClick: (FriendNowPlaying) -> Unit,
-    onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val friendStatus = state.friendStatus ?: return
-    val friendNowPlaying = state.friendNowPlaying
-    var swipeOffset by remember { mutableStateOf(state.swipeOffset) }
+    var swipeOffset by remember { mutableStateOf(0f) }
     
     val maxSwipeDistance = 300f
     val dismissThreshold = maxSwipeDistance * 0.6f
@@ -368,294 +455,240 @@ private fun DismissibleFriendNowPlaying(
     // Use BlackCherryCosmos shader for the background
     val selectedShader = remember { BlackCherryCosmos }
     
-    Timber.d("CubicJam - Rendering DismissibleFriendNowPlaying for: ${friendStatus.friendName}")
-    
-    Column(
-        modifier = modifier.fillMaxWidth()
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp)
+            .offset { IntOffset(swipeOffset.roundToInt(), 0) }
+            .alpha(1f - (abs(swipeOffset) / dismissThreshold).coerceIn(0f, 1f))
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onDragEnd = {
+                        if (abs(swipeOffset) > dismissThreshold) {
+                            onDismiss()
+                        } else {
+                            swipeOffset = 0f
+                        }
+                    },
+                    onHorizontalDrag = { change, dragAmount ->
+                        val newOffset = swipeOffset + dragAmount
+                        swipeOffset = newOffset.coerceIn(-maxSwipeDistance, maxSwipeDistance)
+                        change.consume()
+                    }
+                )
+            }
     ) {
+        // Main container with BlackCherryCosmos shader
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp)
-                .offset { IntOffset(swipeOffset.roundToInt(), 0) }
-                .alpha(1f - (abs(swipeOffset) / dismissThreshold).coerceIn(0f, 1f))
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onDragEnd = {
-                            if (abs(swipeOffset) > dismissThreshold) {
-                                onDismiss()
-                            } else {
-                                swipeOffset = 0f
-                            }
-                        },
-                        onHorizontalDrag = { change, dragAmount ->
-                            val newOffset = swipeOffset + dragAmount
-                            swipeOffset = newOffset.coerceIn(-maxSwipeDistance, maxSwipeDistance)
-                            change.consume()
-                        }
-                    )
-                }
+                .clip(RoundedCornerShape(20.dp))
+                .shaderBackground(selectedShader)
         ) {
-            // Main container with BlackCherryCosmos shader
+            // Dark overlay for better text readability
             Box(
                 modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.25f))
+            )
+            
+            // Content with proper spacing
+            Row(
+                modifier = Modifier
                     .fillMaxWidth()
-                    .clip(RoundedCornerShape(16.dp))
-                    .shaderBackground(selectedShader)
+                    .padding(horizontal = 20.dp, vertical = 16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Dark overlay for better text readability
+                // Album Art - Larger thumbnail
                 Box(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(Color.Black.copy(alpha = 0.2f))
-                )
-                
-                // Content
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                        .size(70.dp)
+                        .clip(RoundedCornerShape(14.dp))
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    // Album Art
+                    if (friendNowPlaying?.albumArtUrl != null) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(friendNowPlaying.albumArtUrl)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "${friendNowPlaying.trackTitle} album art",
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(R.drawable.music),
+                            contentDescription = "No album art",
+                            tint = Color.White.copy(alpha = 0.8f),
+                            modifier = Modifier.size(32.dp)
+                        )
+                    }
+                    
+                    // Glowing dot in top-right
                     Box(
                         modifier = Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(Color.Black.copy(alpha = 0.4f)),
-                        contentAlignment = Alignment.Center
+                            .align(Alignment.TopEnd)
+                            .padding(6.dp)
                     ) {
-                        if (friendNowPlaying?.albumArtUrl != null) {
-                            AsyncImage(
-                                model = ImageRequest.Builder(context)
-                                    .data(friendNowPlaying.albumArtUrl)
-                                    .crossfade(true)
-                                    .build(),
-                                contentDescription = "${friendNowPlaying.trackTitle} album art",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = ContentScale.Crop
-                            )
-                        } else {
-                            Icon(
-                                painter = painterResource(R.drawable.music),
-                                contentDescription = "No album art",
-                                tint = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(28.dp)
-                            )
-                        }
-                        
-                        // Online/Playing indicator in top-right
-                        Box(
-                            modifier = Modifier
-                                .size(20.dp)
-                                .align(Alignment.TopEnd)
-                                .padding(4.dp)
-                        ) {
-                            GlowingDot(isPlaying = friendStatus.isPlaying && friendStatus.isOnline)
-                        }
-                    }
-                    
-                    // Song Info
-                    Column(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(2.dp)
-                    ) {
-                        // Friend name and status
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
-                        ) {
-                            Text(
-                                text = friendStatus.friendName,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = Color.White.copy(alpha = 0.9f)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            
-                            Text(
-                                text = when {
-                                    friendStatus.isPlaying && friendStatus.isOnline -> "🫠 vibing"
-                                    friendStatus.isOnline -> "😎 online"
-                                    else -> "🥺 offline"
-                                },
-                                style = MaterialTheme.typography.labelSmall.copy(
-                                    color = when {
-                                        friendStatus.isPlaying && friendStatus.isOnline -> Color.Green.copy(alpha = 0.9f)
-                                        friendStatus.isOnline -> Color.Cyan.copy(alpha = 0.8f)
-                                        else -> Color.White.copy(alpha = 0.5f)
-                                    }
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                        
-                        if (friendNowPlaying != null && friendStatus.isPlaying) {
-                            // Show song info when friend is playing
-                            Text(
-                                text = friendNowPlaying.trackTitle,
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.Bold,
-                                    color = Color.White
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            
-                            Text(
-                                text = friendNowPlaying.artistName,
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    fontWeight = FontWeight.Medium,
-                                    color = Color.White.copy(alpha = 0.9f)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            
-                            // Progress indicator (shows progress if paused, otherwise shows "vibing")
-                            if (friendNowPlaying.durationMs > 0) {
-                                Spacer(modifier = Modifier.height(4.dp))
-                                Box(
-                                    modifier = Modifier
-                                        .fillMaxWidth()
-                                        .height(3.dp)
-                                        .background(Color.White.copy(alpha = 0.2f))
-                                        .clip(RoundedCornerShape(2.dp))
-                                ) {
-                                    if (friendNowPlaying.isPlaying) {
-                                        // Show animated "vibing" effect
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .fillMaxHeight()
-                                                .background(
-                                                    brush = Brush.linearGradient(
-                                                        colors = listOf(
-                                                            Color.Green.copy(alpha = 0.7f),
-                                                            Color.Cyan.copy(alpha = 0.7f),
-                                                            Color.Green.copy(alpha = 0.7f)
-                                                        )
-                                                    )
-                                                )
-                                        )
-                                    } else {
-                                        // Show static progress bar at paused position
-                                        Box(
-                                            modifier = Modifier
-                                                .fillMaxWidth(
-                                                    fraction = friendNowPlaying.positionMs.toFloat() / 
-                                                              friendNowPlaying.durationMs.toFloat()
-                                                )
-                                                .fillMaxHeight()
-                                                .background(Color.White.copy(alpha = 0.8f))
-                                        )
-                                    }
-                                }
-                            }
-                        } else if (friendNowPlaying != null) {
-                            // Friend was recently playing but is now paused/offline
-                            Text(
-                                text = "Last played: ${friendNowPlaying.trackTitle}",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = Color.White.copy(alpha = 0.7f)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        } else {
-                            // Friend is online but not playing anything recently
-                            Text(
-                                text = "Online",
-                                style = MaterialTheme.typography.bodySmall.copy(
-                                    color = Color.White.copy(alpha = 0.7f)
-                                ),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
-                    }
-                    
-                    // Action buttons
-                    Column(
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        if (friendNowPlaying != null && friendStatus.isPlaying) {
-                            // Play Button (only show if friend is playing)
-                            IconButton(
-                                onClick = { onPlayClick(friendNowPlaying) },
-                                modifier = Modifier
-                                    .size(40.dp)
-                                    .background(Color.White.copy(alpha = 0.15f), CircleShape)
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.play),
-                                    contentDescription = "Play this song",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp)
-                                )
-                            }
-                        }
-                        
-                        // Dismiss Button
-                        IconButton(
-                            onClick = onDismiss,
-                            modifier = Modifier
-                                .size(40.dp)
-                                .background(Color.White.copy(alpha = 0.1f), CircleShape)
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Close,
-                                contentDescription = "Dismiss",
-                                tint = Color.White.copy(alpha = 0.8f),
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+                        GlowingDot(isPlaying = friendStatus.isPlaying && friendStatus.isOnline)
                     }
                 }
                 
-                // Swipe hint - Use arrow icon if chevron not available
-                if (abs(swipeOffset) < 10f) {
-                    Box(
+                // Text Content
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    // Friend name and status in one line
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        // Friend name - larger and bolder
+                        Text(
+                            text = friendStatus.friendName,
+                            style = MaterialTheme.typography.bodyLarge.copy(
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f)
+                        )
+                        
+                        // Status badge
+                        Text(
+                            text = when {
+                                friendStatus.isPlaying && friendStatus.isOnline -> "🫠 vibing"
+                                friendStatus.isOnline -> "😎 online"
+                                else -> "🥺 offline"
+                            },
+                            style = MaterialTheme.typography.labelMedium.copy(
+                                fontWeight = FontWeight.SemiBold,
+                                color = when {
+                                    friendStatus.isPlaying && friendStatus.isOnline -> Color(0xFF00FF88)
+                                    friendStatus.isOnline -> Color(0xFF8888FF)
+                                    else -> Color.White.copy(alpha = 0.6f)
+                                }
+                            )
+                        )
+                    }
+                    
+                    // Song title with marquee effect for long text
+                    if (friendStatus.isOnline && friendNowPlaying?.trackTitle?.isNotEmpty() == true) {
+                        Text(
+                            text = friendNowPlaying.trackTitle,
+                            style = MaterialTheme.typography.bodyMedium.copy(
+                                fontWeight = FontWeight.Medium,
+                                color = Color.White
+                            ),
+                            maxLines = 1,
+                            modifier = Modifier.basicMarquee(),
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        
+                        // Artist name
+                        Text(
+                            text = friendNowPlaying.artistName,
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Color.White.copy(alpha = 0.9f)
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else if (friendNowPlaying != null) {
+                        // Friend was recently playing but is now paused/offline
+                        Text(
+                            text = "Last played: ${friendNowPlaying.trackTitle}",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Color.White.copy(alpha = 0.7f)
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    } else {
+                        // Friend is online but not playing anything recently
+                        Text(
+                            text = "Online",
+                            style = MaterialTheme.typography.bodySmall.copy(
+                                color = Color.White.copy(alpha = 0.7f)
+                            ),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                    
+                    // Progress bar - only show if friend is online
+                    if (friendStatus.isOnline) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        val progress = if (friendNowPlaying?.durationMs ?: 0 > 0) {
+                            (friendNowPlaying?.positionMs?.toFloat() ?: 0f) / (friendNowPlaying?.durationMs?.toFloat() ?: 1f)
+                        } else 0f
+                        
+                        AnimatedVibingProgressBar(
+                            isPlaying = friendStatus.isPlaying,
+                            progress = progress,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                }
+                
+                // Action buttons
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    if (friendNowPlaying != null && friendStatus.isPlaying) {
+                        // Play Button
+                        IconButton(
+                            onClick = { onPlayClick(friendNowPlaying) },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(Color.White.copy(alpha = 0.2f), CircleShape)
+                        ) {
+                            Icon(
+                                painter = painterResource(R.drawable.play),
+                                contentDescription = "Play this song",
+                                tint = Color.White,
+                                modifier = Modifier.size(22.dp)
+                            )
+                        }
+                    }
+                    
+                    // Dismiss Button
+                    IconButton(
+                        onClick = onDismiss,
                         modifier = Modifier
-                            .align(Alignment.CenterEnd)
-                            .padding(end = 8.dp)
-                            .alpha(0.5f)
+                            .size(44.dp)
+                            .background(Color.White.copy(alpha = 0.15f), CircleShape)
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.arrow_right),
-                            contentDescription = "Swipe hint",
-                            tint = Color.White.copy(alpha = 0.7f),
-                            modifier = Modifier.size(16.dp)
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Dismiss",
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(22.dp)
                         )
                     }
                 }
             }
-        }
-        
-        // Refresh button (outside the swipeable box)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp)
-                .padding(bottom = 8.dp),
-            horizontalArrangement = Arrangement.End
-        ) {
-            IconButton(
-                onClick = onRefresh,
-                modifier = Modifier
-                    .size(32.dp)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.15f), CircleShape)
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.refresh),
-                    contentDescription = "Refresh friend activity",
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(16.dp)
-                )
+            
+            // Subtle swipe hint
+            if (abs(swipeOffset) < 10f) {
+                Box(
+                    modifier = Modifier
+                        .align(Alignment.CenterEnd)
+                        .padding(end = 12.dp)
+                        .alpha(0.4f)
+                ) {
+                    Icon(
+                        painter = painterResource(R.drawable.arrow_right),
+                        contentDescription = "Swipe hint",
+                        tint = Color.White.copy(alpha = 0.6f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
             }
         }
     }
