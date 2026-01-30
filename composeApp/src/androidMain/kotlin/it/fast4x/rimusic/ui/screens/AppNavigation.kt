@@ -303,27 +303,41 @@ fun AppNavigation(
                 miniPlayer = miniPlayer,
             )
         }
-// In your AppNavigation.kt, add these routes:
+// Cubic Jam Main Screen
 composable(route = NavRoutes.cubicjam.name) {
     val context = LocalContext.current
     val cubicJamManager = remember {
         CubicJamManager(
             context = context,
             getToken = {
-                context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
-                    .getString("bearer_token", null)
+                context.getSharedPreferences(
+                    "cubic_jam_prefs",
+                    Context.MODE_PRIVATE
+                ).getString("bearer_token", null)
             }
         )
     }
-    
+
     CubicJamScreen(
         navController = navController,
         cubicJamManager = cubicJamManager
     )
 }
 
-composable(route = NavRoutes.cubicjam_web.name) { backStackEntry ->
-    val url = backStackEntry.arguments?.getString("url") ?: "https://jam-wave-connect.lovable.app/feed"
+// Cubic Jam WebView Screen with URL parameter
+composable(
+    route = "${NavRoutes.cubicjam_web.name}?url={url}",
+    arguments = listOf(
+        navArgument("url") {
+            type = NavType.StringType
+            defaultValue = "https://jam-wave-connect.lovable.app/feed"
+            nullable = true
+        }
+    )
+) { backStackEntry ->
+    val url = backStackEntry.arguments?.getString("url")
+        ?: "https://jam-wave-connect.lovable.app/feed"
+
     CubicJamWebView(
         navController = navController,
         initialUrl = url
