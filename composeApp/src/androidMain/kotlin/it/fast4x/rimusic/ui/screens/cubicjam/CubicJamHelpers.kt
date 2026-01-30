@@ -9,11 +9,11 @@ import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import timber.log.Timber
 
-// Helper functions for API calls
+// Helper functions for API calls - UPDATED VERSION
 suspend fun refreshFriendsActivity(
     preferences: android.content.SharedPreferences,
     json: Json
-): FriendsActivityResponse? {
+): FriendsActivityAPIResponse? {  // Changed return type
     return try {
         val token = ensureValidToken(preferences) ?: return null
         
@@ -30,8 +30,9 @@ suspend fun refreshFriendsActivity(
             Timber.tag("CubicJam").d("Friends activity raw response: $responseBody")
             
             try {
-                val result = json.decodeFromString<FriendsActivityResponse>(responseBody)
-                Timber.tag("CubicJam").d("Successfully parsed ${result.friends.size} friends")
+                // Use the NEW data class that matches your API response
+                val result = json.decodeFromString<FriendsActivityAPIResponse>(responseBody)
+                Timber.tag("CubicJam").d("Successfully parsed ${result.activity.size} activities")
                 return result
             } catch (e: Exception) {
                 Timber.tag("CubicJam").e(e, "Failed to parse friends activity response")
@@ -58,6 +59,7 @@ suspend fun refreshFriendsActivity(
     }
 }
 
+// Keep all other functions as they are (unchanged)
 suspend fun getUserProfile(
     preferences: android.content.SharedPreferences,
     username: String,
@@ -232,26 +234,3 @@ suspend fun testFriendsActivityAPI(preferences: android.content.SharedPreference
         false
     }
 }
-
-// Remove these duplicate data classes (they're already in CubicJamComponents.kt)
-// @Serializable
-// data class FriendsListResponse(
-//     val friends: List<FriendShip>,
-//     val pending_received: List<PendingRequest>,
-//     val pending_sent: List<PendingRequest>
-// )
-// 
-// @Serializable
-// data class FriendShip(
-//     val id: String,
-//     val friend: FriendProfile,
-//     val status: String,
-//     val created_at: String
-// )
-// 
-// @Serializable
-// data class PendingRequest(
-//     val id: String,
-//     val from: FriendProfile,
-//     val created_at: String
-// )

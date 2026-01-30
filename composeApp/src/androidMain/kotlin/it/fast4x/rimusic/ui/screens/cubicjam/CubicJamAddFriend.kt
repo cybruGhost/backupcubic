@@ -11,49 +11,100 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import app.kreate.android.R
-import androidx.compose.foundation.background
-import androidx.compose.foundation.BorderStroke
-import kotlinx.coroutines.launch
-import kotlinx.serialization.json.Json
-import timber.log.Timber
+import me.knighthat.utils.isNetworkAvailable
 
 @Composable
 fun CubicJamAddFriend(
     navController: NavController
 ) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
-    val json = Json { ignoreUnknownKeys = true }
     
     val preferences = remember {
         context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
     }
     
-    var friendCode by remember { mutableStateOf("") }
+    val bearerToken = preferences.getString("bearer_token", null)
+    val isLoggedIn = bearerToken != null
+    
+    var showNoInternet by remember { mutableStateOf(false) }
     var isLoading by remember { mutableStateOf(false) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
-    var successMessage by remember { mutableStateOf<String?>(null) }
     
     val primaryColor = Color(0xFF7C4DFF)
-    val backgroundColor = MaterialTheme.colorScheme.surface
+    
+    LaunchedEffect(Unit) {
+        // Check internet connection when screen loads
+        val hasInternet = isNetworkAvailable(context)
+        if (!hasInternet) {
+            showNoInternet = true
+        } else if (isLoggedIn) {
+            // Navigate to WebView with the feed URL
+            navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/feed")
+        } else {
+            // If not logged in, navigate to auth screen
+            navController.navigate("cubicjam_auth")
+        }
+    }
+    
+    if (showNoInternet) {
+        NoInternetScreen(
+            onRetry = {
+                isLoading = true
+                val hasInternet = isNetworkAvailable(context)
+                showNoInternet = !hasInternet
+                if (hasInternet && isLoggedIn) {
+                    navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/feed")
+                }
+                isLoading = false
+            },
+            onBack = { navController.navigateUp() }
+        )
+        return
+    }
+    
+    // Show loading screen while redirecting
+    Box(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            CircularProgressIndicator(color = primaryColor)
+            Text(
+                text = "Redirecting to Cubic Jam...",
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
+            )
+        }
+    }
+}
+
+@Composable
+private fun NoInternetScreen(
+    onRetry: () -> Unit,
+    onBack: () -> Unit
+) {
+    val primaryColor = Color(0xFF7C4DFF)
     
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor)
             .padding(24.dp),
-        verticalArrangement = Arrangement.spacedBy(24.dp)
+        verticalArrangement = Arrangement.spacedBy(24.dp),
+        horizontalAlignment = Alignment.CenterHorizontally
     ) {
         // Header
         Row(
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
         ) {
             IconButton(
-                onClick = { navController.navigateUp() },
+                onClick = onBack,
                 modifier = Modifier.size(48.dp)
             ) {
                 Icon(
@@ -64,7 +115,7 @@ fun CubicJamAddFriend(
             }
             
             Text(
-                text = "Add Friend",
+                text = "Cubic Jam",
                 style = MaterialTheme.typography.headlineMedium.copy(
                     fontWeight = FontWeight.Bold,
                     color = primaryColor
@@ -72,171 +123,70 @@ fun CubicJamAddFriend(
             )
         }
         
-        // Instructions
-        Text(
-            text = "Enter your friend's 8-character Cubic Jam code to send them a friend request.",
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
+        Spacer(modifier = Modifier.height(40.dp))
+        
+        // No internet icon
+        Icon(
+            painter = painterResource(R.drawable.alert_circle),
+            contentDescription = "No Internet",
+            tint = primaryColor.copy(alpha = 0.5f),
+            modifier = Modifier.size(100.dp)
         )
         
-        // Friend code input
-        OutlinedTextField(
-            value = friendCode,
-            onValueChange = {
-                friendCode = it.uppercase().take(8)
-                errorMessage = null
-                successMessage = null
-            },
-            label = { Text("Friend Code (8 characters)") },
-            placeholder = { Text("e.g., ABC12345") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            shape = RoundedCornerShape(12.dp),
-            colors = OutlinedTextFieldDefaults.colors(
-                focusedBorderColor = primaryColor,
-                unfocusedBorderColor = primaryColor.copy(alpha = 0.5f),
-                focusedLabelColor = primaryColor,
-                focusedTextColor = primaryColor
-            ),
-            isError = friendCode.isNotEmpty() && friendCode.length != 8,
-            supportingText = {
-                if (friendCode.length == 8) {
-                    Text("✓ Valid code format", color = Color.Green)
-                } else if (friendCode.isNotEmpty()) {
-                    Text("Code must be 8 characters", color = Color.Red)
-                }
-            }
-        )
+        Spacer(modifier = Modifier.height(24.dp))
         
-        // Error/Success messages
-        errorMessage?.let { message ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Red.copy(alpha = 0.1f),
-                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.3f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.alert_circle),
-                        contentDescription = "Error",
-                        tint = Color.Red,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Red,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-        }
-        
-        successMessage?.let { message ->
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Green.copy(alpha = 0.1f),
-                border = BorderStroke(1.dp, Color.Green.copy(alpha = 0.3f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.checkmark),
-                        contentDescription = "Success",
-                        tint = Color.Green,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Green,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
+        // Message
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Text(
+                text = "No Internet Connection",
+                style = MaterialTheme.typography.headlineSmall.copy(
+                    fontWeight = FontWeight.Bold
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+            
+            Text(
+                text = "You need an internet connection to access Cubic Jam.",
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center
+            )
         }
         
         Spacer(modifier = Modifier.weight(1f))
         
         // Action buttons
-        Row(
+        Column(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             Button(
-                onClick = { navController.navigateUp() },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.surface,
-                    contentColor = MaterialTheme.colorScheme.onSurface
-                ),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-            ) {
-                Text("Cancel")
-            }
-            
-            Button(
-                onClick = {
-                    if (friendCode.length == 8) {
-                        scope.launch {
-                            isLoading = true
-                            errorMessage = null
-                            successMessage = null
-                            
-                            try {
-                                addFriend(preferences, friendCode, json)
-                                successMessage = "Friend request sent successfully!"
-                                friendCode = ""
-                                
-                                // Navigate back after 2 seconds
-                                scope.launch {
-                                    kotlinx.coroutines.delay(2000)
-                                    navController.navigateUp()
-                                }
-                            } catch (e: Exception) {
-                                Timber.e(e, "Failed to add friend")
-                                errorMessage = when {
-                                    e.message?.contains("already", ignoreCase = true) == true -> 
-                                        "You're already friends with this user"
-                                    e.message?.contains("not found", ignoreCase = true) == true -> 
-                                        "Friend code not found"
-                                    e.message?.contains("yourself", ignoreCase = true) == true -> 
-                                        "You can't add yourself"
-                                    else -> "Failed to add friend: ${e.message}"
-                                }
-                            } finally {
-                                isLoading = false
-                            }
-                        }
-                    } else {
-                        errorMessage = "Please enter a valid 8-character friend code"
-                    }
-                },
-                modifier = Modifier.weight(1f),
-                enabled = friendCode.length == 8 && !isLoading,
+                onClick = onRetry,
+                modifier = Modifier.fillMaxWidth(),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = primaryColor,
                     contentColor = Color.White
-                )
+                ),
+                shape = RoundedCornerShape(12.dp)
             ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White
-                    )
-                } else {
-                    Text("Send Request")
-                }
+                Icon(
+                    painter = painterResource(R.drawable.refresh),
+                    contentDescription = "Retry",
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Retry Connection")
+            }
+            
+            OutlinedButton(
+                onClick = onBack,
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Text("Go Back")
             }
         }
     }
