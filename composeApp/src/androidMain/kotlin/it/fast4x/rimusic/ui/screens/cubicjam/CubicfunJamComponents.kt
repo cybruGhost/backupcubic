@@ -178,7 +178,7 @@ fun UserHeaderSection(
             .padding(horizontal = 16.dp, vertical = 24.dp),
         shape = RoundedCornerShape(20.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.Black.copy(alpha = 0.25f),
+            containerColor = Color(0xFF2D1B69), // Deep purple
             contentColor = Color.White
         ),
         elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
@@ -193,13 +193,22 @@ fun UserHeaderSection(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Avatar with subtle shadow
+                // Avatar with purple gradient border
                 Box(
                     modifier = Modifier
                         .size(64.dp)
                         .clip(CircleShape)
-                        .background(Color.Black.copy(alpha = 0.5f))
-                        .border(1.dp, Color.White.copy(alpha = 0.2f), CircleShape)
+                        .background(Color(0xFF1A103F))
+                        .border(
+                            2.dp,
+                            Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0xFF9D4EDD), // Bright purple
+                                    Color(0xFF5A189A)  // Deep purple
+                                )
+                            ),
+                            CircleShape
+                        )
                 ) {
                     if (avatarUrl != null) {
                         AsyncImage(
@@ -212,14 +221,37 @@ fun UserHeaderSection(
                             contentScale = ContentScale.Crop
                         )
                     } else {
-                        Icon(
-                            painter = painterResource(R.drawable.person),
-                            contentDescription = "Profile",
-                            tint = Color.White,
+                        Box(
                             modifier = Modifier
-                                .size(32.dp)
-                                .align(Alignment.Center)
-                        )
+                                .fillMaxSize()
+                                .background(
+                                    Brush.radialGradient(
+                                        colors = listOf(
+                                            Color(0xFF9D4EDD),
+                                            Color(0xFF5A189A)
+                                        )
+                                    )
+                                ),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            displayName?.let { name ->
+                                Text(
+                                    text = name.take(1).uppercase(),
+                                    style = MaterialTheme.typography.headlineMedium.copy(
+                                        fontWeight = FontWeight.Bold,
+                                        color = Color.White
+                                    )
+                                )
+                            } ?: run {
+                                Icon(
+                                    painter = painterResource(R.drawable.person),
+                                    contentDescription = "Profile",
+                                    tint = Color.White,
+                                    modifier = Modifier
+                                        .size(32.dp)
+                                )
+                            }
+                        }
                     }
                 }
 
@@ -243,7 +275,7 @@ fun UserHeaderSection(
                         Text(
                             text = "@$name",
                             style = MaterialTheme.typography.bodyMedium.copy(
-                                color = Color.White.copy(alpha = 0.8f)
+                                color = Color(0xFFD0BCFF) // Light lavender
                             ),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
@@ -251,12 +283,12 @@ fun UserHeaderSection(
                     }
                 }
 
-                // Logout button
+                // Logout button with purple accent
                 IconButton(
                     onClick = onLogoutClick,
                     modifier = Modifier
                         .size(44.dp)
-                        .background(Color.White.copy(alpha = 0.15f), CircleShape)
+                        .background(Color(0xFF5A189A), CircleShape)
                 ) {
                     Icon(
                         painter = painterResource(R.drawable.logout),
@@ -269,14 +301,23 @@ fun UserHeaderSection(
 
             Spacer(modifier = Modifier.height(16.dp))
 
-            // Friend code section with subtle shadow and border
+            // Friend code section with purple gradient
             friendCode?.let { code ->
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.Black.copy(alpha = 0.3f))
-                        .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
+                        .background(Color(0xFF1A103F))
+                        .border(
+                            1.dp,
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF9D4EDD),
+                                    Color(0xFF5A189A)
+                                )
+                            ),
+                            RoundedCornerShape(12.dp)
+                        )
                         .clickable(onClick = onCopyCode)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
@@ -292,7 +333,7 @@ fun UserHeaderSection(
                             Icon(
                                 painter = painterResource(R.drawable.qrcode),
                                 contentDescription = "MY Code",
-                                tint = Color(0xFF00FF88),
+                                tint = Color(0xFFD0BCFF), // Light lavender
                                 modifier = Modifier.size(20.dp)
                             )
 
@@ -300,7 +341,7 @@ fun UserHeaderSection(
                                 Text(
                                     text = "MY CODE",
                                     style = MaterialTheme.typography.labelSmall.copy(
-                                        color = Color.White.copy(alpha = 0.6f)
+                                        color = Color(0xFFD0BCFF).copy(alpha = 0.8f)
                                     )
                                 )
                                 Text(
@@ -315,12 +356,14 @@ fun UserHeaderSection(
 
                         IconButton(
                             onClick = onCopyCode,
-                            modifier = Modifier.size(36.dp)
+                            modifier = Modifier
+                                .size(36.dp)
+                                .background(Color(0xFF5A189A), CircleShape)
                         ) {
                             Icon(
                                 painter = painterResource(R.drawable.copy),
                                 contentDescription = "Copy",
-                                tint = Color(0xFF00FF88),
+                                tint = Color.White,
                                 modifier = Modifier.size(18.dp)
                             )
                         }
@@ -330,18 +373,21 @@ fun UserHeaderSection(
 
             Spacer(modifier = Modifier.height(12.dp))
 
-            // View profile button with light border
+            // View profile button with purple gradient
             Button(
                 onClick = onProfileClick,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(44.dp),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = Color.Transparent,
+                    containerColor = Color(0xFF5A189A),
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(12.dp),
-                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.3f))
+                elevation = ButtonDefaults.buttonElevation(
+                    defaultElevation = 4.dp,
+                    pressedElevation = 2.dp
+                )
             ) {
                 Icon(
                     painter = painterResource(R.drawable.globe),
@@ -349,13 +395,18 @@ fun UserHeaderSection(
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                Text("View Profile")
+                Text(
+                    text = "View Profile",
+                    style = MaterialTheme.typography.bodyMedium.copy(
+                        fontWeight = FontWeight.Medium
+                    )
+                )
             }
         }
     }
 }
 
-// ===== STYLISH STATS CARDS =====
+// ===== STYLISH STATS CARDS WITH PURPLE THEME =====
 @Composable
 fun StatsSection(
     onlineFriends: Int,
@@ -368,26 +419,94 @@ fun StatsSection(
             .padding(horizontal = 16.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        SimpleStatsCard(
+        StatsCard(
             value = onlineFriends.toString(),
             label = "Online",
-            color = cubicJamSuccess,
+            icon = R.drawable.wifi,
+            color = Color(0xFF00FF88), // Green
+            backgroundColor = Color(0xFF1A103F),
+            borderColor = Color(0xFF00FF88).copy(alpha = 0.3f),
             modifier = Modifier.weight(1f)
         )
 
-        SimpleStatsCard(
+        StatsCard(
             value = listeningFriends.toString(),
             label = "Listening",
-            color = cubicJamPrimary,
+            icon = R.drawable.music,
+            color = Color(0xFF9D4EDD), // Purple
+            backgroundColor = Color(0xFF1A103F),
+            borderColor = Color(0xFF9D4EDD).copy(alpha = 0.3f),
             modifier = Modifier.weight(1f)
         )
 
-        SimpleStatsCard(
+        StatsCard(
             value = totalFriends.toString(),
             label = "Total",
-            color = cubicJamTertiary,
+            icon = R.drawable.people,
+            color = Color(0xFF5A189A), // Deep purple
+            backgroundColor = Color(0xFF1A103F),
+            borderColor = Color(0xFF5A189A).copy(alpha = 0.3f),
             modifier = Modifier.weight(1f)
         )
+    }
+}
+
+@Composable
+fun StatsCard(
+    value: String,
+    label: String,
+    icon: Int,
+    color: Color,
+    backgroundColor: Color,
+    borderColor: Color,
+    modifier: Modifier = Modifier
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = backgroundColor,
+            contentColor = Color.White
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp),
+        border = BorderStroke(1.dp, borderColor)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            // Icon and value row
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Icon(
+                    painter = painterResource(icon),
+                    contentDescription = label,
+                    tint = color,
+                    modifier = Modifier.size(18.dp)
+                )
+                
+                Text(
+                    text = value,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 22.sp,
+                        color = color
+                    )
+                )
+            }
+            
+            Text(
+                text = label,
+                style = MaterialTheme.typography.labelMedium.copy(
+                    color = Color(0xFFD0BCFF) // Light lavender
+                )
+            )
+        }
     }
 }
 
