@@ -550,13 +550,13 @@ private fun SmoothFriendNowPlaying(
                         // Friend name - larger and bolder
                         Text(
                             text = friendStatus.friendName,
-                            style = MaterialTheme.typography.bodyLarge.copy(
+                           style = MaterialTheme.typography.bodyMedium.copy(
                                 fontWeight = FontWeight.Bold,
                                 color = Color.White
                             ),
                             maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.basicMarquee(),
+                            overflow = TextOverflow.Ellipsis
                         )
                         
                         // Status badge

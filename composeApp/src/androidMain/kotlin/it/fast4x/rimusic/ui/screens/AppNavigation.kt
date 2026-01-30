@@ -82,7 +82,7 @@ import android.content.Context
 // i should add this import at the top of your AppNavigation.kt file
 import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamWebView
 import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamSwipeScreen
-import it.fast4x.rimusic.ui.screens.cubicjam.CubicJamAddFriend
+
 
 
 
@@ -320,10 +320,6 @@ composable(route = NavRoutes.cubicjam.name) {
         navController = navController,
         cubicJamManager = cubicJamManager
     )
-}
-
-composable(route = NavRoutes.cubicjam_add_friend.name) {
-    CubicJamAddFriend(navController = navController)
 }
 
 composable(route = NavRoutes.cubicjam_web.name) { backStackEntry ->
