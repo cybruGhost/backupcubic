@@ -764,18 +764,19 @@ if (showTips) {
             verticalAlignment = Alignment.CenterVertically
         ) {
             // CubicJam icon
-            IconButton(
-                onClick = {
-                    navController.navigate(NavRoutes.cubicjam.name)
-                },
-                modifier = Modifier.size(24.dp)
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.multipage),
-                    contentDescription = "Cubic Jam",
-                    tint = MaterialTheme.colorScheme.primary
-                )
-            }
+        // CubicJam icon with teal color
+        IconButton(
+            onClick = {
+                navController.navigate(NavRoutes.cubicjam.name)
+            },
+            modifier = Modifier.size(24.dp)
+        ) {
+            Icon(
+                painter = painterResource(R.drawable.multipage),
+                contentDescription = "Cubic Jam",
+                tint = Color(0xFF00BFA5) // Teal color
+            )
+        }
             
             // Play icon
             IconButton(

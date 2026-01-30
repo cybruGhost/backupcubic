@@ -1,33 +1,37 @@
 package it.fast4x.rimusic.ui.screens.cubicjam
 
 import android.content.Context
-import androidx.compose.foundation.*
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.NavController
 import app.kreate.android.R
-import coil.compose.SubcomposeAsyncImage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 import kotlinx.serialization.json.Json
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CubicJamScreen(
     navController: NavController,
@@ -42,7 +46,7 @@ fun CubicJamScreen(
         context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE) 
     }
     
-    // State variables - FIXED: Using mutableStateOf correctly
+    // State variables
     var isLoggedIn by remember { 
         mutableStateOf(preferences.getString("bearer_token", null) != null) 
     }
@@ -55,23 +59,23 @@ fun CubicJamScreen(
     var friendCode by remember { 
         mutableStateOf(preferences.getString("friend_code", null)) 
     }
+    var avatarUrl by remember { 
+        mutableStateOf(preferences.getString("avatar_url", null)) 
+    }
     
     // Friends state
     var friendsActivity by remember { mutableStateOf<List<FriendActivity>>(emptyList()) }
-    var selectedFriendIndex by remember { mutableStateOf(0) }
     var isLoading by remember { mutableStateOf(false) }
     var errorMessage by remember { mutableStateOf<String?>(null) }
     var refreshJob by remember { mutableStateOf<Job?>(null) }
+    var showLogoutDialog by remember { mutableStateOf(false) }
     
-    // Colors
-    val primaryColor = remember { Color(0xFF7C4DFF) }
-    val secondaryColor = remember { Color(0xFFFF9800) }
-    val backgroundColor = MaterialTheme.colorScheme.surface
-    val textColor = MaterialTheme.colorScheme.onSurface
-    val onlineColor = Color(0xFF4CAF50)
-    val offlineColor = Color(0xFF757575)
+    // Stats state
+    var onlineFriendsCount by remember { mutableStateOf(0) }
+    var totalFriendsCount by remember { mutableStateOf(0) }
+    var listeningFriendsCount by remember { mutableStateOf(0) }
     
-    // Function to fetch friends - FIXED
+    // Function to fetch friends
     suspend fun fetchFriends() {
         if (!isLoggedIn) {
             errorMessage = "Not logged in"
@@ -82,14 +86,17 @@ fun CubicJamScreen(
             isLoading = true
             errorMessage = null
             
-            Timber.tag("CubicJam").d("fetchFriends: Starting fetch...")
-            
             val result = refreshFriendsActivity(preferences, json)
-            if (result != null) {
+            if (result != null && result.success) {
                 // Get the activity list from the API response
                 val activities = result.activity
                 
-                // Convert to FriendActivity objects
+                // Update stats from API response
+                onlineFriendsCount = activities.count { it.is_online }
+                totalFriendsCount = result.total_friends
+                listeningFriendsCount = result.friends_listening
+                
+                // Convert FriendActivityResponseItem to FriendActivity objects
                 val friendActivities = activities.map { activityItem ->
                     FriendActivity(
                         profile = activityItem.profile,
@@ -115,17 +122,27 @@ fun CubicJamScreen(
                     }
                 } ?: friendActivities
                 
-                friendsActivity = filteredFriends
+                // Sort: online first, then by most recent activity
+                friendsActivity = filteredFriends.sortedByDescending { friend ->
+                    (if (friend.is_online) 1000 else 0) + 
+                    (friend.activity?.updated_at?.let { 
+                        try {
+                            Instant.parse(it).toEpochMilli()
+                        } catch (e: Exception) {
+                            0L
+                        }
+                    } ?: 0)
+                }
                 
                 if (filteredFriends.isEmpty()) {
                     errorMessage = "No friends found. Add friends to see their activity!"
                 } else {
                     errorMessage = null
-                    Timber.tag("CubicJam").d("fetchFriends: Found ${filteredFriends.size} friends")
+                    Timber.tag("CubicJam").d("Fetched ${filteredFriends.size} friends, ${onlineFriendsCount} online, ${listeningFriendsCount} listening")
                 }
             } else {
                 errorMessage = "Failed to load friends. Check your connection."
-                Timber.tag("CubicJam").e("fetchFriends: Result is null")
+                Timber.tag("CubicJam").e("fetchFriends: Result is null or not successful")
             }
         } catch (e: Exception) {
             Timber.tag("CubicJam").e(e, "fetchFriends: Failed completely")
@@ -136,21 +153,31 @@ fun CubicJamScreen(
         }
     }
     
+    // Function to logout
+    fun logout() {
+        preferences.edit().clear().apply()
+        refreshJob?.cancel()
+        isLoggedIn = false
+        username = null
+        displayName = null
+        friendCode = null
+        friendsActivity = emptyList()
+        onlineFriendsCount = 0
+        totalFriendsCount = 0
+        listeningFriendsCount = 0
+        showLogoutDialog = false
+        Timber.tag("CubicJam").d("User logged out")
+    }
+    
     // Initial fetch
     LaunchedEffect(isLoggedIn) {
         if (isLoggedIn) {
-            Timber.tag("CubicJam").d("User is logged in, starting fetch...")
-            
-            // Stop any existing refresh job
-            refreshJob?.cancel()
-            
-            // Fetch friends
             fetchFriends()
             
-            // Start periodic refresh - FIXED: no while(true) loop
+            // Start periodic refresh
             refreshJob = scope.launch {
                 while (true) {
-                    delay(10000)
+                    delay(30000) // 30 seconds
                     if (isLoggedIn) {
                         fetchFriends()
                     } else {
@@ -161,7 +188,7 @@ fun CubicJamScreen(
         }
     }
     
-    // Cleanup on composition end
+    // Cleanup
     DisposableEffect(Unit) {
         onDispose {
             refreshJob?.cancel()
@@ -175,590 +202,229 @@ fun CubicJamScreen(
         return
     }
     
-    val selectedFriend = if (friendsActivity.isNotEmpty()) {
-        friendsActivity.getOrNull(selectedFriendIndex)
-    } else {
-        null
-    }
-    
-    Column(
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(backgroundColor)
-            .padding(16.dp)
+            .background(
+                brush = Brush.verticalGradient(
+                    colors = listOf(cubicJamBackground, cubicJamSurface)
+                )
+            )
     ) {
-        // Top user info section
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+        // Header with gradient
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(220.dp)
+                .background(
+                    brush = Brush.linearGradient(
+                        colors = listOf(cubicJamPrimary, cubicJamSecondary, cubicJamTertiary),
+                        start = Offset(0f, 0f),
+                        end = Offset(1000f, 1000f)
+                    )
+                )
+                .clip(RoundedCornerShape(bottomStart = 32.dp, bottomEnd = 32.dp))
+        )
+        
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(bottom = 100.dp)
         ) {
-            Column {
-                displayName?.let { name ->
-                    Text(
-                        text = name,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            fontWeight = FontWeight.Bold,
-                            color = primaryColor
-                        )
-                    )
-                }
+            item {
+                // User header
+                UserHeaderSection(
+                    displayName = displayName,
+                    username = username,
+                    friendCode = friendCode,
+                    avatarUrl = avatarUrl,
+                    onLogoutClick = { showLogoutDialog = true },
+                    onProfileClick = {
+                        username?.let { name ->
+                            navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/profile/$name")
+                        }
+                    }
+                )
                 
-                username?.let { name ->
-                    Text(
-                        text = "@$name",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f)
-                    )
-                }
+                // Stats cards - use counts from API response
+                StatsSection(
+                    onlineFriends = onlineFriendsCount,
+                    totalFriends = totalFriendsCount,
+                    listeningFriends = listeningFriendsCount
+                )
                 
-                friendCode?.let { code ->
-                    Text(
-                        text = "Code: $code",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = primaryColor,
-                        modifier = Modifier.padding(top = 4.dp)
+                Spacer(modifier = Modifier.height(16.dp))
+            }
+            
+            if (errorMessage != null) {
+                item {
+                    ErrorCard(
+                        message = errorMessage ?: "",
+                        onDismiss = { errorMessage = null }
                     )
+                    Spacer(modifier = Modifier.height(16.dp))
                 }
             }
             
-            // Profile button
-            IconButton(
-                onClick = {
-                    username?.let { name ->
-                        navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/profile/$name")
-                    }
-                },
-                modifier = Modifier
-                    .size(48.dp)
-                    .background(primaryColor.copy(alpha = 0.1f), CircleShape)
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.person),
-                    contentDescription = "View Profile",
-                    tint = primaryColor,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Error message
-        errorMessage?.let { message ->
-            Surface(
-                modifier = Modifier
-                    .fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = Color.Red.copy(alpha = 0.1f),
-                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.3f))
-            ) {
-                Row(
-                    modifier = Modifier.padding(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        painter = painterResource(R.drawable.alert_circle),
-                        contentDescription = "Error",
-                        tint = Color.Red,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = message,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Color.Red,
-                        modifier = Modifier.weight(1f)
-                    )
-                    IconButton(
-                        onClick = { errorMessage = null },
-                        modifier = Modifier.size(24.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.close),
-                            contentDescription = "Dismiss",
-                            tint = Color.Red,
-                            modifier = Modifier.size(16.dp)
-                        )
-                    }
+            if (isLoading && friendsActivity.isEmpty()) {
+                item {
+                    LoadingSection()
                 }
-            }
-        }
-        
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Main content area
-        when {
-            isLoading && friendsActivity.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.7f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        CircularProgressIndicator(color = primaryColor)
-                        Text(
-                            text = "Loading friends...",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
-                        )
-                    }
-                }
-            }
-            friendsActivity.isEmpty() -> {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.7f),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(16.dp)
-                    ) {
-                        Icon(
-                            painter = painterResource(R.drawable.people),
-                            contentDescription = "No Friends",
-                            tint = primaryColor.copy(alpha = 0.5f),
-                            modifier = Modifier.size(64.dp)
-                        )
-                        Text(
-                            text = "No Friends Yet",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = primaryColor.copy(alpha = 0.7f)
-                        )
-                        Text(
-                            text = "Add friends to see what they're listening to",
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f),
-                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                        )
-                        Button(
-                            onClick = { navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/feed/") },
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = primaryColor,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Text("Add Friend")
+            } else if (friendsActivity.isEmpty()) {
+                item {
+                    EmptyFriendsSection(
+                        onAddFriendClick = { 
+                            navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/feed/") 
                         }
-                    }
+                    )
                 }
-            }
-            else -> {
-                LazyColumn(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.8f),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
+            } else {
+                // Online friends section
+                val onlineFriends = friendsActivity.filter { it.is_online }
+                if (onlineFriends.isNotEmpty()) {
                     item {
-                        selectedFriend?.let { friend ->
-                            // Friend info header
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(16.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    // Profile picture
-                                    Box(
-                                        modifier = Modifier
-                                            .size(60.dp)
-                                            .clip(CircleShape)
-                                            .background(primaryColor),
-                                        contentAlignment = Alignment.Center
-                                    ) {
-                                        Text(
-                                            text = friend.profile.username.take(1).uppercase(),
-                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                fontWeight = FontWeight.Bold,
-                                                color = Color.White
-                                            )
-                                        )
-                                    }
-                                    
-                                    Column(
-                                        modifier = Modifier.weight(1f)
-                                    ) {
-                                        Text(
-                                            text = friend.profile.display_name ?: friend.profile.username,
-                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                fontWeight = FontWeight.Bold
-                                            ),
-                                            color = textColor
-                                        )
-                                        
-                                        Row(
-                                            verticalAlignment = Alignment.CenterVertically,
-                                            horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                        ) {
-                                            Box(
-                                                modifier = Modifier
-                                                    .size(8.dp)
-                                                    .clip(CircleShape)
-                                                    .background(
-                                                        if (friend.is_online) onlineColor else offlineColor
-                                                    )
-                                            )
-                                            Text(
-                                                text = if (friend.is_online) "Online" else "Offline",
-                                                style = MaterialTheme.typography.bodySmall,
-                                                color = if (friend.is_online) onlineColor else offlineColor
-                                            )
-                                        }
-                                    }
-                                    
-                                    // View profile button
-                                    IconButton(
-                                        onClick = { 
-                                            navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/profile/${friend.profile.username}")
-                                        },
-                                        modifier = Modifier
-                                            .size(40.dp)
-                                            .background(secondaryColor.copy(alpha = 0.1f), CircleShape)
-                                    ) {
-                                        Icon(
-                                            painter = painterResource(R.drawable.globe),
-                                            contentDescription = "View Profile",
-                                            tint = secondaryColor,
-                                            modifier = Modifier.size(20.dp)
-                                        )
-                                    }
-                                }
-                                
-                                // Now playing section
-                                friend.activity?.let { activity ->
-                                    val surfaceColor = primaryColor.copy(alpha = 0.1f)
-                                    val friendName = friend.profile.display_name ?: friend.profile.username
-                                    
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = surfaceColor,
-                                        border = BorderStroke(2.dp, primaryColor.copy(alpha = 0.3f))
-                                    ) {
-                                        Column(
-                                            modifier = Modifier.padding(20.dp),
-                                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                                            horizontalAlignment = Alignment.CenterHorizontally
-                                        ) {
-                                            // Album art (big)
-                                            activity.artwork_url?.let { url ->
-                                                SubcomposeAsyncImage(
-                                                    model = url,
-                                                    contentDescription = "Album Art",
-                                                    modifier = Modifier
-                                                        .size(200.dp)
-                                                        .clip(RoundedCornerShape(12.dp)),
-                                                    contentScale = ContentScale.Crop,
-                                                    loading = {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(200.dp)
-                                                                .clip(RoundedCornerShape(12.dp))
-                                                                .background(primaryColor),
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.music),
-                                                                contentDescription = "Loading",
-                                                                tint = Color.White,
-                                                                modifier = Modifier.size(48.dp)
-                                                            )
-                                                        }
-                                                    },
-                                                    error = {
-                                                        Box(
-                                                            modifier = Modifier
-                                                                .size(200.dp)
-                                                                .clip(RoundedCornerShape(12.dp))
-                                                                .background(primaryColor),
-                                                            contentAlignment = Alignment.Center
-                                                        ) {
-                                                            Icon(
-                                                                painter = painterResource(R.drawable.music),
-                                                                contentDescription = "No Album Art",
-                                                                tint = Color.White,
-                                                                modifier = Modifier.size(48.dp)
-                                                            )
-                                                        }
-                                                    }
-                                                )
-                                            } ?: run {
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(200.dp)
-                                                        .clip(RoundedCornerShape(12.dp))
-                                                        .background(primaryColor),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Icon(
-                                                        painter = painterResource(R.drawable.music),
-                                                        contentDescription = "No Album Art",
-                                                        tint = Color.White,
-                                                        modifier = Modifier.size(64.dp)
-                                                    )
-                                                }
-                                            }
-                                            
-                                            // Song info
-                                            Column(
-                                                horizontalAlignment = Alignment.CenterHorizontally,
-                                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                                            ) {
-                                                Text(
-                                                    text = "$friendName is playing",
-                                                    style = MaterialTheme.typography.labelLarge,
-                                                    color = textColor.copy(alpha = 0.7f)
-                                                )
-                                                
-                                                Text(
-                                                    text = if (activity.is_playing) "Now Playing" else "Paused",
-                                                    style = MaterialTheme.typography.labelLarge.copy(
-                                                        fontWeight = FontWeight.Bold
-                                                    ),
-                                                    color = if (activity.is_playing) onlineColor else offlineColor
-                                                )
-                                                
-                                                Text(
-                                                    text = activity.title,
-                                                    style = MaterialTheme.typography.titleLarge.copy(
-                                                        fontWeight = FontWeight.Bold
-                                                    ),
-                                                    color = textColor,
-                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                    maxLines = 2,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                
-                                                Text(
-                                                    text = activity.artist,
-                                                    style = MaterialTheme.typography.titleMedium,
-                                                    color = textColor.copy(alpha = 0.7f),
-                                                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                    maxLines = 1,
-                                                    overflow = TextOverflow.Ellipsis
-                                                )
-                                                
-                                                activity.album?.let { album ->
-                                                    Text(
-                                                        text = album,
-                                                        style = MaterialTheme.typography.bodyMedium,
-                                                        color = textColor.copy(alpha = 0.5f),
-                                                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis
-                                                    )
-                                                }
-                                            }
-                                        }
-                                    }
-                                } ?: run {
-                                    // No activity section
-                                    val friendName = friend.profile.display_name ?: friend.profile.username
-                                    Surface(
-                                        modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(20.dp),
-                                        color = backgroundColor,
-                                        border = BorderStroke(1.dp, textColor.copy(alpha = 0.1f))
-                                    ) {
-                                        Column(
-                                            modifier = Modifier
-                                                .padding(40.dp)
-                                                .fillMaxWidth(),
-                                            horizontalAlignment = Alignment.CenterHorizontally,
-                                            verticalArrangement = Arrangement.spacedBy(12.dp)
-                                        ) {
-                                            Icon(
-                                                painter = painterResource(R.drawable.alert),
-                                                contentDescription = "Not Listening",
-                                                tint = textColor.copy(alpha = 0.3f),
-                                                modifier = Modifier.size(64.dp)
-                                            )
-                                            Text(
-                                                text = "Not Listening",
-                                                style = MaterialTheme.typography.titleMedium,
-                                                color = textColor.copy(alpha = 0.5f)
-                                            )
-                                            Text(
-                                                text = "$friendName is not currently listening to music",
-                                                style = MaterialTheme.typography.bodyMedium,
-                                                color = textColor.copy(alpha = 0.4f),
-                                                textAlign = androidx.compose.ui.text.style.TextAlign.Center
-                                            )
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                        SectionHeader(
+                            title = "Online Now",
+                            subtitle = "${onlineFriends.size} friends online",
+                            icon = R.drawable.wifi
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                     
-                    if (friendsActivity.size > 1) {
-                        item {
-                            Column(
-                                verticalArrangement = Arrangement.spacedBy(12.dp)
-                            ) {
-                                Text(
-                                    text = "Friends (${friendsActivity.size})",
-                                    style = MaterialTheme.typography.titleMedium.copy(
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
-                                
-                                LazyColumn(
-                                    modifier = Modifier.height(120.dp),
-                                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                                ) {
-                                    items(friendsActivity) { friend ->
-                                        Surface(
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .clickable {
-                                                    val index = friendsActivity.indexOf(friend)
-                                                    if (index != -1) {
-                                                        selectedFriendIndex = index
-                                                    }
-                                                },
-                                            shape = RoundedCornerShape(12.dp),
-                                            color = if (friend == friendsActivity.getOrNull(selectedFriendIndex)) primaryColor.copy(alpha = 0.1f) else Color.Transparent,
-                                            border = BorderStroke(
-                                                width = if (friend == friendsActivity.getOrNull(selectedFriendIndex)) 2.dp else 1.dp,
-                                                color = if (friend == friendsActivity.getOrNull(selectedFriendIndex)) primaryColor else secondaryColor.copy(alpha = 0.1f)
-                                            )
-                                        ) {
-                                            Row(
-                                                modifier = Modifier.padding(12.dp),
-                                                verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                            ) {
-                                                // Online indicator
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(8.dp)
-                                                        .clip(CircleShape)
-                                                        .background(
-                                                            if (friend.is_online) onlineColor else Color.Gray
-                                                        )
-                                                )
-                                                
-                                                // Profile initial
-                                                Box(
-                                                    modifier = Modifier
-                                                        .size(36.dp)
-                                                        .clip(CircleShape)
-                                                        .background(primaryColor),
-                                                    contentAlignment = Alignment.Center
-                                                ) {
-                                                    Text(
-                                                        text = friend.profile.username.take(1).uppercase(),
-                                                        style = MaterialTheme.typography.bodyLarge.copy(
-                                                            fontWeight = FontWeight.Bold,
-                                                            color = Color.White
-                                                        )
-                                                    )
-                                                }
-                                                
-                                                Column(
-                                                    modifier = Modifier.weight(1f)
-                                                ) {
-                                                    Text(
-                                                        text = friend.profile.display_name ?: friend.profile.username,
-                                                        style = MaterialTheme.typography.bodyMedium.copy(
-                                                            fontWeight = FontWeight.Medium
-                                                        ),
-                                                        maxLines = 1,
-                                                        overflow = TextOverflow.Ellipsis,
-                                                        color = MaterialTheme.colorScheme.onSurface
-                                                    )
-                                                    
-                                                    friend.activity?.let { activity ->
-                                                        Text(
-                                                            text = "${activity.title} • ${activity.artist}",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f),
-                                                            maxLines = 1,
-                                                            overflow = TextOverflow.Ellipsis
-                                                        )
-                                                    } ?: run {
-                                                        Text(
-                                                            text = "Not listening",
-                                                            style = MaterialTheme.typography.bodySmall,
-                                                            color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.4f)
-                                                        )
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                    // Use items function correctly
+                    items(onlineFriends) { friend ->
+                        FriendCard(
+                            friend = friend,
+                            onClick = {
+                                navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/profile/${friend.profile.username}")
+                            },
+                            isOnline = true
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+                
+                // Offline friends section
+                val offlineFriends = friendsActivity.filter { !it.is_online }
+                if (offlineFriends.isNotEmpty()) {
+                    item {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        SectionHeader(
+                            title = "Offline",
+                            subtitle = "${offlineFriends.size} friends offline",
+                            icon = R.drawable.alert_circle // Use available icon
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                    
+                    // Use items function correctly
+                    items(offlineFriends) { friend ->
+                        FriendCard(
+                            friend = friend,
+                            onClick = {
+                                navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/profile/${friend.profile.username}")
+                            },
+                            isOnline = false
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
                 }
             }
         }
         
-        Spacer(modifier = Modifier.height(16.dp))
-        
-        // Bottom buttons
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        // Floating Action Buttons
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp),
+            contentAlignment = Alignment.BottomEnd
         ) {
-            // Add friend button
-            Button(
-                onClick = { navController.navigate("cubicjam_add_friend") },
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = primaryColor,
-                    contentColor = Color.White
-                )
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.Bottom
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.person),
-                    contentDescription = "Add Friend",
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Add Friend")
-            }
-            
-            // Refresh button
-            Button(
-                onClick = {
-                    scope.launch {
-                        fetchFriends()
+                // Refresh button
+                FloatingActionButton(
+                    onClick = {
+                        scope.launch {
+                            fetchFriends()
+                        }
+                    },
+                    containerColor = cubicJamSurface,
+                    contentColor = cubicJamOnSurface,
+                    modifier = Modifier.size(56.dp)
+                ) {
+                    if (isLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(24.dp),
+                            strokeWidth = 2.dp,
+                            color = cubicJamTertiary
+                        )
+                    } else {
+                        Icon(
+                            painter = painterResource(R.drawable.refresh),
+                            contentDescription = "Refresh",
+                            modifier = Modifier.size(24.dp)
+                        )
                     }
-                },
-                enabled = !isLoading,
-                modifier = Modifier.weight(1f),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = secondaryColor,
-                    contentColor = Color.White
-                )
-            ) {
-                if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(20.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White
-                    )
-                } else {
+                }
+                
+                // Add friend button - use available icon
+                FloatingActionButton(
+                    onClick = { navController.navigate("cubicjam_web?url=https://jam-wave-connect.lovable.app/feed/") },
+                    containerColor = cubicJamPrimary,
+                    contentColor = Color.White,
+                    modifier = Modifier.size(56.dp)
+                ) {
                     Icon(
-                        painter = painterResource(R.drawable.refresh),
-                        contentDescription = "Refresh",
-                        modifier = Modifier.size(20.dp)
+                        painter = painterResource(R.drawable.add), // Use available 'add' icon instead of person_add
+                        contentDescription = "Add Friend",
+                        modifier = Modifier.size(24.dp)
                     )
                 }
-                Spacer(modifier = Modifier.width(8.dp))
-                Text("Refresh")
+            }
+        }
+    }
+    
+    // Logout Dialog
+    if (showLogoutDialog) {
+        AlertDialog(
+            onDismissRequest = { showLogoutDialog = false },
+            title = { Text("Logout", color = cubicJamOnSurface) },
+            text = { Text("Are you sure you want to logout?", color = cubicJamOnSurfaceVariant) },
+            confirmButton = {
+                TextButton(
+                    onClick = { logout() },
+                    colors = ButtonDefaults.textButtonColors(contentColor = cubicJamError)
+                ) {
+                    Text("LOGOUT")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showLogoutDialog = false },
+                    colors = ButtonDefaults.textButtonColors(contentColor = cubicJamOnSurfaceVariant)
+                ) {
+                    Text("CANCEL")
+                }
+            },
+            containerColor = cubicJamSurface,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+}
+
+// Add this function to help with date parsing in the composable
+@Composable
+fun rememberFormattedTime(updatedAt: String?): String? {
+    return remember(updatedAt) {
+        updatedAt?.let {
+            try {
+                val instant = Instant.parse(it)
+                val dateTime = LocalDateTime.ofInstant(instant, ZoneId.systemDefault())
+                val formatter = DateTimeFormatter.ofPattern("MMM d, h:mm a")
+                dateTime.format(formatter)
+            } catch (e: Exception) {
+                null
             }
         }
     }
