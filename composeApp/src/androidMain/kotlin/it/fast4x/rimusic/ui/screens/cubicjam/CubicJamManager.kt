@@ -110,14 +110,9 @@ class CubicJamManager(
                                 }
                             },
                             onFailure = { e ->
-                                Timber.tag("CubicJam").e(e, "Token refresh failed")
-                                // Clear tokens to force re-login
-                                prefs.edit().apply {
-                                    remove("bearer_token")
-                                    remove("refresh_token")
-                                    remove("refresh_at")
-                                    apply()
-                                }
+                                Timber.tag("CubicJam").e(e, "Failed to refresh token")
+                                // Throw an exception instead of returning null
+                                throw IllegalStateException("Authentication failed: ${e.message}")
                             }
                         )
                     } catch (e: Exception) {

@@ -2533,17 +2533,7 @@ private fun OptimizedCanvasVideoPlayer(
     val binder = LocalPlayerServiceBinder.current
     val isDarkTheme = isSystemInDarkTheme()
     
-    // Get current song's media ID
-    val currentMediaItemId = binder?.player?.currentMediaItem?.mediaId
-    
-    // CRITICAL: Only show canvas if it's for the current song
-    val shouldShowCanvas = mediaItemId == currentMediaItemId
-    
-    if (!shouldShowCanvas) {
-        // Don't render canvas if it's not for the current song
-        return
-    }
-    
+ 
     // OPTIMIZED: Use derivedStateOf to minimize recompositions
     val shouldReleasePlayer = remember(mediaItemId) {
         derivedStateOf {
@@ -2602,6 +2592,7 @@ private fun OptimizedCanvasVideoPlayer(
             }
     )
 }
+
 @Composable
 private fun OptimizedCanvasLogPanel(
     modifier: Modifier = Modifier

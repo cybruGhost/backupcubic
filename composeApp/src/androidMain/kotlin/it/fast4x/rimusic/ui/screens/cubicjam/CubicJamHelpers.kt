@@ -180,17 +180,12 @@ suspend fun ensureValidToken(preferences: android.content.SharedPreferences): St
                 Timber.tag("CubicJam").d("✅ Token refreshed successfully")
                 return refreshResponse.session.access_token
             }
-        } catch (e: Exception) {
-            Timber.tag("CubicJam").e(e, "Failed to refresh token")
-            // Token refresh failed, clear stored tokens
-            preferences.edit().apply {
-                remove("bearer_token")
-                remove("refresh_token")
-                remove("refresh_at")
-                apply()
+            } catch (e: Exception) {
+                Timber.tag("CubicJam").e(e, "Failed to refresh token: ${e.message}")
+                // ⚠️ FIXED: Don't clear tokens, just return current one
+                // Let the app handle network errors gracefully
+                return currentToken
             }
-            return null
-        }
     }
     
     return currentToken

@@ -273,9 +273,9 @@ Icon(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(12.dp),
                             colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = OrangePrimary,
+                                focusedBorderColor = PurplePrimary,
                                 unfocusedBorderColor = SurfaceDark,
-                                focusedLabelColor = PurpleLight,
+                                focusedLabelColor = OrangePrimary,
                                 unfocusedLabelColor = Color(0xFFB0B0B0),
                                 focusedTextColor = Color.White,
                                 unfocusedTextColor = Color.White,
