@@ -2483,81 +2483,65 @@ private fun OptimizedSpotifyCanvasPlayer(
         "canvas_${currentCanvasUrl.hashCode()}_${currentMediaItemId.hashCode()}"
     }
 
-    // ✅ ADAPTIVE EDGE PADDING (closer to edges on large screens)
-    val edgePadding = remember(maxWidth) {
+    // ✅ ADAPTIVE EDGE PADDING - NO LEFT/RIGHT, ONLY TOP/BOTTOM
+    val topBottomPadding = remember(maxWidth) {
         when {
-            maxWidth < 360.dp -> 8.dp
-            maxWidth < 480.dp -> 10.dp
-            maxWidth < 600.dp -> 12.dp
-            else -> 6.dp // tablets / landscape → near edge-to-edge
+            maxWidth < 360.dp -> 6.dp
+            maxWidth < 480.dp -> 8.dp
+            maxWidth < 600.dp -> 10.dp
+            else -> 12.dp
         }
     }
 
-    // ✅ ADAPTIVE CORNER RADIUS
+    // ✅ ADAPTIVE CORNER RADIUS - Smaller for cleaner look
     val cornerRadius = remember(maxWidth) {
-        if (maxWidth >= 600.dp) 14.dp else 18.dp
+        if (maxWidth >= 600.dp) 10.dp else 12.dp
     }
 
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF1E1E1E).copy(alpha = 0.7f),
-                        Color(0xFF121212).copy(alpha = 0.7f)
-                    ),
-                    center = Offset.Unspecified,
-                    radius = maxWidth.value * 0.8f
-                )
-            )
+            .background(Color.Black) // Simple black background
     ) {
-        // VIDEO CONTAINER
+        // MAIN VIDEO CONTAINER - NO LEFT/RIGHT PADDING
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(edgePadding) // ✅ FIXED
+                .padding(vertical = topBottomPadding) // ← ONLY TOP/BOTTOM
                 .clip(RoundedCornerShape(cornerRadius))
-                .shadow(
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(cornerRadius),
-                    clip = true,
-                    ambientColor = Color.Black.copy(alpha = 0.3f),
-                    spotColor = Color.Black.copy(alpha = 0.2f)
-                )
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF2A2A2A),
-                            Color(0xFF1F1F1F)
-                        )
-                    ),
-                    shape = RoundedCornerShape(cornerRadius)
-                )
+                .background(Color.Black)
         ) {
-            // INNER VIDEO
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(1.dp) // thinner inner gap
-                    .clip(RoundedCornerShape(cornerRadius - 2.dp))
-            ) {
-                OptimizedCanvasVideoPlayer(
-                    canvasUrl = currentCanvasUrl,
-                    mediaItemId = currentMediaItemId,
-                    isPlaying = currentIsPlaying,
-                    playerKey = playerKey,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+            // VIDEO PLAYER - FILLS CONTAINER
+            OptimizedCanvasVideoPlayer(
+                canvasUrl = currentCanvasUrl,
+                mediaItemId = currentMediaItemId,
+                isPlaying = currentIsPlaying,
+                playerKey = playerKey,
+                modifier = Modifier.fillMaxSize()
+            )
 
-            // SUBTLE BORDER
+            // SUBTLE TOP/BOTTOM BORDER ONLY
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .drawBehind {
+                        // Top border
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.1f),
+                            start = Offset(0f, 0f),
+                            end = Offset(size.width, 0f),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                        // Bottom border
+                        drawLine(
+                            color = Color.White.copy(alpha = 0.1f),
+                            start = Offset(0f, size.height),
+                            end = Offset(size.width, size.height),
+                            strokeWidth = 1.dp.toPx()
+                        )
+                        // Round corners highlight
                         drawRoundRect(
-                            color = Color.White.copy(alpha = 0.05f),
+                            color = Color.White.copy(alpha = 0.08f),
                             style = Stroke(width = 1.dp.toPx()),
                             cornerRadius = CornerRadius(cornerRadius.toPx())
                         )
@@ -2565,7 +2549,7 @@ private fun OptimizedSpotifyCanvasPlayer(
             )
         }
 
-        // LOG PANEL (unchanged)
+        // LOG PANEL (top left)
         if (showLogs) {
             OptimizedCanvasLogPanel(
                 modifier = Modifier
@@ -2575,14 +2559,15 @@ private fun OptimizedSpotifyCanvasPlayer(
             )
         }
 
-        // CANVAS BADGE (unchanged)
+        // CANVAS BADGE - TOP RIGHT SIDE (as requested)
         OptimizedCanvasBadge(
             modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 20.dp)
+                .align(Alignment.TopEnd)
+                .padding(top = 48.dp, end = 20.dp)
         )
     }
 }
+
 
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
