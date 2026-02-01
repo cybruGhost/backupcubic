@@ -1193,30 +1193,7 @@ SpotifyCanvasWorker()
         val player = binder.player
 
         if (isLandscape) {
-        Box { // ← Add canvas player at the beginning of this Box too
-        // ✅ ADD CANVAS PLAYER FOR LANDSCAPE MODE
-        val currentMediaItemId = binder?.player?.currentMediaItem?.mediaId
-        val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
-        val shouldShowCanvas = spotifyCanvasEnabled && 
-            SpotifyCanvasState.currentCanvasUrl != null && 
-            isCanvasForCurrentSong && 
-            !isShowingLyrics && 
-            !isShowingVisualizer &&
-            showthumbnail
-
-        if (shouldShowCanvas) {
-            OptimizedSpotifyCanvasPlayer(
-                canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
-                mediaItemId = SpotifyCanvasState.currentMediaItemId,
-                isPlaying = SpotifyCanvasState.isPlaying,
-                showLogs = showSpotifyCanvasLogs,
-                maxWidth = screenWidth,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(0f)
-            )
-        }
-         if (!shouldShowCanvas) {
+         Box{
              if (playerBackgroundColors == PlayerBackgroundColors.BlurredCoverColor && playerType == PlayerType.Modern && (!showthumbnail || albumCoverRotation)) {
                  val fling = PagerDefaults.flingBehavior(
                      state = pagerStateFS,
@@ -1338,53 +1315,28 @@ SpotifyCanvasWorker()
                  noBlur = noblur,
                  isShowingLyrics = isShowingLyrics,
                  isShowingVisualizer = isShowingVisualizer,
-                 contentScale = ContentScale.FillHeight,
-                 modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(-1f) // ← Add this
+                 contentScale = ContentScale.FillHeight
              )
- }
-    Row(
-    verticalAlignment = Alignment.CenterVertically,
-    modifier = if (!shouldShowCanvas) {
-        containerModifier // ← Use background ONLY when NO canvas
-            .padding(top = if (playerType == PlayerType.Essential) 40.dp else 20.dp)
-            .padding(top = if (extraspace) 10.dp else 0.dp)
-            .drawBehind {
-                if (backgroundProgress == BackgroundProgress.Both || backgroundProgress == BackgroundProgress.Player) {
-                    drawRect(
-                        color = color.favoritesOverlay,
-                        topLeft = Offset.Zero,
-                        size = Size(
-                            width = positionAndDuration.first.toFloat() /
-                                    positionAndDuration.second.absoluteValue * size.width,
-                            height = size.maxDimension
-                        )
-                    )
-                }
-            }
-            .zIndex(1f)
-    } else {
-        // ← NO BACKGROUND when canvas is showing!
-        Modifier
-            .padding(top = if (playerType == PlayerType.Essential) 40.dp else 20.dp)
-            .padding(top = if (extraspace) 10.dp else 0.dp)
-            .drawBehind {
-                if (backgroundProgress == BackgroundProgress.Both || backgroundProgress == BackgroundProgress.Player) {
-                    drawRect(
-                        color = color.favoritesOverlay,
-                        topLeft = Offset.Zero,
-                        size = Size(
-                            width = positionAndDuration.first.toFloat() /
-                                    positionAndDuration.second.absoluteValue * size.width,
-                            height = size.maxDimension
-                        )
-                    )
-                }
-            }
-            .zIndex(1f)
-    }
-) {
+
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = containerModifier
+                    .padding(top = if (playerType == PlayerType.Essential) 40.dp else 20.dp)
+                    .padding(top = if (extraspace) 10.dp else 0.dp)
+                    .drawBehind {
+                        if (backgroundProgress == BackgroundProgress.Both || backgroundProgress == BackgroundProgress.Player) {
+                            drawRect(
+                                color = color.favoritesOverlay,
+                                topLeft = Offset.Zero,
+                                size = Size(
+                                    width = positionAndDuration.first.toFloat() /
+                                            positionAndDuration.second.absoluteValue * size.width,
+                                    height = size.maxDimension
+                                )
+                            )
+                        }
+                    }
+            ) {
                 Column (
                     verticalArrangement = Arrangement.Center,
                     modifier = Modifier
@@ -1704,30 +1656,7 @@ SpotifyCanvasWorker()
             }
          }
         } else {
-                    Box {
-               // ✅ ADD CANVAS PLAYER HERE - RIGHT AT THE BEGINNING OF THE BOX
-               val currentMediaItemId = binder?.player?.currentMediaItem?.mediaId
-               val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
-               val shouldShowCanvas = spotifyCanvasEnabled && 
-                   SpotifyCanvasState.currentCanvasUrl != null && 
-                   isCanvasForCurrentSong && 
-                   !isShowingLyrics && 
-                   !isShowingVisualizer &&
-                   showthumbnail
-
-               if (shouldShowCanvas) {
-                   OptimizedSpotifyCanvasPlayer(
-                       canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
-                       mediaItemId = SpotifyCanvasState.currentMediaItemId,
-                       isPlaying = SpotifyCanvasState.isPlaying,
-                       showLogs = showSpotifyCanvasLogs,
-                       maxWidth = screenWidth,
-                       modifier = Modifier
-                           .fillMaxSize()
-                           .zIndex(0f) // ✅ NOW THIS WILL WORK
-                   )
-               }
- if (!shouldShowCanvas) {
+           Box {
                if (playerBackgroundColors == PlayerBackgroundColors.BlurredCoverColor && playerType == PlayerType.Modern && (!showthumbnail || albumCoverRotation)) {
                     val fling = PagerDefaults.flingBehavior(
                         state = pagerStateFS,
@@ -1755,12 +1684,7 @@ SpotifyCanvasWorker()
                         flingBehavior = fling,
                         userScrollEnabled = !(albumCoverRotation && (isShowingLyrics || showthumbnail)),
                         modifier = Modifier
-                           .background(
-                            if (shouldShowCanvas)
-                                Color.Transparent
-                            else
-                                colorPalette().background1
-                        )
+                            .background(colorPalette().background1)
                             .pointerInteropFilter {
                                 circleOffsetY = it.y
                                 false
@@ -1802,9 +1726,9 @@ SpotifyCanvasWorker()
                         }
 
                         Box(
-                              modifier = Modifier
+                            modifier = Modifier
                                 .conditional(albumCoverRotation && (isShowingLyrics || showthumbnail)) {
-                                    zIndex(if (it == pagerStateFS.currentPage) 2f else 1.5f)
+                                    zIndex(if (it == pagerStateFS.currentPage) 1f else 0.9f)
                                 }
                                 .conditional(swipeAnimationNoThumbnail == SwipeAnimationNoThumbnail.Scale && isDraggedFS) {
                                     graphicsLayer {
@@ -1907,6 +1831,7 @@ SpotifyCanvasWorker()
 
                                     Box(modifier = Modifier
                                         .conditional(!expandedplayer && (!isShowingLyrics || showlyricsthumbnail)) {weight(1f)}
+                                         .zIndex(1f) // ← ADD THIS LINE
                                     ) {
                                         Controls(
                                             navController = navController,
@@ -1964,42 +1889,27 @@ SpotifyCanvasWorker()
                    isShowingVisualizer = isShowingVisualizer,
                    contentScale = ContentScale.FillHeight
                )
-                } 
-Column(
-    horizontalAlignment = Alignment.CenterHorizontally,
-    modifier = if (!shouldShowCanvas) {
-        containerModifier // ← Use background ONLY when NO canvas
-            .drawBehind {
-                if (backgroundProgress == BackgroundProgress.Both || backgroundProgress == BackgroundProgress.Player) {
-                    drawRect(
-                        color = color.favoritesOverlay,
-                        topLeft = Offset.Zero,
-                        size = Size(
-                            width = positionAndDuration.first.toFloat() /
-                                    positionAndDuration.second.absoluteValue * size.width,
-                            height = size.maxDimension
-                        )
-                    )
-                }
-            }
-    } else {
-        // ← NO BACKGROUND when canvas is showing!
-        Modifier
-            .drawBehind {
-                if (backgroundProgress == BackgroundProgress.Both || backgroundProgress == BackgroundProgress.Player) {
-                    drawRect(
-                        color = color.favoritesOverlay,
-                        topLeft = Offset.Zero,
-                        size = Size(
-                            width = positionAndDuration.first.toFloat() /
-                                    positionAndDuration.second.absoluteValue * size.width,
-                            height = size.maxDimension
-                        )
-                    )
-                }
-            }
-    }
-) {
+
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = containerModifier
+                    //.padding(top = 10.dp)
+                    .drawBehind {
+                        if (backgroundProgress == BackgroundProgress.Both || backgroundProgress == BackgroundProgress.Player) {
+                            drawRect(
+                                color = color.favoritesOverlay,
+                                topLeft = Offset.Zero,
+                                size = Size(
+                                    width = positionAndDuration.first.toFloat() /
+                                            positionAndDuration.second.absoluteValue * size.width,
+                                    height = size.maxDimension
+                                )
+                            )
+                        }
+                    }
+                    .zIndex(1f) // ← ADD THIS LINE
+                    .navigationBarsPadding() // ← ADD THIS HERE
+            ) {
 
 
                 if (showTopActionsBar) {
@@ -2090,20 +2000,56 @@ Column(
                             .height(35.dp)
                     )
                 }
+BoxWithConstraints(
+    modifier = Modifier.fillMaxSize()
+) {
+    // ✅ Compose provides these inside BoxWithConstraints
+    val maxWidthDp = maxWidth
+    val maxHeightDp = maxHeight
 
+    // Get current media ID for proper comparison
+    val currentMediaItemId = binder?.player?.currentMediaItem?.mediaId
+
+    // Check if canvas is for the currently playing song
+    val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
+
+    // Determine whether to show Spotify Canvas
+    val shouldShowCanvas = spotifyCanvasEnabled &&
+            SpotifyCanvasState.currentCanvasUrl != null &&
+            isCanvasForCurrentSong &&
+            !isShowingLyrics &&
+            !isShowingVisualizer &&
+            showthumbnail
+
+    // --- 1️⃣ Background Canvas ---
+    if (shouldShowCanvas) {
+        OptimizedSpotifyCanvasPlayer(
+            canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
+            mediaItemId = SpotifyCanvasState.currentMediaItemId,
+            isPlaying = SpotifyCanvasState.isPlaying,
+            showLogs = showSpotifyCanvasLogs,
+            maxWidth = maxWidthDp, // ✅ Now correctly scoped
+            modifier = Modifier
+                .fillMaxSize()
+                 .zIndex(-1f) // ← LOWER THAN EVERYTHING
+        )
+    }
+
+    // --- 2️⃣ Foreground Thumbnails & UI ---
                 BoxWithConstraints(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
                         .conditional((screenWidth <= (screenHeight / 2)) && (showlyricsthumbnail || (!expandedplayer && !isShowingLyrics))) {height(screenWidth)}
-                        .conditional((screenWidth > (screenHeight / 2)) || expandedplayer || (isShowingLyrics && !showlyricsthumbnail)) {weight(1f)}
-                ) {
+                        .conditional( (screenWidth > (screenHeight / 2)) || expandedplayer || (isShowingLyrics && !showlyricsthumbnail)) { fillMaxHeight() } // ✅ fixed here
+                        .zIndex(1f) // ← ADD THIS LINE
+               ) {
 
-                     if (showthumbnail && !shouldShowCanvas) {
-        if ((!isShowingLyrics && !isShowingVisualizer) || (isShowingVisualizer && showvisthumbnail) || (isShowingLyrics && showlyricsthumbnail)) {
-            if (playerType == PlayerType.Modern) {
-                val fling = PagerDefaults.flingBehavior(state = pagerState,snapPositionalThreshold = 0.25f)
+                      if (showthumbnail && !shouldShowCanvas) {
+                         if ((!isShowingLyrics && !isShowingVisualizer) || (isShowingVisualizer && showvisthumbnail) || (isShowingLyrics && showlyricsthumbnail)) {
+                             if (playerType == PlayerType.Modern) {
+                    val fling = PagerDefaults.flingBehavior(state = pagerState,snapPositionalThreshold = 0.25f)
 
-                pagerState.LaunchedEffectScrollToPage(binder.player.currentMediaItemIndex)
+                    pagerState.LaunchedEffectScrollToPage(binder.player.currentMediaItemIndex)
 
                 LaunchedEffect(pagerState) {
                     var previousPage = pagerState.settledPage
@@ -2301,6 +2247,8 @@ Column(
             )
     }
 }
+    } // CLOSING BRACE FOR BoxWithConstraints
+
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier
@@ -2464,7 +2412,6 @@ Column(
 
     }
 }
-
 @Composable
 private fun OptimizedSpotifyCanvasPlayer(
     canvasUrl: String,
@@ -2483,107 +2430,53 @@ private fun OptimizedSpotifyCanvasPlayer(
         "canvas_${currentCanvasUrl.hashCode()}_${currentMediaItemId.hashCode()}"
     }
 
-    // ✅ ADAPTIVE EDGE PADDING (closer to edges on large screens)
-    val edgePadding = remember(maxWidth) {
-        when {
-            maxWidth < 360.dp -> 8.dp
-            maxWidth < 480.dp -> 10.dp
-            maxWidth < 600.dp -> 12.dp
-            else -> 6.dp // tablets / landscape → near edge-to-edge
-        }
-    }
-
-    // ✅ ADAPTIVE CORNER RADIUS
-    val cornerRadius = remember(maxWidth) {
-        if (maxWidth >= 600.dp) 14.dp else 18.dp
-    }
-
+    // SINGLE BOX - NO NESTING
     Box(
         modifier = modifier
             .fillMaxSize()
-            .background(
-                brush = Brush.radialGradient(
-                    colors = listOf(
-                        Color(0xFF1E1E1E).copy(alpha = 0.7f),
-                        Color(0xFF121212).copy(alpha = 0.7f)
-                    ),
-                    center = Offset.Unspecified,
-                    radius = maxWidth.value * 0.8f
-                )
-            )
+            .background(Color.Black)
     ) {
-        // VIDEO CONTAINER
-        Box(
+        // DIRECT VIDEO PLAYER
+        OptimizedCanvasVideoPlayer(
+            canvasUrl = currentCanvasUrl,
+            mediaItemId = currentMediaItemId,
+            isPlaying = currentIsPlaying,
+            playerKey = playerKey,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(edgePadding) // ✅ FIXED
-                .clip(RoundedCornerShape(cornerRadius))
-                .shadow(
-                    elevation = 8.dp,
-                    shape = RoundedCornerShape(cornerRadius),
-                    clip = true,
-                    ambientColor = Color.Black.copy(alpha = 0.3f),
-                    spotColor = Color.Black.copy(alpha = 0.2f)
-                )
-                .background(
-                    brush = Brush.verticalGradient(
-                        colors = listOf(
-                            Color(0xFF2A2A2A),
-                            Color(0xFF1F1F1F)
-                        )
-                    ),
-                    shape = RoundedCornerShape(cornerRadius)
-                )
-        ) {
-            // INNER VIDEO
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(1.dp) // thinner inner gap
-                    .clip(RoundedCornerShape(cornerRadius - 2.dp))
-            ) {
-                OptimizedCanvasVideoPlayer(
-                    canvasUrl = currentCanvasUrl,
-                    mediaItemId = currentMediaItemId,
-                    isPlaying = currentIsPlaying,
-                    playerKey = playerKey,
-                    modifier = Modifier.fillMaxSize()
-                )
-            }
+                .zIndex(-1f)
+        )
 
-            // SUBTLE BORDER
-            Box(
-                modifier = Modifier
-                    .matchParentSize()
-                    .drawBehind {
-                        drawRoundRect(
-                            color = Color.White.copy(alpha = 0.05f),
-                            style = Stroke(width = 1.dp.toPx()),
-                            cornerRadius = CornerRadius(cornerRadius.toPx())
-                        )
-                    }
-            )
-        }
-
-        // LOG PANEL (unchanged)
+        // LOG PANEL
         if (showLogs) {
             OptimizedCanvasLogPanel(
                 modifier = Modifier
                     .align(Alignment.TopStart)
-                    .padding(top = 48.dp, start = 12.dp)
-                    .width(280.dp)
+                    .padding(top = 12.dp, start = 12.dp)
+                    .width(240.dp)
             )
         }
-
-        // CANVAS BADGE (unchanged)
+         // Semi-transparent overlay to make controls more visible on top of canvas
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        0.3f to Color.Black.copy(alpha = 0.3f), // Darker at bottom
+                        1f to Color.Black.copy(alpha = 0.6f)   // Even darker at bottom
+                    )
+                )
+                .zIndex(0f) // ← Between canvas (-1) and controls (1+)
+        )
+        // CANVAS BADGE
         OptimizedCanvasBadge(
             modifier = Modifier
                 .align(Alignment.BottomEnd)
-                .padding(end = 20.dp, bottom = 20.dp)
+                .padding(end = 12.dp, bottom = 12.dp)
         )
     }
 }
-
 @Composable
 @androidx.annotation.OptIn(UnstableApi::class)
 private fun OptimizedCanvasVideoPlayer(
@@ -2594,10 +2487,7 @@ private fun OptimizedCanvasVideoPlayer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val binder = LocalPlayerServiceBinder.current
-    val isDarkTheme = isSystemInDarkTheme()
     
- 
     // OPTIMIZED: Use derivedStateOf to minimize recompositions
     val shouldReleasePlayer = remember(mediaItemId) {
         derivedStateOf {
@@ -2624,6 +2514,7 @@ private fun OptimizedCanvasVideoPlayer(
     }
     
     // 📺 OPTIMIZED ANDROID VIEW: With proper lifecycle
+    // SIMPLE ANDROID VIEW - NO CLIPPING, NO ALPHA
     AndroidView(
         factory = { context ->
             CanvasPlayerManager.setupPlayer(
@@ -2633,30 +2524,9 @@ private fun OptimizedCanvasVideoPlayer(
                 mediaItemId = mediaItemId
             )
         },
-        update = { /* Manager handles updates */ },
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .graphicsLayer {
-                scaleX = 0.98f
-                scaleY = 0.98f
-                shape = RoundedCornerShape(16.dp)
-                clip = true
-                alpha = if (isDarkTheme) 0.95f else 0.98f
-            }
-            .drawWithCache {
-                onDrawWithContent {
-                    drawContent()
-                    // Subtle shadow for depth (FIXED: .toPx() without parentheses)
-                    drawRoundRect(
-                        color = Color.Black.copy(alpha = 0.1f),
-                        style = Stroke(width = 1.dp.toPx()),
-                        cornerRadius = CornerRadius(16.dp.toPx())
-                    )
-                }
-            }
+        modifier = modifier.fillMaxSize()  // 👈 JUST FILL THE SPACE
     )
 }
-
 @Composable
 private fun OptimizedCanvasLogPanel(
     modifier: Modifier = Modifier
