@@ -288,6 +288,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.media3.common.C
 // --- GRAPHICS ---
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.text.font.FontWeight
 
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
@@ -2483,8 +2484,8 @@ private fun OptimizedSpotifyCanvasPlayer(
         "canvas_${currentCanvasUrl.hashCode()}_${currentMediaItemId.hashCode()}"
     }
 
-    // ✅ ADAPTIVE EDGE PADDING - NO LEFT/RIGHT, ONLY TOP/BOTTOM
-    val topBottomPadding = remember(maxWidth) {
+    // ✅ ADAPTIVE EDGE PADDING - SEPARATE TOP AND BOTTOM
+    val topPadding = remember(maxWidth) {
         when {
             maxWidth < 360.dp -> 6.dp
             maxWidth < 480.dp -> 8.dp
@@ -2492,6 +2493,8 @@ private fun OptimizedSpotifyCanvasPlayer(
             else -> 12.dp
         }
     }
+    
+    val bottomPadding = topPadding * 0.3f // ⬅️ REDUCED BOTTOM PADDING (30% of top)
 
     // ✅ ADAPTIVE CORNER RADIUS - Smaller for cleaner look
     val cornerRadius = remember(maxWidth) {
@@ -2503,11 +2506,14 @@ private fun OptimizedSpotifyCanvasPlayer(
             .fillMaxSize()
             .background(Color.Black) // Simple black background
     ) {
-        // MAIN VIDEO CONTAINER - NO LEFT/RIGHT PADDING
+        // MAIN VIDEO CONTAINER - SEPARATE TOP/BOTTOM PADDING
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(vertical = topBottomPadding) // ← ONLY TOP/BOTTOM
+                .padding(
+                    top = topPadding,     // Normal top padding
+                    bottom = bottomPadding // Reduced bottom padding
+                )
                 .clip(RoundedCornerShape(cornerRadius))
                 .background(Color.Black)
         ) {
@@ -2559,11 +2565,11 @@ private fun OptimizedSpotifyCanvasPlayer(
             )
         }
 
-        // CANVAS BADGE - TOP RIGHT SIDE (as requested)
+        // CANVAS BADGE - TOP RIGHT SIDE (SMALLER)
         OptimizedCanvasBadge(
             modifier = Modifier
                 .align(Alignment.TopEnd)
-                .padding(top = 48.dp, end = 20.dp)
+                .padding(top = 32.dp, end = 12.dp) // Reduced padding
         )
     }
 }
@@ -2579,10 +2585,8 @@ private fun OptimizedCanvasVideoPlayer(
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
-    val binder = LocalPlayerServiceBinder.current
     val isDarkTheme = isSystemInDarkTheme()
     
- 
     // OPTIMIZED: Use derivedStateOf to minimize recompositions
     val shouldReleasePlayer = remember(mediaItemId) {
         derivedStateOf {
@@ -2641,6 +2645,7 @@ private fun OptimizedCanvasVideoPlayer(
             }
     )
 }
+
 
 @Composable
 private fun OptimizedCanvasLogPanel(
@@ -2795,37 +2800,98 @@ private fun OptimizedLogEntryItem(
 private fun OptimizedCanvasBadge(
     modifier: Modifier = Modifier
 ) {
+    var currentSlide by remember { mutableStateOf(0) }
+    val slides = listOf(
+        SlideData("CANVAS", "VISUAL", "🎨"),
+        SlideData("SUPPORT", "DONATE", "❤️"),
+        SlideData("SETTINGS", "DISABLE", "⚙️"),
+    )
+    
+    val current = slides[currentSlide]
+    
+    // Auto-rotate slides every 10 seconds
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(10000)
+            currentSlide = (currentSlide + 1) % slides.size
+        }
+    }
+    
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.7f))
+            .background(Color.Black.copy(alpha = 0.85f))
             .drawBehind {
                 drawRoundRect(
                     color = Color.White.copy(alpha = 0.15f),
-                    style = Stroke(width = 1.dp.toPx()),  // FIXED: .toPx() without parentheses
-                    cornerRadius = CornerRadius(8.dp.toPx())  // FIXED: .toPx() without parentheses
+                    style = Stroke(width = 0.5.dp.toPx()),
+                    cornerRadius = CornerRadius(8.dp.toPx())
                 )
             }
-            .shadow(4.dp, RoundedCornerShape(8.dp))
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .shadow(2.dp, RoundedCornerShape(8.dp))
+            .padding(horizontal = 10.dp, vertical = 6.dp)
     ) {
+        // Emoji/icon
         BasicText(
-            text = "CUBIC CANVAS",
+            text = current.emoji,
+            style = typography().xxs.copy(
+                fontSize = 10.sp
+            ),
+            modifier = Modifier.padding(bottom = 2.dp)
+        )
+        
+        // Main text
+        BasicText(
+            text = current.title,
             style = typography().xxs.copy(
                 color = Color.White,
-                fontSize = 10.sp
+                fontSize = 8.sp,
+                fontWeight = FontWeight.SemiBold,
+                textAlign = TextAlign.Center
             )
         )
+        
+        // Subtext
         BasicText(
-            text = "VISUAL EXPERIENCE",
+            text = current.subtitle,
             style = typography().xxs.copy(
                 color = Color.White.copy(alpha = 0.6f),
-                fontSize = 8.sp
-            )
+                fontSize = 7.sp,
+                textAlign = TextAlign.Center
+            ),
+            modifier = Modifier.padding(top = 1.dp)
         )
+        
+        // Tiny slide indicator dots
+        Row(
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(top = 4.dp)
+        ) {
+            slides.forEachIndexed { index, _ ->
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 1.dp)
+                        .size(if (index == currentSlide) 3.dp else 2.dp)
+                        .clip(CircleShape)
+                        .background(
+                            if (index == currentSlide) 
+                                Color.White 
+                            else 
+                                Color.White.copy(alpha = 0.3f)
+                        )
+                )
+            }
+        }
     }
 }
+
+private data class SlideData(
+    val title: String,
+    val subtitle: String,
+    val emoji: String = ""
+)
 
 @Composable
 private fun LogEntryItem(log: LogEntry) {
