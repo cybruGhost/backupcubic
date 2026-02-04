@@ -258,7 +258,6 @@ import it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasState
 import androidx.compose.ui.viewinterop.AndroidView
 // waigwe fallback api
 import it.fast4x.rimusic.utils.WaigweApi
-import it.fast4x.rimusic.utils.WaigweSearchResponse
 
 import androidx.media3.ui.AspectRatioFrameLayout
 
@@ -527,75 +526,32 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
     if (waigweFallbackEnabled && playerError != null) {
         try {
             val currentItem = binder.player.currentMediaItem ?: return@LaunchedEffect
-            val currentMediaId = currentItem.mediaId
-            
-            // Check if already using waigwe (prevents infinite loops)
-            if (WaigweApi.isWaigweMedia(currentMediaId)) {
-                return@LaunchedEffect
-            }
-            
-            // Check if current URL is already from waigwe
-            val currentUri = currentItem.localConfiguration?.uri?.toString()
-            if (WaigweApi.isWaigweUrl(currentUri)) {
-                return@LaunchedEffect
-            }
             
             // Get song info
             val title = currentItem.mediaMetadata.title?.toString() ?: ""
             val artist = currentItem.mediaMetadata.artist?.toString() ?: ""
-            
-            if (title.isBlank()) {
-                Toaster.n("Cannot fallback: No title")
-                return@LaunchedEffect
-            }
-            
-            val query = if (artist.isNotBlank()) "$artist - $title" else title
+            val query = "$artist - $title"
             
             try {
-                // Call waigwe API with retry mechanism
-                var result: Result<WaigweSearchResponse>? = null
+                // Call waigwe API
+                val result = WaigweApi.search(query)
                 
-                for (attempt in 0..2) { // Try up to 3 times
-                    result = WaigweApi.search(query)
-                    
-                    if (result.isSuccess) {
-                        break
-                    }
-                    
-                    if (attempt < 2) {
-                        // Exponential backoff: 1s, then 3s
-                        delay(if (attempt == 0) 1000L else 3000L)
-                    }
-                }
-                
-                if (result != null && result.isSuccess) {
+                if (result.isSuccess) {
                     val response = result.getOrThrow()
                     if (response.videos.isNotEmpty()) {
                         val firstVideo = response.videos.first()
                         val streamUrl = WaigweApi.getStreamUrl(firstVideo.videoId)
                         
-                        // Save current playback state
-                        val wasPlaying = binder.player.isPlaying
-                        val currentPosition = binder.player.currentPosition
-                        
                         // Create new MediaItem with waigwe stream
                         val newMediaItem = currentItem.buildUpon()
                             .setUri(streamUrl)
                             .setMimeType(MimeTypes.AUDIO_MP4)
-                            .setMediaId("waigwe_${currentMediaId}") // Mark as waigwe
                             .build()
                         
-                        // Mark this media ID as using waigwe
-                        WaigweApi.markAsWaigweMedia("waigwe_${currentMediaId}")
-                        
-                        // Replace and play, preserving position
+                        // Replace and play
                         binder.player.setMediaItem(newMediaItem)
                         binder.player.prepare()
-                        binder.player.seekTo(currentPosition)
-                        
-                        if (wasPlaying) {
-                            binder.player.play()
-                        }
+                        binder.player.play()
                         
                         Toaster.n("Playing via waigwe API")
                     } else {
