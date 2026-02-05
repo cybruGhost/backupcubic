@@ -1074,5 +1074,20 @@
 <string name="smart_shuffle">Smart Shuffle</string>
 <string name="loading_recommendations">Loading recommendations…</string>
 <string name="recommendations">Recommendations</string>
+<!-- Auto-install strings -->
+<string name="auto_install_now">Auto Install Now</string>
+<string name="auto_install_description">Download and install automatically</string>
+<string name="downloading_update">Downloading update…</string>
+<string name="download_progress_hint">The app will install automatically when download completes</string>
+<string name="download_complete">Download Complete</string>
+<string name="tap_to_install">Tap to install the update</string>
+<string name="apk_download_channel_name">App Updates</string>
+<string name="apk_download_channel_description">Notifications for app update downloads</string>
+<string name="error_download_failed">Download failed. Please try again.</string>
+<string name="install">Install</string>
+<string name="installing_update">Installing Update…</string>
+<string name="update_downloaded">Update Downloaded</string>
+<string name="ready_to_install">Ready to install</string>
+<string name="download_and_install">Download and Install</string>
 
 </resources>
