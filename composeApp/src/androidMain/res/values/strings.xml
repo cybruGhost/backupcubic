@@ -1075,16 +1075,12 @@
 <string name="loading_recommendations">Loading recommendations…</string>
 <string name="recommendations">Recommendations</string>
 <!-- Auto-install strings -->
-<string name="auto_install_now">Auto Install Now</string>
-<string name="auto_install_description">Download and install automatically</string>
+
 <string name="downloading_update">Downloading update…</string>
 <string name="download_progress_hint">The app will install automatically when download completes</string>
 <string name="download_complete">Download Complete</string>
-<string name="tap_to_install">Tap to install the update</string>
+
 <string name="apk_download_channel_name">App Updates</string>
-<string name="apk_download_channel_description">Notifications for app update downloads</string>
-<string name="error_download_failed">Download failed. Please try again.</string>
-<string name="install">Install</string>
 <string name="installing_update">Installing Update…</string>
 <string name="update_downloaded">Update Downloaded</string>
 <string name="ready_to_install">Ready to install</string>
@@ -1092,12 +1088,7 @@
 <string name="update_failed_title">Update Check Failed</string>
 <string name="update_failed_message">Could not fetch update information. Please try downloading manually.</string>
 
-<!-- If you want more descriptive error messages -->
-<string name="could_not_fetch_update">Could not fetch update information</string>
-<string name="download_manually_message">Please download the update manually from GitHub</string>
-<string name="delete_update">Delete Update</string>
-<string name="delete_update_confirmation">Delete downloaded update? You\'ll need to download it again to install.</string>
-<string name="re_download">Re-download</string>
-<string name="go_to_github">Go to GitHub to Download</string>
+
+
 
 </resources>
