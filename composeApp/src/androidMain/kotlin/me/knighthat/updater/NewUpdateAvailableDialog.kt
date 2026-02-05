@@ -1106,7 +1106,7 @@ AnimatedVisibility(
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 BasicText(
-                    text = "Download and install automatically",
+                    text = "Auto-downloads, then installs with confirmation",
                     style = typography().xxs.copy(color = Color.White.copy(alpha = 0.9f)),
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis
