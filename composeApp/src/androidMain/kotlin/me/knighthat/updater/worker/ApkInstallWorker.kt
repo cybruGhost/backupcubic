@@ -22,6 +22,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+
 class ApkInstallWorker {
 
     companion object {
@@ -35,20 +36,81 @@ class ApkInstallWorker {
         private var pollingActive = false
         
         // Check if APK is already downloaded
-        fun isApkDownloaded(fileName: String): Boolean {
-            val downloadsDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "CubicMusic"
-            )
+// Check if APK is already downloaded
+fun isApkDownloaded(fileName: String): Boolean {
+    val downloadsDir = File(
+        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+        "CubicMusic"
+    )
+    
+    // If directory doesn't exist
+    if (!downloadsDir.exists()) {
+        return false
+    }
+    
+    val apkFile = File(downloadsDir, fileName)
+    
+    // Check if file exists AND has reasonable size (not empty/corrupt)
+    return apkFile.exists() && apkFile.length() > 1000 // At least 1KB
+}
+        // Add this function to ApkInstallWorker companion object
+        fun reDownloadApk(
+            context: Context,
+            downloadUrl: String,
+            fileName: String,
+            onProgress: (Float) -> Unit = {},
+            onComplete: () -> Unit = {},
+            onError: (String) -> Unit = {}
+        ) {
+            // Cancel any existing download first
+            cancelDownload()
             
-            if (!downloadsDir.exists()) {
-                return false
-            }
+            // Delete existing file
+            deleteDownloadedApk(fileName)
             
-            val apkFile = File(downloadsDir, fileName)
-            return apkFile.exists() && apkFile.length() > 0
+            // Start fresh download
+            startDownloadAndInstall(context, downloadUrl, fileName, onProgress, onComplete, onError)
         }
-        
+   // Delete downloaded APK manually (NOT cancel)
+fun deleteDownloadedApk(fileName: String): Boolean {
+    return try {
+        val downloadsDir = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "CubicMusic"
+        )
+
+        // If directory doesn't exist, nothing to delete
+        if (!downloadsDir.exists()) return false
+
+        val apkFile = File(downloadsDir, fileName)
+
+        // Check if file exists before trying to delete
+        if (!apkFile.exists()) return false
+
+        val deleted = apkFile.delete()
+
+        // Also clean up any other APK files in the directory
+        downloadsDir.listFiles()?.forEach { file ->
+            if (file.isFile && (file.name.endsWith(".apk") || file.name.contains("Cubic-Music"))) {
+                if (file.name != fileName) { // Don't delete the one we just tried
+                    file.delete()
+                }
+            }
+        }
+
+        // Remove notification if present
+        currentContext?.let { context ->
+            val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.cancel(NOTIFICATION_ID)
+            nm.cancel(NOTIFICATION_ID + 1)
+        }
+
+        deleted
+    } catch (e: Exception) {
+        e.printStackTrace()
+        false
+    }
+}
         // Get downloaded APK file
         fun getDownloadedApkFile(fileName: String): File? {
             val downloadsDir = File(

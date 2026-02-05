@@ -1089,5 +1089,15 @@
 <string name="update_downloaded">Update Downloaded</string>
 <string name="ready_to_install">Ready to install</string>
 <string name="download_and_install">Download and Install</string>
+<string name="update_failed_title">Update Check Failed</string>
+<string name="update_failed_message">Could not fetch update information. Please try downloading manually.</string>
+
+<!-- If you want more descriptive error messages -->
+<string name="could_not_fetch_update">Could not fetch update information</string>
+<string name="download_manually_message">Please download the update manually from GitHub</string>
+<string name="delete_update">Delete Update</string>
+<string name="delete_update_confirmation">Delete downloaded update? You\'ll need to download it again to install.</string>
+<string name="re_download">Re-download</string>
+<string name="go_to_github">Go to GitHub to Download</string>
 
 </resources>
