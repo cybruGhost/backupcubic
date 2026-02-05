@@ -1075,7 +1075,6 @@
 <string name="loading_recommendations">Loading recommendations…</string>
 <string name="recommendations">Recommendations</string>
 <!-- Auto-install strings -->
-
 <string name="downloading_update">Downloading update…</string>
 <string name="download_progress_hint">The app will install automatically when download completes</string>
 <string name="download_complete">Download Complete</string>
@@ -1087,8 +1086,5 @@
 <string name="download_and_install">Download and Install</string>
 <string name="update_failed_title">Update Check Failed</string>
 <string name="update_failed_message">Could not fetch update information. Please try downloading manually.</string>
-
-
-
 
 </resources>
