@@ -511,7 +511,7 @@ AnimatedVisibility(
             
             // Warning message
             BasicText(
-                text = "Kreate app backups may fail to import due to CSV format issues",
+                text = "🚨Attention Kreate Users Experiencing Import Issues",
                 style = typography().s.copy(color = Color.White),
                 modifier = Modifier.fillMaxWidth()
             )
@@ -597,7 +597,7 @@ if (showKreateDisclaimer) {
                         contentAlignment = Alignment.Center
                     ) {
                         BasicText(
-                            text = "⚠️ DISCLAIMER: This is a Kreate app issue",
+                            text = "⚠️ DISCLAIMER: This is a Kreate app issue (fix not soon)",
                             style = typography().s.copy(color = colorPalette().text)
                         )
                     }
