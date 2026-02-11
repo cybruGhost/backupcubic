@@ -445,6 +445,7 @@ fun DataSettings() {
 
         Spacer(modifier = Modifier.height(16.dp))
 // Kreate Backup Warning - Simple & Clear Version
+// Kreate Backup Fix - Direct Solution (Compact Version)
 AnimatedVisibility(
     visible = true,
     enter = fadeIn(animationSpec = tween(750)) + scaleIn(
@@ -458,90 +459,53 @@ AnimatedVisibility(
             .padding(horizontal = 4.dp)
             .clickable { showKreateDisclaimer = true },
         colors = CardDefaults.cardColors(
-            containerColor = Color(0xFFFF9800)
+            containerColor = Color(0xFF4CAF50)
         ),
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+        shape = RoundedCornerShape(8.dp), // Reduced from 12dp
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp) // Reduced from 4dp
     ) {
-        Column(
+        Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 16.dp, horizontal = 20.dp)
+                .padding(vertical = 10.dp, horizontal = 16.dp), // Reduced padding
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Header row
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Icon(
-                    painter = painterResource(R.drawable.alert),
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(28.dp)
-                )
-                
-                Spacer(modifier = Modifier.width(12.dp))
-                
-                BasicText(
-                    text = "⚠️ IMPORTANT NOTICE",
-                    style = typography().m.copy(color = Color.White)
-                )
-                
-                Spacer(modifier = Modifier.weight(1f))
-                
-                // Click indicator
-                Row(
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    BasicText(
-                        text = "Tap",
-                        style = typography().xs.copy(color = Color.White.copy(alpha = 0.8f))
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Icon(
-                        painter = painterResource(R.drawable.information),
-                        contentDescription = "Show details",
-                        tint = Color.White,
-                        modifier = Modifier.size(16.dp)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(12.dp))
-            
-            // Warning message
-            BasicText(
-                text = "🚨Attention Kreate Users Experiencing Import Issues",
-                style = typography().s.copy(color = Color.White),
-                modifier = Modifier.fillMaxWidth()
+            Icon(
+                painter = painterResource(R.drawable.alert),
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp) // Reduced from 28dp
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.width(10.dp))
             
-            // Click instruction
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
+            Column(
+                modifier = Modifier.weight(1f)
             ) {
-                Icon(
-                    painter = painterResource(R.drawable.moon),
-                    contentDescription = null,
-                    tint = Color.White.copy(alpha = 0.8f),
-                    modifier = Modifier.size(14.dp)
+                BasicText(
+                    text = "✅ KREATE FIX AVAILABLE",
+                    style = typography().s.copy(color = Color.White) // Reduced from .m to .s
                 )
-                
-                Spacer(modifier = Modifier.width(6.dp))
                 
                 BasicText(
-                    text = "Tap this card for detailed information and workarounds",
-                    style = typography().xs.copy(color = Color.White.copy(alpha = 0.9f))
+                    text = "Tap for import steps",
+                    style = typography().xs.copy(color = Color.White.copy(alpha = 0.9f)), // Added
+                    modifier = Modifier.padding(top = 2.dp)
                 )
             }
+            
+            // Tap indicator
+            Icon(
+                painter = painterResource(R.drawable.chevron_forward),
+                contentDescription = "Tap",
+                tint = Color.White,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }
 
-// Kreate Disclaimer Dialog (Popup)
+// Kreate Fix Dialog
 if (showKreateDisclaimer) {
     Dialog(
         onDismissRequest = { showKreateDisclaimer = false }
@@ -558,7 +522,7 @@ if (showKreateDisclaimer) {
                 modifier = Modifier
                     .fillMaxWidth()
                     .verticalScroll(rememberScrollState())
-                    .padding(24.dp)
+                    .padding(20.dp) // Reduced from 24dp
             ) {
                 // Header
                 Row(
@@ -566,129 +530,182 @@ if (showKreateDisclaimer) {
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.alert),
+                        painter = painterResource(R.drawable.checked_filled),
                         contentDescription = null,
-                        tint = colorPalette().accent,
-                        modifier = Modifier.size(28.dp)
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(24.dp) // Reduced from 28dp
                     )
                     
                     Spacer(modifier = Modifier.width(12.dp))
                     
                     BasicText(
-                        text = "🚨 Kreate Backup Import Issue",
-                        style = typography().m.copy(color = colorPalette().accent)
+                        text = "✅ KREATE DATABASE FIX",
+                        style = typography().m.copy(color = Color(0xFF4CAF50))
                     )
                 }
                 
-                Spacer(modifier = Modifier.height(20.dp))
+                Spacer(modifier = Modifier.height(16.dp)) // Reduced from 20dp
                 
-                // Important Notice
+                // Why this exists
                 Card(
                     modifier = Modifier.fillMaxWidth(),
                     colors = CardDefaults.cardColors(
-                        containerColor = Color(0x1AFF9800) // 10% opacity orange
+                        containerColor = colorPalette().background4
                     ),
                     shape = RoundedCornerShape(8.dp)
                 ) {
-                    Box(
+                    Column(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
-                        contentAlignment = Alignment.Center
+                            .padding(14.dp) // Reduced from 16dp
                     ) {
                         BasicText(
-                            text = "⚠️ DISCLAIMER: This is a Kreate app issue (fix not soon)",
-                            style = typography().s.copy(color = colorPalette().text)
+                            text = "⚠️ Why this exists:",
+                            style = typography().s.copy(color = colorPalette().accent)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp)) // Reduced from 8dp
+                        BasicText(
+                            text = "Kreate exports backups with user_version 28 that crashes Cubic Music. This tool downgrades the version and fixes malformed data.",
+                            style = typography().xs.copy(color = colorPalette().text)
                         )
                     }
                 }
                 
                 Spacer(modifier = Modifier.height(16.dp))
                 
-                // Content
+                // Steps
+                BasicText(
+                    text = "📋 FOLLOW THESE STEPS:",
+                    style = typography().s.copy(color = colorPalette().accent)
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
                 Column(
-                    modifier = Modifier.fillMaxWidth()
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    BasicText(
-                        text = "The inability to import Kreate backups is NOT exclusive to Cubic Music. Even RiPlay & RiMusic (the app Kreate was forked from) cannot import Kreate's database format successfully.",
-                        style = typography().xs.copy(color = colorPalette().text)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(10.dp))
-                    
-                    BasicText(
-                        text = "Why This Happens:",
-                        style = typography().xs.copy(color = colorPalette().accent)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    BasicText(
-                        text = "🔴 Kreate's export system has inherent bugs in its CSV generation\n" +
-                              "🔴 The backup files contain malformed data that breaks standard CSV parsing\n" +
-                              "🔴 Even the original app (RiPlay) fails when trying to read Kreate exports",
-                        style = typography().xxs.copy(color = colorPalette().text)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(10.dp))
-                    
-                    BasicText(
-                        text = "What This Means:",
-                        style = typography().xs.copy(color = colorPalette().accent)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    BasicText(
-                        text = "✅ Cubic Music is working correctly with standard CSV imports\n" +
-                              "✅ The problem originates in Kreate's export logic\n" +
-                              "✅ No music app can reliably import Kreate backups until Kreate fixes its export system",
-                        style = typography().xxs.copy(color = colorPalette().text)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(10.dp))
-                    
-                    BasicText(
-                        text = "Current Status: Work in Progress 🔧",
-                        style = typography().xs.copy(color = colorPalette().accent)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(4.dp))
-                    
-                    BasicText(
-                        text = "We're investigating Kreate's export format and building a compatibility layer that will:\n\n" +
-                              "🧹 Detect and fix Kreate's malformed CSV entries\n" +
-                              "🛠️ Clean corrupted data before import\n" +
-                              "📊 Provide error reports showing what couldn't be imported",
-                        style = typography().xxs.copy(color = colorPalette().text)
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    // Bottom line in emphasized card
-                    Card(
+                    // Step 1 with BIG OBVIOUS BUTTON
+                    Row(
                         modifier = Modifier.fillMaxWidth(),
-                        colors = CardDefaults.cardColors(
-                            containerColor = colorPalette().background4
-                        ),
-                        shape = RoundedCornerShape(8.dp)
+                        verticalAlignment = Alignment.Top
                     ) {
                         Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(12.dp),
+                                .size(22.dp)
+                                .background(
+                                    color = Color(0xFF4CAF50),
+                                    shape = RoundedCornerShape(11.dp)
+                                ),
                             contentAlignment = Alignment.Center
                         ) {
                             BasicText(
-                                text = "Bottom Line: This isn't about Cubic Music vs. Kreate—it's about Kreate generating broken backup files that no app can read properly.",
-                                style = typography().xxs.copy(color = colorPalette().text),
-                                modifier = Modifier.fillMaxWidth()
+                                text = "1",
+                                style = typography().xxs.copy(color = Color.White)
                             )
                         }
+                        
+                        Spacer(modifier = Modifier.width(12.dp))
+                        
+                        Column(
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            BasicText(
+                                text = "Convert your Kreate backup:",
+                                style = typography().xs.copy(color = colorPalette().text)
+                            )
+                            
+                            Spacer(modifier = Modifier.height(6.dp))
+                            
+                            // 👇 OBVIOUS BUTTON for the link
+                            Card(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        val intent = android.content.Intent(
+                                            android.content.Intent.ACTION_VIEW,
+                                            android.net.Uri.parse("https://kreatebackfix.vercel.app/")
+                                        )
+                                        context.startActivity(intent)
+                                    },
+                                colors = CardDefaults.cardColors(
+                                    containerColor = Color(0xFF4CAF50)
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 12.dp, horizontal = 16.dp),
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.SpaceBetween
+                                ) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Icon(
+                                            painter = painterResource(R.drawable.btn_radio_on_mtrl),
+                                            contentDescription = null,
+                                            tint = Color.White,
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                        
+                                        Spacer(modifier = Modifier.width(8.dp))
+                                        
+                                        BasicText(
+                                            text = "OPEN FIX TOOL",
+                                            style = typography().s.copy(color = Color.White)
+                                        )
+                                    }
+                                    
+                                    Icon(
+                                        painter = painterResource(R.drawable.devices),
+                                        contentDescription = "Open link",
+                                        tint = Color.White,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Steps 2-5 (simplified)
+                    StepItem(number = "2", text = "Upload your .db backup file")
+                    StepItem(number = "3", text = "Download the converted database")
+                    StepItem(number = "4", text = "Settings → Data → Restore from backup")
+                    StepItem(number = "5", text = "Import the converted file")
+                }
+                
+                Spacer(modifier = Modifier.height(20.dp))
+                
+                // What the tool does (compact)
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(
+                        containerColor = colorPalette().background4
+                    ),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(14.dp)
+                    ) {
+                        BasicText(
+                            text = "✅ What this tool does:",
+                            style = typography().s.copy(color = colorPalette().accent)
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        BasicText(
+                            text = "• Fixes malformed Kreate exports\n" +
+                                  "• Downgrades from version 28\n" +
+                                  "• Makes it importable to Cubic Music",
+                            style = typography().xs.copy(color = colorPalette().text)
+                        )
                     }
                 }
                 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
                 
                 // Close button
                 Card(
@@ -696,18 +713,18 @@ if (showKreateDisclaimer) {
                         .fillMaxWidth()
                         .clickable { showKreateDisclaimer = false },
                     colors = CardDefaults.cardColors(
-                        containerColor = colorPalette().accent
+                        containerColor = Color(0xFF4CAF50)
                     ),
-                    shape = RoundedCornerShape(12.dp)
+                    shape = RoundedCornerShape(10.dp)
                 ) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(vertical = 14.dp),
+                            .padding(vertical = 12.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         BasicText(
-                            text = "Close",
+                            text = "Got it",
                             style = typography().s.copy(color = Color.White)
                         )
                     }
@@ -716,7 +733,6 @@ if (showKreateDisclaimer) {
         }
     }
 }
-
 Spacer(modifier = Modifier.height(16.dp))
 
         // Backup and Restore Section
@@ -877,5 +893,35 @@ Spacer(modifier = Modifier.height(16.dp))
                 }
 
         Spacer(modifier = Modifier.height(Dimensions.bottomSpacer))
+    }
+}
+    @Composable
+fun StepItem(number: String, text: String) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.Top
+    ) {
+        Box(
+            modifier = Modifier
+                .size(22.dp)
+                .background(
+                    color = Color(0xFF4CAF50),
+                    shape = RoundedCornerShape(11.dp)
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            BasicText(
+                text = number,
+                style = typography().xxs.copy(color = Color.White)
+            )
+        }
+        
+        Spacer(modifier = Modifier.width(12.dp))
+        
+        BasicText(
+            text = text,
+            style = typography().xs.copy(color = colorPalette().text),
+            modifier = Modifier.fillMaxWidth()
+        )
     }
 }
