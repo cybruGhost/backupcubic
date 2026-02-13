@@ -1089,6 +1089,4 @@ Volume BAS : titre précédent</string>
   <string name="update_failed_message">Impossible de récupérer les informations de mise à jour. Veuillez essayer de les télécharger manuellement.</string>
   <string name="apk_download_channel_description">Notifications pour les téléchargements de mises à jour d\'applications</string>
   <string name="tap_to_install">Appuyez pour installer la mise à jour.</string>
-  <string name="add_all_to_favorites">Ajouter tout aux Favoris</string>
-  <string name="add_all_songs_to_favorites_confirm">Ajouter les %d titres aux Favoris ?</string>
 </resources>
