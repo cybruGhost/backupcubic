@@ -117,8 +117,8 @@
 <string name="left">%1$s left</string>
 <string name="confirm">Confirm</string>
 <string name="show">Show</string>
-<string name="unsynchronized_lyrics">Static lyrics</string>
-<string name="synchronized_lyrics">Realtime lyrics🙀</string>
+<string name="unsynchronized_lyrics">unsynchronized lyrics</string>
+<string name="synchronized_lyrics">synchronized lyrics</string>
 <string name="provided_by">Provided by</string>
 <string name="delete_playback_events">Delete %1$s playback events</string>
 <string name="existing_data_will_be_overwritten">Existing data will be overwritten. %1$s will automatically close itself after restoring the database.</string>
