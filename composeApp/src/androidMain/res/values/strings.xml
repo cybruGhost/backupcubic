@@ -374,13 +374,13 @@
 <string name="player_action_bar">PLAYER ACTION BAR</string>
 <string name="tab_data">Data</string>
 <string name="image_cache_max_size">Image cache max size</string>
+<string name="song_cache_max_size">Song cache max size</string>
 <string name="network_status">Quality Status</string>
 <string name="image_quality_format">Image Quality</string>
 <string name="audio_quality_auto_fmt">Auto (Detected: %1$s)</string>
 <string name="network_quality_low">Low</string>
 <string name="network_quality_medium">Medium</string>
 <string name="network_quality_high">High</string>
-<string name="song_cache_max_size">Song cache max size</string>
 <string name="song_download_max_size">Song download max size</string>
 <string name="save_to_backup">Save to backup</string>
 <string name="restore_from_backup">Restore from backup</string>
