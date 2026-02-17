@@ -100,8 +100,8 @@ object ImageCacheFactory {
         val quality: NetworkQuality
     )
 
-    // Cooldown to prevent download loops (30 minutes)
-    private const val COOLDOWN_MS = 30 * 60 * 1000L
+    // Cooldown to prevent download loops (30 seconds)
+    private const val COOLDOWN_MS = 30 * 1000L
     private val cooldownMap = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private object CacheMetadataStore {
@@ -134,6 +134,15 @@ object ImageCacheFactory {
                 return null
             }
         }
+
+        fun remove(url: String) {
+            try {
+                val key = url.hashCode().toString()
+                getPrefs().edit().remove(key).apply()
+            } catch (e: Exception) {
+                Timber.tag(TAG).e(e, "Error removing metadata")
+            }
+        }
     }
 
     val LOADER: ImageLoader by lazy {
@@ -160,6 +169,17 @@ object ImageCacheFactory {
     // Cache pour les clés MD5 pour éviter de recalculer
     private val cacheKeyMutex = Mutex()
     private val cacheKeyMap = mutableMapOf<String, String>()
+
+    fun invalidate(url: String?) {
+        if (url.isNullOrBlank()) return
+        try {
+            cooldownMap.remove(url)
+            CacheMetadataStore.remove(url)
+            Timber.tag(TAG).d("Invalidated cache for: $url")
+        } catch (e: Exception) {
+            Timber.tag(TAG).e(e, "Error invalidating cache")
+        }
+    }
 
     /**
      * Generate a stable cache key for URLs with caching
@@ -365,6 +385,9 @@ object ImageCacheFactory {
                        if (validUrl != null && decision.useNetwork) {
                            CacheMetadataStore.save(validUrl, decision.quality)
                        }
+                   },
+                   onError = { _, _ ->
+                       if (validUrl != null) invalidate(validUrl)
                    }
                )
                .build()
@@ -377,7 +400,11 @@ object ImageCacheFactory {
             modifier = modifier,
             placeholder = painterResource(R.drawable.loader),
             error = painterResource( R.drawable.ic_launcher_box ),
-            fallback = painterResource( R.drawable.ic_launcher_box )
+            fallback = painterResource( R.drawable.ic_launcher_box ),
+            onError = { state ->
+                Timber.tag(TAG).e("AsyncImage onError called: ${state.result.throwable.message}")
+                invalidate(validUrl)
+            }
         )
     }
 
@@ -406,6 +433,9 @@ object ImageCacheFactory {
                           if (validUrl != null && decision.useNetwork) {
                               CacheMetadataStore.save(validUrl, decision.quality)
                           }
+                      },
+                      onError = { _, _ ->
+                          if (validUrl != null) invalidate(validUrl)
                       }
                   )
                   .build()
@@ -420,7 +450,8 @@ object ImageCacheFactory {
             onLoading = { state -> onLoading?.invoke(state) },
             onSuccess = { state -> onSuccess?.invoke(state) },
             onError = { state ->
-                Timber.tag(TAG).e("Painter onError called: ${state.result}")
+                Timber.tag(TAG).e("Painter onError called: ${state.result.throwable.message}")
+                invalidate(validUrl)
                 onError?.invoke(state)
             }
         )
@@ -443,6 +474,9 @@ object ImageCacheFactory {
                    if (decision.useNetwork) {
                        CacheMetadataStore.save(url, decision.quality)
                    }
+                },
+                onError = { _, _ ->
+                   invalidate(url)
                 }
             )
             .build()
@@ -475,6 +509,9 @@ object ImageCacheFactory {
                           if (validUrl != null && decision.useNetwork) {
                               CacheMetadataStore.save(validUrl, decision.quality)
                           }
+                      },
+                      onError = { _, _ ->
+                          if (validUrl != null) invalidate(validUrl)
                       }
                   )
                   .build()
@@ -491,7 +528,8 @@ object ImageCacheFactory {
             onLoading = { state -> onLoading?.invoke(state) },
             onSuccess = { state -> onSuccess?.invoke(state) },
             onError = { state ->
-                Timber.tag(TAG).e("AsyncImage onError called: ${state.result}")
+                Timber.tag(TAG).e("AsyncImage onError called: ${state.result.throwable.message}")
+                invalidate(validUrl)
                 onError?.invoke(state)
             }
         )
