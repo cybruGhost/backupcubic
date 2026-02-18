@@ -1094,5 +1094,6 @@
 <string name="update_failed_message">Could not fetch update information. Please try downloading manually.</string>
 <string name="apk_download_channel_description">Notifications for app update downloads</string>
 <string name="tap_to_install">Tap to install the update</string>
+ <string name="album_not_found">Album not found</string>
 
 </resources>
