@@ -384,7 +384,8 @@ class MainActivity :
         newConfig: Configuration
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
-
+        pipState.value = isInPictureInPictureMode
+        Timber.d("MainActivity onPictureInPictureModeChanged: $isInPictureInPictureMode")
     }
 
 
@@ -970,8 +971,10 @@ class MainActivity :
                                 PipModule.Cover -> {
                                     PipModuleContainer {
                                         PipModuleCover(
-                                            url = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri.toString()
-                                                .resize(1200, 1200)
+                                            url = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri
+                                                ?.toString()
+                                                ?.resize(1200, 1200)
+                                                .orEmpty()
                                         )
                                     }
                                 }
