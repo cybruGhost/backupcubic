@@ -35,6 +35,9 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import app.kreate.android.R
+import it.fast4x.innertube.Innertube
+import it.fast4x.innertube.models.bodies.NextBody
+import it.fast4x.innertube.requests.nextPage
 import it.fast4x.rimusic.Database
 import it.fast4x.rimusic.LocalPlayerServiceBinder
 import it.fast4x.rimusic.colorPalette
@@ -291,25 +294,62 @@ class PlayerItemMenu private constructor(
                 
                 // Go to Artist (Always visible)
                 if (artistsData.isEmpty()) {
-                    add(object : MenuIcon, Descriptive, Clickable {
-                        override val iconId: Int = R.drawable.people
-                        override val messageId: Int = R.string.artists
-                        @get:Composable
-                        override val menuIconTitle: String get() = stringResource(R.string.more_of, song.cleanArtistsText())
-                        override fun onShortClick() {
-                            menuState.hide()
-                            onClosePlayer()
-                            goToArtistObj.onShortClick()
+                    // No DB data: split artistsText to create per-artist buttons
+                    val artistNames = song.artistsText
+                        ?.split(",")
+                        ?.map { it.trim() }
+                        ?.filter { it.isNotBlank() }
+                        ?: emptyList()
+
+                    if (artistNames.size <= 1) {
+                        // Single artist - use GoToArtist fallback with Innertube lookup
+                        add(object : MenuIcon, Descriptive, Clickable {
+                            override val iconId: Int = R.drawable.people
+                            override val messageId: Int = R.string.artists
+                            @get:Composable
+                            override val menuIconTitle: String get() = stringResource(R.string.more_of) + " ${song.cleanArtistsText()}"
+                            override fun onShortClick() {
+                                menuState.hide()
+                                onClosePlayer()
+                                goToArtistObj.onShortClick()
+                            }
+                            override fun onLongClick() {}
+                        })
+                    } else {
+                        artistNames.forEach { artistName ->
+                            add(object : MenuIcon, Descriptive, Clickable {
+                                override val iconId: Int = R.drawable.people
+                                override val messageId: Int = R.string.artists
+                                @get:Composable
+                                override val menuIconTitle: String get() = stringResource(R.string.more_of) + " $artistName"
+                                override fun onShortClick() {
+                                    menuState.hide()
+                                    onClosePlayer()
+                                    CoroutineScope(Dispatchers.IO).launch {
+                                        Innertube.nextPage(NextBody(videoId = song.id))
+                                            ?.getOrNull()
+                                            ?.itemsPage?.items?.firstOrNull()
+                                            ?.authors
+                                            ?.find { it.name?.equals(artistName, ignoreCase = true) == true }
+                                            ?.endpoint
+                                            ?.takeIf { !it.browseId.isNullOrBlank() }
+                                            ?.let {
+                                                val path = "${it.browseId}?params=${it.params.orEmpty()}"
+                                                NavRoutes.artist.navigateHere(navController, path)
+                                            }
+                                    }
+                                }
+                                override fun onLongClick() {}
+                            })
                         }
-                        override fun onLongClick() {}
-                    })
+                    }
                 } else {
                     artistsData.forEach { artist ->
                         add(object : MenuIcon, Descriptive, Clickable {
                             override val iconId: Int = R.drawable.people
                             override val messageId: Int = R.string.artists
                             @get:Composable
-                            override val menuIconTitle: String get() = stringResource(R.string.more_of, artist.name ?: "")
+                            override val menuIconTitle: String get() = stringResource(R.string.more_of) + " ${artist.name ?: ""}"
                             override fun onShortClick() {
                                 menuState.hide()
                                 onClosePlayer()

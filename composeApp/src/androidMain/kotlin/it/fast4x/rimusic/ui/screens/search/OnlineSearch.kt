@@ -89,7 +89,8 @@ import it.fast4x.rimusic.typography
 import it.fast4x.rimusic.ui.components.LocalMenuState
 import it.fast4x.rimusic.ui.components.themed.FloatingActionsContainerWithScrollToTop
 import it.fast4x.rimusic.ui.components.themed.Header
-import it.fast4x.rimusic.ui.components.themed.NonQueuedMediaItemMenu
+import me.knighthat.component.menu.search.SearchItemMenu
+import it.fast4x.rimusic.utils.asSong
 import it.fast4x.rimusic.ui.components.themed.NowPlayingSongIndicator
 import it.fast4x.rimusic.ui.components.themed.TitleMiniSection
 import it.fast4x.rimusic.ui.items.AlbumItem
@@ -425,16 +426,14 @@ fun OnlineSearch(
                                             modifier = Modifier
                                                 .combinedClickable(
                                                     onLongClick = {
+                                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         menuState.display {
-                                                            NonQueuedMediaItemMenu(
-                                                                navController = navController,
-                                                                onDismiss = menuState::hide,
-                                                                mediaItem = mediaItem,
-                                                                disableScrollingText = disableScrollingText
-                                                            )
-                                                        };
-                                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    },
+                                                             SearchItemMenu(
+                                                               navController = navController,
+                                                               song = mediaItem.asSong
+                                                        ).MenuComponent()
+                                                    }
+                                                },
                                                     onClick = {
                                                         binder?.player?.forcePlay(mediaItem)
                                                     }
@@ -606,16 +605,14 @@ fun OnlineSearch(
                                             modifier = Modifier
                                                 .combinedClickable(
                                                     onLongClick = {
+                                                         hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
                                                         menuState.display {
-                                                            NonQueuedMediaItemMenu(
-                                                                navController = navController,
-                                                                onDismiss = menuState::hide,
-                                                                mediaItem = mediaItem,
-                                                                disableScrollingText = disableScrollingText
-                                                            )
-                                                        };
-                                                        hapticFeedback.performHapticFeedback(HapticFeedbackType.LongPress)
-                                                    },
+                                                            SearchItemMenu(
+                                                            navController = navController,
+                                                            song = mediaItem.asSong
+                                                        ).MenuComponent()
+                                                    }
+                                                },
                                                     onClick = {
                                                         binder?.player?.forcePlay(mediaItem)
                                                     }
