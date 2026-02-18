@@ -696,7 +696,7 @@
 <string name="addednext">Added to play next</string>
 <string name="info_paused_with_volume_zero">Paused due to zero volume</string>
 <string name="effect_fade_audio">Fade audio effect</string>
-<string name="effect_fade_audio_description">Fade audio when song is paused or played</string>
+<string name="effect_fade_audio_description">Smoothly fade between songs and when pausing/playing</string>
 <string name="autosync">Auto Sync Imported Playlists</string>
 <string name="message_type">Popup message style</string>
 <string name="message_type_modern">Modern</string>
