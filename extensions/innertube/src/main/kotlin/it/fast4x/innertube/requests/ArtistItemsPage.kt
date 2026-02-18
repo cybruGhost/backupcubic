@@ -4,7 +4,9 @@ import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.models.MusicResponsiveListItemRenderer
 import it.fast4x.innertube.models.MusicTwoRowItemRenderer
 import it.fast4x.innertube.models.NavigationEndpoint
+import it.fast4x.innertube.models.getContinuation
 import it.fast4x.innertube.models.oddElements
+import it.fast4x.innertube.utils.from
 
 data class ArtistItemsPage(
     val title: String,
@@ -100,6 +102,21 @@ data class ArtistItemsPage(
                 )
                 else -> null
             }
+        }
+
+        fun fromMusicShelfRenderer(renderer: it.fast4x.innertube.models.MusicShelfRenderer): ArtistItemsPage? {
+            return ArtistItemsPage(
+                title = renderer.title?.runs?.firstOrNull()?.text.orEmpty(),
+                items = renderer.contents?.mapNotNull { content ->
+                    val songItem = content.musicResponsiveListItemRenderer?.let { fromMusicResponsiveListItemRenderer(it) }
+                    if (songItem != null && songItem.album == null) {
+                        Innertube.VideoItem.from(content) ?: songItem
+                    } else {
+                        songItem ?: Innertube.VideoItem.from(content)
+                    }
+                }.orEmpty(),
+                continuation = renderer.continuations?.getContinuation()
+            )
         }
     }
 }
