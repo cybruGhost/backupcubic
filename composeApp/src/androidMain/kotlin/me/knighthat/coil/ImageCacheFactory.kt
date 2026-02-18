@@ -100,8 +100,8 @@ object ImageCacheFactory {
         val quality: NetworkQuality
     )
 
-    // Cooldown to prevent download loops (30 seconds)
-    private const val COOLDOWN_MS = 30 * 1000L
+    // Cooldown to prevent download loops (10 seconds)
+    private const val COOLDOWN_MS = 10 * 1000L
     private val cooldownMap = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private object CacheMetadataStore {
@@ -172,7 +172,7 @@ object ImageCacheFactory {
     fun invalidate(url: String?) {
         if (url.isNullOrBlank()) return
         try {
-            cooldownMap.remove(url)
+            // Don't clear cooldownMap — cooldown prevents error retry loops
             CacheMetadataStore.remove(url)
             cacheKeyMap.remove(url) // Clear mapped key too
             Timber.tag(TAG).d("Invalidated cache for: $url")
@@ -322,7 +322,7 @@ object ImageCacheFactory {
              return if (cached != null) {
                  DownloadDecision(false, cached.quality)
              } else {
-                 DownloadDecision(false, NetworkQuality.LOW)
+                 DownloadDecision(false, getNetworkQuality())
              }
         }
         
@@ -377,17 +377,15 @@ object ImageCacheFactory {
         val request = ImageRequest.Builder( appContext() )
                .data( validUrl?.thumbnail( decision.quality.size ) )
                .diskCacheKey( generateCacheKeySync(validUrl, decision.quality) )
+               .memoryCacheKey( generateCacheKeySync(validUrl, decision.quality) )
                .diskCachePolicy( CachePolicy.ENABLED )
-               .networkCachePolicy( if (decision.useNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED )
+               .networkCachePolicy( CachePolicy.ENABLED )
                .memoryCachePolicy( CachePolicy.ENABLED )
                .listener(
                    onSuccess = { _, _ ->
                        if (validUrl != null && decision.useNetwork) {
                            CacheMetadataStore.save(validUrl, decision.quality)
                        }
-                   },
-                   onError = { _, _ ->
-                       if (validUrl != null) invalidate(validUrl)
                    }
                )
                .build()
@@ -402,8 +400,7 @@ object ImageCacheFactory {
             error = painterResource( R.drawable.ic_launcher_box ),
             fallback = painterResource( R.drawable.ic_launcher_box ),
             onError = { state ->
-                Timber.tag(TAG).e("AsyncImage onError called: ${state.result.throwable.message}")
-                invalidate(validUrl)
+                Timber.tag(TAG).e("Thumbnail onError: ${state.result.throwable.message}")
             }
         )
     }
@@ -425,17 +422,15 @@ object ImageCacheFactory {
         val request = ImageRequest.Builder( appContext() )
                   .data( validUrl?.thumbnail( decision.quality.size ) )
                   .diskCacheKey( generateCacheKeySync(validUrl, decision.quality) )
+                  .memoryCacheKey( generateCacheKeySync(validUrl, decision.quality) )
                   .diskCachePolicy( CachePolicy.ENABLED )
-                  .networkCachePolicy( if (decision.useNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED )
+                  .networkCachePolicy( CachePolicy.ENABLED )
                   .memoryCachePolicy( CachePolicy.ENABLED )
                   .listener(
                       onSuccess = { _, _ ->
                           if (validUrl != null && decision.useNetwork) {
                               CacheMetadataStore.save(validUrl, decision.quality)
                           }
-                      },
-                      onError = { _, _ ->
-                          if (validUrl != null) invalidate(validUrl)
                       }
                   )
                   .build()
@@ -450,8 +445,7 @@ object ImageCacheFactory {
             onLoading = { state -> onLoading?.invoke(state) },
             onSuccess = { state -> onSuccess?.invoke(state) },
             onError = { state ->
-                Timber.tag(TAG).e("Painter onError called: ${state.result.throwable.message}")
-                invalidate(validUrl)
+                Timber.tag(TAG).e("Painter onError: ${state.result.throwable.message}")
                 onError?.invoke(state)
             }
         )
@@ -465,8 +459,9 @@ object ImageCacheFactory {
         val request = ImageRequest.Builder(appContext())
             .data(url.thumbnail(decision.quality.size))
             .diskCacheKey(generateCacheKeySync(url, decision.quality))
+            .memoryCacheKey(generateCacheKeySync(url, decision.quality))
             .diskCachePolicy(CachePolicy.ENABLED)
-            .networkCachePolicy(if (decision.useNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED)
+            .networkCachePolicy(CachePolicy.ENABLED)
             .memoryCachePolicy(CachePolicy.ENABLED)
             .allowHardware(allowHardware)
             .listener(
@@ -474,9 +469,6 @@ object ImageCacheFactory {
                    if (decision.useNetwork) {
                        CacheMetadataStore.save(url, decision.quality)
                    }
-                },
-                onError = { _, _ ->
-                   invalidate(url)
                 }
             )
             .build()
@@ -501,17 +493,15 @@ object ImageCacheFactory {
         val request = ImageRequest.Builder( appContext() )
                   .data( validUrl?.thumbnail( decision.quality.size ) )
                   .diskCacheKey( generateCacheKeySync(validUrl, decision.quality) )
+                  .memoryCacheKey( generateCacheKeySync(validUrl, decision.quality) )
                   .diskCachePolicy( CachePolicy.ENABLED )
-                  .networkCachePolicy( if (decision.useNetwork) CachePolicy.ENABLED else CachePolicy.DISABLED )
+                  .networkCachePolicy( CachePolicy.ENABLED )
                   .memoryCachePolicy( CachePolicy.ENABLED )
                   .listener(
                       onSuccess = { _, _ ->
                           if (validUrl != null && decision.useNetwork) {
                               CacheMetadataStore.save(validUrl, decision.quality)
                           }
-                      },
-                      onError = { _, _ ->
-                          if (validUrl != null) invalidate(validUrl)
                       }
                   )
                   .build()
@@ -528,8 +518,7 @@ object ImageCacheFactory {
             onLoading = { state -> onLoading?.invoke(state) },
             onSuccess = { state -> onSuccess?.invoke(state) },
             onError = { state ->
-                Timber.tag(TAG).e("AsyncImage onError called: ${state.result.throwable.message}")
-                invalidate(validUrl)
+                Timber.tag(TAG).e("AsyncImage onError: ${state.result.throwable.message}")
                 onError?.invoke(state)
             }
         )
@@ -544,6 +533,7 @@ object ImageCacheFactory {
             val request = ImageRequest.Builder(appContext())
                 .data(thumbnailUrl.thumbnail(decision.quality.size))
                 .diskCacheKey(generateCacheKeySync(thumbnailUrl, decision.quality))
+                .memoryCacheKey(generateCacheKeySync(thumbnailUrl, decision.quality))
                 .diskCachePolicy(CachePolicy.ENABLED)
                 .networkCachePolicy(CachePolicy.ENABLED)
                 .memoryCachePolicy(CachePolicy.ENABLED)
