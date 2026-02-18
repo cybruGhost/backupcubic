@@ -64,21 +64,30 @@ data class ArtistItemsPage(
 //                    } != null
                 )
                 // Video
-                renderer.isSong -> Innertube.VideoItem(
-                    info = Innertube.Info(
-                        renderer.title?.runs?.firstOrNull()?.text,
-                        renderer.navigationEndpoint?.watchEndpoint
-                    ),
-                    authors = renderer.subtitle?.runs?.map {
-                        Innertube.Info(
-                            name = it.text,
-                            endpoint = it.navigationEndpoint?.browseEndpoint
-                        )
-                    },
-                    durationText = null,
-                    thumbnail = renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull(),
-                    viewsText =null,
-                )
+                renderer.isSong -> {
+                    val subtitleParts = renderer.subtitle?.splitBySeparator() ?: emptyList()
+                    Innertube.VideoItem(
+                        info = Innertube.Info(
+                            renderer.title?.runs?.firstOrNull()?.text,
+                            renderer.navigationEndpoint?.watchEndpoint
+                        ),
+                        authors = subtitleParts.getOrNull(0)?.map {
+                            Innertube.Info(
+                                name = it.text,
+                                endpoint = it.navigationEndpoint?.browseEndpoint
+                            )
+                        },
+                        durationText = subtitleParts.getOrNull(
+                            if (subtitleParts.size >= 3) subtitleParts.lastIndex else -1
+                        )?.firstOrNull()?.text,
+                        thumbnail = renderer.thumbnailRenderer?.musicThumbnailRenderer?.thumbnail?.thumbnails?.lastOrNull(),
+                        viewsText = subtitleParts.getOrNull(
+                            if (subtitleParts.size >= 3) subtitleParts.lastIndex - 1
+                            else if (subtitleParts.size == 2) 1
+                            else -1
+                        )?.firstOrNull()?.text,
+                    )
+                }
                 renderer.isPlaylist -> Innertube.PlaylistItem(
                     info = Innertube.Info(
                         renderer.title?.runs?.firstOrNull()?.text,
