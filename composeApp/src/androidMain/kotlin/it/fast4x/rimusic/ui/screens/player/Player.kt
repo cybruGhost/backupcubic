@@ -2154,6 +2154,10 @@ Column(
                                                     onClosePlayer = {
                                                         onDismiss()
                                                     },
+                                                    onShowSleepTimer = {
+                                                        isShowingSleepTimerDialog = true
+                                                        menuState.hide()
+                                                    },
                                                     disableScrollingText = disableScrollingText
                                                 )
                                             }

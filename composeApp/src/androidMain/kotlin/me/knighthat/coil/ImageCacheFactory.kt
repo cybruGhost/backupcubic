@@ -167,14 +167,14 @@ object ImageCacheFactory {
     }
 
     // Cache pour les clés MD5 pour éviter de recalculer
-    private val cacheKeyMutex = Mutex()
-    private val cacheKeyMap = mutableMapOf<String, String>()
+    private val cacheKeyMap = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     fun invalidate(url: String?) {
         if (url.isNullOrBlank()) return
         try {
             cooldownMap.remove(url)
             CacheMetadataStore.remove(url)
+            cacheKeyMap.remove(url) // Clear mapped key too
             Timber.tag(TAG).d("Invalidated cache for: $url")
         } catch (e: Exception) {
             Timber.tag(TAG).e(e, "Error invalidating cache")
@@ -197,20 +197,20 @@ object ImageCacheFactory {
         }
         
         val size = quality.size
+        val cacheKey = "${url}_$size"
         
-        val key = try {
-            val processedUrl = url.thumbnail(size) ?: url
-            val md = MessageDigest.getInstance("MD5")
-            val digest = md.digest(processedUrl.toByteArray())
-            val result = digest.fold("") { str, it -> str + "%02x".format(it) }
-            result
-        } catch (e: Exception) {
-            val fallbackKey = "${url.hashCode()}_${size}"
-            Timber.tag(TAG).e(e, "Error generating MD5 key, using fallback: $fallbackKey")
-            fallbackKey
+        return cacheKeyMap.getOrPut(cacheKey) {
+            try {
+                val processedUrl = url.thumbnail(size) ?: url
+                val md = MessageDigest.getInstance("MD5")
+                val digest = md.digest(processedUrl.toByteArray())
+                digest.fold("") { str, it -> str + "%02x".format(it) }
+            } catch (e: Exception) {
+                val fallbackKey = "${url.hashCode()}_$size"
+                Timber.tag(TAG).e(e, "Error generating MD5 key, using fallback: $fallbackKey")
+                fallbackKey
+            }
         }
-        
-        return key
     }
 
     /**
