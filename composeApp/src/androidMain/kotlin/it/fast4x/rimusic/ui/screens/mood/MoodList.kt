@@ -97,10 +97,17 @@ fun MoodList(
 
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
 
-    // FIXED: Using LoremFlickr which works reliably
+    // FIXED: Takes first part before & for better image variety
     fun getBannerUrl(moodName: String): String {
         return try {
-            val encoded = URLEncoder.encode(moodName, "UTF-8").replace("+", "%20")
+            // Take only the first part before & if it exists
+            val primaryMood = if (moodName.contains("&")) {
+                moodName.substringBefore("&").trim()
+            } else {
+                moodName
+            }
+            
+            val encoded = URLEncoder.encode(primaryMood, "UTF-8").replace("+", "%20")
             "https://loremflickr.com/800/400/$encoded,music/all"
         } catch (e: Exception) {
             "https://loremflickr.com/800/400/music,playlist/all"
