@@ -107,7 +107,9 @@ import it.fast4x.rimusic.ui.components.themed.InputTextDialog
 import it.fast4x.rimusic.ui.components.themed.LayoutWithAdaptiveThumbnail
 import it.fast4x.rimusic.ui.components.themed.PlaylistsItemMenu
 import it.fast4x.rimusic.ui.components.themed.adaptiveThumbnailContent
+import it.fast4x.rimusic.ui.components.themed.Loader
 import it.fast4x.rimusic.ui.items.AlbumItemPlaceholder
+
 import it.fast4x.rimusic.ui.items.SongItemPlaceholder
 import it.fast4x.rimusic.ui.screens.settings.isYouTubeSyncEnabled
 import it.fast4x.rimusic.ui.styling.Dimensions
@@ -133,7 +135,6 @@ import it.fast4x.rimusic.utils.isNetworkConnected
 import it.fast4x.rimusic.utils.languageDestination
 import it.fast4x.rimusic.utils.manageDownload
 import it.fast4x.rimusic.utils.medium
-import it.fast4x.rimusic.extensions.youtubelogin.YouTubeLogin
 import it.fast4x.rimusic.utils.parentalControlEnabledKey
 import it.fast4x.rimusic.utils.rememberPreference
 import it.fast4x.rimusic.utils.resize
@@ -194,7 +195,22 @@ fun PlaylistSongList(
                    }
     }
 
+    LaunchedEffect( playlistPage ) {
+        if (playlistPage == null) {
+            withContext(Dispatchers.IO) {
+                updatedItemsPageProvider(null)
+            }.onSuccess { onlinePlaylist ->
+                playlistPage = onlinePlaylist
+                playlistSongs = onlinePlaylist.songs
+                                               .fastFilter { !parentalControlEnabled || !it.explicit }
+                                               .fastDistinctBy( Innertube.SongItem::key )
+                continuation = onlinePlaylist.songsContinuation
+            }.exceptionOrNull()?.printStackTrace()
+        }
+    }
+
     LaunchedEffect( lazyListState ) {
+
         snapshotFlow { lazyListState.layoutInfo.visibleItemsInfo.any { it.key == "loading" } }
             .collect { shouldLoadMore ->
                 if ( !shouldLoadMore ) return@collect
@@ -344,18 +360,21 @@ fun PlaylistSongList(
                         Dimensions.contentWidthRightBar
                     else
                         1f
-                )
+                ),
+            contentAlignment = Alignment.Center
         ) {
-            LazyColumn(
-                state = lazyListState,
-                contentPadding = PaddingValues(bottom = Dimensions.bottomSpacer),
-                modifier = Modifier.background( colorPalette().background0 )
-                                   .fillMaxSize()
-            ) {
-
-                item(
-                    key = "header"
+            if (playlistPage == null && playlistSongs.isEmpty()) {
+                Loader()
+            } else {
+                LazyColumn(
+                    state = lazyListState,
+                    contentPadding = PaddingValues(bottom = Dimensions.bottomSpacer),
+                    modifier = Modifier.background( colorPalette().background0 )
+                                       .fillMaxSize()
                 ) {
+                    item(
+                        key = "header"
+                    ) {
 
                     val modifierArt = Modifier.fillMaxWidth()
 
@@ -443,21 +462,6 @@ fun PlaylistSongList(
                                 }
                             )
 
-                        } else {
-                            Column(
-                                verticalArrangement = Arrangement.Center,
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .aspectRatio(4f / 3)
-                            ) {
-                                ShimmerHost {
-                                    AlbumItemPlaceholder(
-                                        thumbnailSizeDp = 200.dp,
-                                        alternative = true
-                                    )
-                                }
-                            }
                         }
                     }
 
@@ -1036,7 +1040,8 @@ fun PlaylistSongList(
                     ) {
                         SongItem(
                             song = ytSong.asSong,
-                            modifier = Modifier.background(colorPalette().background0),
+                            modifier = Modifier,
+
                             onClick = {
                                 if ( ytSong.key !in dislikedSongs ) {
                                     searching = false
@@ -1058,8 +1063,9 @@ fun PlaylistSongList(
                     }
                 }
 
-                if ( playlistPage == null || continuation != null )
-                    item( "loading" ) { SongItemPlaceholder() }
+                if (playlistPage != null && continuation != null) {
+                    item("loading") { SongItemPlaceholder() }
+                }
             }
 
             val showFloatingIcon by rememberPreference(showFloatingIconKey, false)
@@ -1080,8 +1086,7 @@ fun PlaylistSongList(
                         Toaster.e( R.string.disliked_this_collection )
                 }
             )
-
-
+            }
         }
     }
 }

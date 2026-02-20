@@ -125,10 +125,10 @@ fun ArtistDetails(
     artistPage: ArtistPage?,
     thumbnailPainter: AsyncImagePainter,
 ) {
-    localArtist ?: return
     artistPage ?: return
 
     // Essentials
+
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
     val menuState = LocalMenuState.current
@@ -163,8 +163,9 @@ fun ArtistDetails(
     fun getSongs() = itemSelector.ifEmpty { songs }
     fun getMediaItems() = getSongs().map( Song::asMediaItem )
 
-    val followButton = FollowButton { localArtist }
+    val followButton = localArtist?.let { artist -> FollowButton { artist } }
     val shuffler = SongShuffler(::getSongs)
+
     val downloadAllDialog = DownloadAllSongsDialog(::getSongs)
     val deleteAllDownloadsDialog = DeleteAllDownloadedSongsDialog(::getSongs)
     val radio = Radio(::getSongs)
@@ -223,7 +224,7 @@ fun ArtistDetails(
 
                     Column( Modifier.align( Alignment.BottomCenter ) ) {
                         AutoResizeText(
-                            text = cleanPrefix( localArtist.name ?: "..." ),
+                            text = cleanPrefix( localArtist?.name ?: artistPage.artist.title ?: "..." ),
                             style = typography().l.semiBold,
                             fontSizeRange = FontSizeRange(32.sp, 38.sp),
                             fontWeight = typography().l.semiBold.fontWeight,
@@ -238,6 +239,7 @@ fun ArtistDetails(
                                                }
                                                .align( Alignment.CenterHorizontally )
                         )
+
 
                         BasicText(
                             text = artistPage.subscribers.orEmpty(),
@@ -254,8 +256,9 @@ fun ArtistDetails(
                         modifier = Modifier.align( Alignment.TopEnd )
                                            .padding( top = 5.dp, end = 5.dp ),
                         onClick = {
-                            val url = "https://music.youtube.com/channel/${localArtist.id}"
+                            val url = "https://music.youtube.com/channel/${localArtist?.id ?: artistPage.artist.key}"
                             val sendIntent = Intent().apply {
+
                                 action = Intent.ACTION_SEND
                                 type = "text/plain"
                                 putExtra(Intent.EXTRA_TEXT, url)
@@ -275,9 +278,10 @@ fun ArtistDetails(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    followButton.ToolBarButton()
+                    followButton?.ToolBarButton()
 
                     Spacer( Modifier.width( 5.dp ) )
+
 
                     TabToolBar.Buttons(
                         shuffler,
