@@ -52,7 +52,9 @@ import it.fast4x.rimusic.ui.items.PlaylistItem
 import it.fast4x.rimusic.ui.items.SongItemPlaceholder
 import it.fast4x.rimusic.ui.items.VideoItem
 import it.fast4x.rimusic.ui.items.VideoItemPlaceholder
+import me.knighthat.component.menu.video.VideoItemMenu
 import it.fast4x.rimusic.ui.styling.Dimensions
+
 import it.fast4x.rimusic.ui.styling.px
 import it.fast4x.rimusic.utils.addNext
 import it.fast4x.rimusic.utils.asMediaItem
@@ -215,7 +217,8 @@ fun SearchResultScreen(
                                 SongItem(
                                     song = song.asSong,
                                     navController = navController,
-                                    modifier = Modifier.background(colorPalette().background0),
+                                    modifier = Modifier,
+
                                     onClick = {
                                         binder?.startRadio(song.asMediaItem, false, song.info?.endpoint)
                                     }
@@ -404,7 +407,7 @@ fun SearchResultScreen(
                 }
 
                 2 -> {
-                    val thumbnailSizeDp = 48.dp
+                    val thumbnailSizeDp = 64.dp
                     val thumbnailSizePx = thumbnailSizeDp.px
 
                     ItemsPage(
@@ -497,14 +500,13 @@ fun SearchResultScreen(
                                         .combinedClickable(
                                             onLongClick = {
                                                 menuState.display {
-                                                    NonQueuedMediaItemMenu(
+                                                    VideoItemMenu(
                                                         navController = navController,
-                                                        mediaItem = video.asMediaItem,
-                                                        onDismiss = menuState::hide,
-                                                        disableScrollingText = disableScrollingText
-                                                    )
+                                                        song = video.asMediaItem.asSong
+                                                    ).MenuComponent()
                                                 }
                                                 hapticFeedback.performHapticFeedback(
+
                                                     HapticFeedbackType.LongPress
                                                 )
                                             },
