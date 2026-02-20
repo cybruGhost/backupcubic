@@ -13,6 +13,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.drawscope.Stroke
+import it.fast4x.rimusic.utils.DOWNLOAD_INDICATOR_SIZE_SWIPE
+import it.fast4x.rimusic.utils.DOWNLOAD_INDICATOR_STROKE_WIDTH
 import androidx.compose.material3.SwipeToDismissBox
 import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.rememberSwipeToDismissBoxState
@@ -120,9 +122,10 @@ fun SwipeableContent(
                     if (iconId == app.kreate.android.R.drawable.download_progress) {
                         CircularWavyProgressIndicator(
                             color = colorPalette().accent,
-                            modifier = Modifier.size(20.dp),
-                            stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() }),
-                            trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() })
+                            trackColor = colorPalette().textDisabled,
+                            modifier = Modifier.size(DOWNLOAD_INDICATOR_SIZE_SWIPE.dp),
+                            stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { DOWNLOAD_INDICATOR_STROKE_WIDTH.dp.toPx() }),
+                            trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { DOWNLOAD_INDICATOR_STROKE_WIDTH.dp.toPx() })
                         )
                     } else if (iconId != null) {
                         Icon(

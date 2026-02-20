@@ -213,29 +213,46 @@ object MyDownloadHelper {
                             download: Download
                         ) = run {
                             syncDownloads(download)
+                            // Clean up progress when removed
+                            mutableProgresses.update { it.toMutableMap().apply { remove(download.request.id) } }
                         }
                     }
                 )
             }
 
+            // Centralized polling job
             coroutineScope.launch {
                 while (isActive) {
-                    val currentDownloads = downloadManager.currentDownloads
+                    val currentDownloads = try {
+                        downloadManager.currentDownloads
+                    } catch (e: Exception) {
+                        emptyList<Download>()
+                    }
+
                     if (currentDownloads.isNotEmpty()) {
                         mutableProgresses.update { progresses ->
-                            progresses.toMutableMap().apply {
-                                currentDownloads.forEach { download ->
-                                    val progress = if (download.contentLength > 0) {
-                                        download.bytesDownloaded.toFloat() / download.contentLength
-                                    } else {
-                                        0f
-                                    }
-                                    put(download.request.id, progress)
+                            val newMap = progresses.toMutableMap()
+                            var changed = false
+                            currentDownloads.forEach { download ->
+                                val progress = if (download.contentLength > 0) {
+                                    download.bytesDownloaded.toFloat() / download.contentLength
+                                } else {
+                                    0f
+                                }
+                                if (newMap[download.request.id] != progress) {
+                                    newMap[download.request.id] = progress
+                                    changed = true
                                 }
                             }
+                            if (changed) newMap else progresses
                         }
                     }
-                    delay(1000)
+
+                    // Battery optimization: slower polling if nothing is active
+                    // Actually, we could potentially stop and restart based on onDownloadChanged,
+                    // but a 2s delay when idle is much better than 1s constantly.
+                    val delayTime = if (currentDownloads.isNotEmpty()) 1000L else 5000L
+                    delay(delayTime)
                 }
             }
         }
@@ -245,8 +262,15 @@ object MyDownloadHelper {
     private fun syncDownloads(download: Download) {
         downloads.update { map ->
             map.toMutableMap().apply {
-                set(download.request.id, download)
+                if (download.state == Download.STATE_REMOVING) {
+                    remove(download.request.id)
+                } else {
+                    set(download.request.id, download)
+                }
             }
+        }
+        if (download.state == Download.STATE_COMPLETED || download.state == Download.STATE_FAILED) {
+            mutableProgresses.update { it.toMutableMap().apply { remove(download.request.id) } }
         }
     }
 

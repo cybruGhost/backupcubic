@@ -23,6 +23,9 @@ import androidx.media3.exoplayer.offline.Download
 import app.kreate.android.R
 import it.fast4x.rimusic.utils.getDownloadProgress
 import androidx.compose.ui.graphics.drawscope.Stroke
+import it.fast4x.rimusic.colorPalette
+import it.fast4x.rimusic.utils.DOWNLOAD_INDICATOR_SIZE_NORMAL
+import it.fast4x.rimusic.utils.DOWNLOAD_INDICATOR_STROKE_WIDTH
 
 @UnstableApi
 @Composable
@@ -54,20 +57,22 @@ fun DownloadStateIconButton(
                 .then(modifier),
             contentAlignment = androidx.compose.ui.Alignment.Center
         ) {
-            if (progress > 0f && downloadState == Download.STATE_DOWNLOADING) {
+            if (progress > 0.01f && downloadState == Download.STATE_DOWNLOADING) {
                 CircularWavyProgressIndicator(
                     progress = { progress },
-                    color = color,
-                    modifier = Modifier.size(18.dp),
-                    stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() }),
-                    trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() })
+                    color = colorPalette().accent,
+                    trackColor = colorPalette().textDisabled,
+                    modifier = Modifier.size(DOWNLOAD_INDICATOR_SIZE_NORMAL.dp),
+                    stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { DOWNLOAD_INDICATOR_STROKE_WIDTH.dp.toPx() }),
+                    trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { DOWNLOAD_INDICATOR_STROKE_WIDTH.dp.toPx() })
                 )
             } else {
                 CircularWavyProgressIndicator(
-                    color = color,
-                    modifier = Modifier.size(18.dp),
-                    stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() }),
-                    trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() })
+                    color = colorPalette().accent,
+                    trackColor = colorPalette().textDisabled,
+                    modifier = Modifier.size(DOWNLOAD_INDICATOR_SIZE_NORMAL.dp),
+                    stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { DOWNLOAD_INDICATOR_STROKE_WIDTH.dp.toPx() }),
+                    trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { DOWNLOAD_INDICATOR_STROKE_WIDTH.dp.toPx() })
                 )
             }
         }
