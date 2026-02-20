@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
@@ -90,6 +91,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import it.fast4x.rimusic.thumbnailShape
 import me.knighthat.coil.ImageCacheFactory
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.Text
+import it.fast4x.rimusic.enums.ContentType
 
 
 fun String.toBooleanArray(): BooleanArray = this.map { it == '1' }.toBooleanArray()
@@ -121,6 +126,9 @@ fun SearchResultScreen(
 
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
 
+    val (filterContentType, onFilterContentTypeChanged) = rememberPreference(it.fast4x.rimusic.utils.filterContentTypeKey, ContentType.All)
+    val showFilterMenu = remember { mutableStateOf(false) }
+
     val gridStates = rememberSaveable("searchResultGridStates") { mutableStateOf(BooleanArray(7) { true }) }
     val useGrid = gridStates.value[tabIndex]
     val setUseGrid: (Boolean) -> Unit = { newValue ->
@@ -140,8 +148,70 @@ fun SearchResultScreen(
             onClick = {
                 navController.navigate("${NavRoutes.search.name}?text=${Uri.encode(query)}")
             },
-            verticalPadding = 4.dp
+            verticalPadding = 4.dp,
+            trailingIcon = {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Box {
+                        IconButton(onClick = { showFilterMenu.value = true }) {
+                            Icon(
+                                painter = painterResource(id = R.drawable.discover),
+                                contentDescription = "Filter",
+                                tint = colorPalette().text
+                            )
+                        }
+                        DropdownMenu(
+                            expanded = showFilterMenu.value,
+                            modifier = Modifier.background(colorPalette().background0),
+                            onDismissRequest = { showFilterMenu.value = false }
+                        ) {
+                            ContentType.entries.forEach { type ->
+                                DropdownMenuItem(
+                                    text = { Text(type.textName, color = colorPalette().text) },
+                                    leadingIcon = {
+                                        Icon(
+                                            painter = painterResource(id = type.icon),
+                                            contentDescription = null,
+                                            tint = colorPalette().text
+                                        )
+                                    },
+                                    onClick = {
+                                        onFilterContentTypeChanged(type)
+                                        showFilterMenu.value = false
+                                    }
+                                )
+                            }
+                        }
+                    }
+                    if (tabIndex in listOf(1, 4, 5, 6)) {
+                        IconButton(onClick = { setUseGrid(!useGrid) }) {
+                            Icon(
+                                painter = painterResource(id = if (useGrid) R.drawable.sort_vertical else R.drawable.sort_grid),
+                                contentDescription = "Switch Mode",
+                                tint = colorPalette().text
+                            )
+                        }
+                    }
+                }
+            }
         )
+        Row(
+            modifier = Modifier.padding(horizontal = 16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Icon(
+                painter = painterResource(id = filterContentType.icon),
+                contentDescription = null,
+                tint = colorPalette().textSecondary,
+                modifier = Modifier.size(16.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            BasicText(
+                text = filterContentType.textName,
+                style = typography().xs.copy(color = colorPalette().textSecondary)
+            )
+        }
         Spacer(modifier = Modifier.height(24.dp))
     }
 
@@ -168,6 +238,7 @@ fun SearchResultScreen(
                     val localBinder = LocalPlayerServiceBinder.current
 
                     ItemsPage(
+                        filterContentType = filterContentType,
                         tag = "searchResults/$query/songs",
                         itemsPageProvider = { continuation ->
                             if (continuation == null) {
@@ -331,30 +402,10 @@ fun SearchResultScreen(
                     }
 
                     Column {
-                        Title(
-                            title = stringResource(R.string.search_results_for),
-                            verticalPadding = 4.dp
-                        )
-                        Title(
-                            title = query,
-                            icon = R.drawable.pencil,
-                            onClick = {
-                                navController.navigate("${NavRoutes.search.name}?text=${Uri.encode(query)}")
-                            },
-                            verticalPadding = 4.dp,
-                            trailingIcon = {
-                                IconButton(onClick = { setUseGrid(!useGrid) }) {
-                                    Icon(
-                                        painter = painterResource(id = if (useGrid) R.drawable.sort_vertical else R.drawable.sort_grid),
-                                        contentDescription = "Switch Mode",
-                                        tint = colorPalette().text
-                                    )
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
+                        // Title handled by ItemsPage/ItemsGridPage headerContent but we need to pass filter state
                         if (useGrid) {
                             ItemsGridPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/albums",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -373,13 +424,14 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = albumItemContentGrid,
                                 itemPlaceholderContent = { AlbumItemGridPlaceholder(thumbnailSizeDp = thumbnailSizeDp) },
                                 thumbnailSizeDp = thumbnailSizeDp
                             )
                         } else {
                             ItemsPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/albums",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -398,7 +450,7 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = albumItemContentList,
                                 itemPlaceholderContent = { AlbumItemListPlaceholder(thumbnailSizeDp = thumbnailSizeDp) }
                             )
@@ -411,6 +463,7 @@ fun SearchResultScreen(
                     val thumbnailSizePx = thumbnailSizeDp.px
 
                     ItemsPage(
+                        filterContentType = filterContentType,
                         tag = "searchResults/$query/artists",
                         itemsPageProvider = { continuation ->
                             if (continuation == null) {
@@ -459,6 +512,7 @@ fun SearchResultScreen(
                     val thumbnailWidthDp = 128.dp
 
                     ItemsPage(
+                        filterContentType = filterContentType,
                         tag = "searchResults/$query/videos",
                         itemsPageProvider = { continuation ->
                             if (continuation == null) {
@@ -600,30 +654,9 @@ fun SearchResultScreen(
                     }
 
                     Column {
-                        Title(
-                            title = stringResource(R.string.search_results_for),
-                            verticalPadding = 4.dp
-                        )
-                        Title(
-                            title = query,
-                            icon = R.drawable.pencil,
-                            onClick = {
-                                navController.navigate("${NavRoutes.search.name}?text=${Uri.encode(query)}")
-                            },
-                            verticalPadding = 4.dp,
-                            trailingIcon = {
-                                IconButton(onClick = { setUseGrid(!useGrid) }) {
-                                    Icon(
-                                        painter = painterResource(id = if (useGrid) R.drawable.sort_vertical else R.drawable.sort_grid),
-                                        contentDescription = "Switch Mode",
-                                        tint = colorPalette().text
-                                    )
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
                         if (useGrid) {
                             ItemsGridPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/playlists",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -639,13 +672,14 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = playlistItemContentGrid,
                                 itemPlaceholderContent = { AlbumItemGridPlaceholder(thumbnailSizeDp = thumbnailSizeDp) },
                                 thumbnailSizeDp = thumbnailSizeDp
                             )
                         } else {
                             ItemsPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/playlists",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -661,7 +695,7 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = playlistItemContentList,
                                 itemPlaceholderContent = { AlbumItemListPlaceholder(thumbnailSizeDp = thumbnailSizeDp) }
                             )
@@ -738,30 +772,9 @@ fun SearchResultScreen(
                     }
 
                     Column {
-                        Title(
-                            title = stringResource(R.string.search_results_for),
-                            verticalPadding = 4.dp
-                        )
-                        Title(
-                            title = query,
-                            icon = R.drawable.pencil,
-                            onClick = {
-                                navController.navigate("${NavRoutes.search.name}?text=${Uri.encode(query)}")
-                            },
-                            verticalPadding = 4.dp,
-                            trailingIcon = {
-                                IconButton(onClick = { setUseGrid(!useGrid) }) {
-                                    Icon(
-                                        painter = painterResource(id = if (useGrid) R.drawable.sort_vertical else R.drawable.sort_grid),
-                                        contentDescription = "Switch Mode",
-                                        tint = colorPalette().text
-                                    )
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
                         if (useGrid) {
                             ItemsGridPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/featured",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -777,13 +790,14 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = playlistItemContentGrid,
                                 itemPlaceholderContent = { AlbumItemGridPlaceholder(thumbnailSizeDp = thumbnailSizeDp) },
                                 thumbnailSizeDp = thumbnailSizeDp
                             )
                         } else {
                             ItemsPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/featured",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -799,7 +813,7 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = playlistItemContentList,
                                 itemPlaceholderContent = { AlbumItemListPlaceholder(thumbnailSizeDp = thumbnailSizeDp) }
                             )
@@ -876,30 +890,9 @@ fun SearchResultScreen(
                     }
 
                     Column {
-                        Title(
-                            title = stringResource(R.string.search_results_for),
-                            verticalPadding = 4.dp
-                        )
-                        Title(
-                            title = query,
-                            icon = R.drawable.pencil,
-                            onClick = {
-                                navController.navigate("${NavRoutes.search.name}?text=${Uri.encode(query)}")
-                            },
-                            verticalPadding = 4.dp,
-                            trailingIcon = {
-                                IconButton(onClick = { setUseGrid(!useGrid) }) {
-                                    Icon(
-                                        painter = painterResource(id = if (useGrid) R.drawable.sort_vertical else R.drawable.sort_grid),
-                                        contentDescription = "Switch Mode",
-                                        tint = colorPalette().text
-                                    )
-                                }
-                            }
-                        )
-                        Spacer(modifier = Modifier.height(16.dp))
                         if (useGrid) {
                             ItemsGridPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/podcasts",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -915,13 +908,14 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = playlistItemContentGrid,
                                 itemPlaceholderContent = { AlbumItemGridPlaceholder(thumbnailSizeDp = thumbnailSizeDp) },
                                 thumbnailSizeDp = thumbnailSizeDp
                             )
                         } else {
                             ItemsPage(
+                                filterContentType = filterContentType,
                                 tag = "searchResults/$query/podcasts",
                                 itemsPageProvider = { continuation ->
                                     if (continuation == null) {
@@ -937,7 +931,7 @@ fun SearchResultScreen(
                                     }
                                 },
                                 emptyItemsText = emptyItemsText,
-                                headerContent = {},
+                                headerContent = headerContent,
                                 itemContent = playlistItemContentList,
                                 itemPlaceholderContent = { AlbumItemListPlaceholder(thumbnailSizeDp = thumbnailSizeDp) }
                             )
