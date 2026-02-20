@@ -1,9 +1,16 @@
+@file:kotlin.OptIn(ExperimentalMaterial3ExpressiveApi::class)
 package me.knighthat.component
 
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.CircularWavyProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
+import androidx.compose.ui.graphics.drawscope.Stroke
+import it.fast4x.rimusic.utils.getDownloadProgress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
@@ -316,30 +323,60 @@ fun SongItem(
                     val cacheState = downloadedStateMedia( song.id )
                     val downloadState = getDownloadState( song.id )
 
-                    val icon = when( downloadState ) {
-                        Download.STATE_DOWNLOADING  -> R.drawable.download_progress
-                        Download.STATE_REMOVING     -> R.drawable.download
-                        else                        -> cacheState.iconId
-                    }
                     val color = when( cacheState ) {
                         DownloadedStateMedia.NOT_CACHED_OR_DOWNLOADED -> colorPalette().textDisabled
                         else                                          -> colorPalette().text
                     }
 
-                    IconButton(
-                        icon = icon,
-                        color = color,
-                        modifier = Modifier.size( 20.dp ),
-                        onClick = {
-                            // TODO: Confirmation dialog upon delete
-                            binder?.cache?.removeResource( song.id )
-                            Database.asyncTransaction {
-                                formatTable.deleteBySongId( song.id )
+                    if (downloadState == Download.STATE_DOWNLOADING) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clickable {
+                                    binder?.cache?.removeResource( song.id )
+                                    Database.asyncTransaction {
+                                        formatTable.deleteBySongId( song.id )
+                                    }
+                                    MyDownloadHelper.handleDownload( context, song, true )
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            val progress = getDownloadProgress(song.id)
+                            if (progress > 0f && downloadState == Download.STATE_DOWNLOADING) {
+                                CircularWavyProgressIndicator(
+                                    progress = { progress },
+                                    color = color,
+                                    modifier = Modifier.size(18.dp),
+                                    stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() }),
+                                    trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() })
+                                )
+                            } else {
+                                CircularWavyProgressIndicator(
+                                    color = color,
+                                    modifier = Modifier.size(18.dp),
+                                    stroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() }),
+                                    trackStroke = Stroke(width = with(androidx.compose.ui.platform.LocalDensity.current) { 2.dp.toPx() })
+                                )
                             }
-
-                            MyDownloadHelper.handleDownload( context, song, true )
                         }
-                    )
+                    } else {
+                        val icon = when( downloadState ) {
+                            Download.STATE_REMOVING     -> R.drawable.download
+                            else                        -> cacheState.iconId
+                        }
+                        IconButton(
+                            icon = icon,
+                            color = color,
+                            modifier = Modifier.size( 20.dp ),
+                            onClick = {
+                                binder?.cache?.removeResource( song.id )
+                                Database.asyncTransaction {
+                                    formatTable.deleteBySongId( song.id )
+                                }
+                                MyDownloadHelper.handleDownload( context, song, true )
+                            }
+                        )
+                    }
                 }
             }
         }

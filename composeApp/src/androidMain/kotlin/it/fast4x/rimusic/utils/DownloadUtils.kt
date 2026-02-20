@@ -40,10 +40,10 @@ fun downloadedStateMedia(mediaId: String): DownloadedStateMedia {
     }
 
     val isDownloaded by remember {
-        MyDownloadHelper.getDownload( mediaId ).map {
-            it?.state == Download.STATE_COMPLETED
+        MyDownloadHelper.getDownload(mediaId).map { download ->
+            download?.state == Download.STATE_COMPLETED
         }
-    }.collectAsState( false, Dispatchers.IO )
+    }.collectAsState(initial = false, context = Dispatchers.IO)
     val isCached by remember {
         Database.formatTable.findBySongId( mediaId ).map {
             it?.contentLength == cachedBytes
@@ -68,9 +68,9 @@ fun getDownloadStateMedia(
         return DownloadedStateMedia.DOWNLOADED
 
     val isDownloaded by remember {
-        MyDownloadHelper.getDownload( songId )
-            .map { it?.state == Download.STATE_COMPLETED }
-    }.collectAsState( false, Dispatchers.IO )
+        MyDownloadHelper.getDownload(songId)
+            .map { download -> download?.state == Download.STATE_COMPLETED }
+    }.collectAsState(initial = false, context = Dispatchers.IO)
     val isCached by remember {
         Database.formatTable
             .findBySongId( songId )
@@ -117,8 +117,15 @@ fun getDownloadState(mediaId: String): Int {
     val downloader = LocalDownloadHelper.current
     if (!isNetworkAvailableComposable()) return 3
 
-    return downloader.getDownload(mediaId).collectAsState(initial = null).value?.state
+    return downloader.getDownload(mediaId).collectAsState(initial = null as Download?).value?.state
         ?: 3
+}
+
+@UnstableApi
+@Composable
+fun getDownloadProgress(mediaId: String): Float {
+    val downloader = LocalDownloadHelper.current
+    return downloader.progresses.collectAsState().value[mediaId] ?: 0f
 }
 
 @OptIn(UnstableApi::class)
