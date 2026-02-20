@@ -21,6 +21,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+
 import androidx.compose.ui.unit.dp
 import it.fast4x.compose.persist.persist
 import it.fast4x.innertube.Innertube
@@ -45,6 +47,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import it.fast4x.rimusic.ui.items.AlbumPlaceholder
 import it.fast4x.rimusic.ui.items.SongItemPlaceholder
+import it.fast4x.rimusic.ui.components.themed.Loader
+import androidx.compose.foundation.lazy.itemsIndexed
+
 
 @ExperimentalAnimationApi
 @Composable
@@ -121,14 +126,15 @@ inline fun <T : Innertube.Item> ItemsPage(
             )
     ) {
         if (itemsPage == null) {
-            LazyColumn(
+            Column(
                 modifier = Modifier.fillMaxSize()
             ) {
-                item {
-                    headerContent(null)
-                }
-                items(initialPlaceholderCount) {
-                    itemPlaceholderContent()
+                headerContent(null)
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Loader()
                 }
             }
         } else {
@@ -257,14 +263,15 @@ inline fun <T : Innertube.Item> ItemsGridPage(
             )
     ) {
         if (itemsPage == null) {
-            LazyColumn(
+            Column(
                 modifier = Modifier.fillMaxSize()
             ) {
-                item {
-                    headerContent(null)
-                }
-                items(initialPlaceholderCount) {
-                    itemPlaceholderContent()
+                headerContent(null)
+                Box(
+                    modifier = Modifier.weight(1f).fillMaxWidth(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Loader()
                 }
             }
         } else {
