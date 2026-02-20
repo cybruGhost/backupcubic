@@ -295,7 +295,9 @@ object Innertube {
         val info: Info<NavigationEndpoint.Endpoint.Browse>?,
         val authors: List<Info<NavigationEndpoint.Endpoint.Browse>>?,
         val year: String?,
+        val songCount: Int? = null,
         val playlistId: String? = null,
+        val description: String? = null,
         override val thumbnail: Thumbnail?
     ) : Item() {
         override val key get() = info!!.endpoint!!.browseId!!
@@ -308,7 +310,9 @@ object Innertube {
     data class ArtistItem(
         val info: Info<NavigationEndpoint.Endpoint.Browse>?,
         val subscribersCountText: String?,
+        val songCount: Int? = null,
         val channelId: String? = null,
+        val description: String? = null,
         override val thumbnail: Thumbnail?
     ) : Item() {
         override val key get() = info!!.endpoint!!.browseId!!
@@ -323,6 +327,7 @@ object Innertube {
         val channel: Info<NavigationEndpoint.Endpoint.Browse>?,
         val songCount: Int?,
         val isEditable: Boolean?,
+        val description: String? = null,
         override val thumbnail: Thumbnail?
     ) : Item() {
         override val key get() = info!!.endpoint!!.browseId!!
