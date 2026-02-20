@@ -28,6 +28,7 @@ import it.fast4x.compose.persist.persist
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.utils.plus
 import it.fast4x.rimusic.enums.NavigationBarPosition
+import it.fast4x.rimusic.enums.ContentType
 import it.fast4x.rimusic.ui.components.ShimmerHost
 import it.fast4x.rimusic.ui.components.themed.FloatingActionsContainerWithScrollToTop
 import it.fast4x.rimusic.ui.styling.Dimensions
@@ -62,6 +63,7 @@ inline fun <T : Innertube.Item> ItemsPage(
     initialPlaceholderCount: Int = 8,
     continuationPlaceholderCount: Int = 3,
     emptyItemsText: String = "No items found",
+    filterContentType: ContentType = ContentType.All,
     noinline itemsPageProvider: (suspend (String?) -> Result<Innertube.ItemsPage<T>?>?)? = null,
 ) {
     val updatedItemsPageProvider by rememberUpdatedState(itemsPageProvider)
@@ -147,11 +149,31 @@ inline fun <T : Innertube.Item> ItemsPage(
                     key = "header",
                     contentType = "header",
                 ) {
-                    headerContent(null)
+                    Column {
+                        headerContent(null)
+                    }
                 }
 
                 items(
-                    itemsPage?.items ?: emptyList(),
+                    itemsPage?.items?.filter { item ->
+                        when {
+                            item is Innertube.SongItem -> {
+                                when (filterContentType) {
+                                    ContentType.All -> true
+                                    ContentType.Official -> !item.isUserGeneratedContent
+                                    ContentType.UserGenerated -> item.isUserGeneratedContent
+                                }
+                            }
+                            item is Innertube.VideoItem -> {
+                                when (filterContentType) {
+                                    ContentType.All -> true
+                                    ContentType.Official -> !item.isUserGeneratedContent
+                                    ContentType.UserGenerated -> item.isUserGeneratedContent
+                                }
+                            }
+                            else -> true
+                        }
+                    } ?: emptyList(),
                     key = { item -> "item_${System.identityHashCode(item)}_${item.key}" },
                     itemContent = itemContent
                 )
@@ -203,6 +225,7 @@ inline fun <T : Innertube.Item> ItemsGridPage(
     initialPlaceholderCount: Int = 8,
     continuationPlaceholderCount: Int = 3,
     emptyItemsText: String = "No items found",
+    filterContentType: ContentType = ContentType.All,
     noinline itemsPageProvider: (suspend (String?) -> Result<Innertube.ItemsPage<T>?>?)? = null,
     thumbnailSizeDp: androidx.compose.ui.unit.Dp
 ) {
@@ -288,11 +311,31 @@ inline fun <T : Innertube.Item> ItemsGridPage(
                     contentType = 0,
                     span = { GridItemSpan(maxLineSpan) }
                 ) {
-                    headerContent(null)
+                    Column {
+                        headerContent(null)
+                    }
                 }
 
                 items(
-                    itemsPage?.items ?: emptyList(),
+                    itemsPage?.items?.filter { item ->
+                        when {
+                            item is Innertube.SongItem -> {
+                                when (filterContentType) {
+                                    ContentType.All -> true
+                                    ContentType.Official -> !item.isUserGeneratedContent
+                                    ContentType.UserGenerated -> item.isUserGeneratedContent
+                                }
+                            }
+                            item is Innertube.VideoItem -> {
+                                when (filterContentType) {
+                                    ContentType.All -> true
+                                    ContentType.Official -> !item.isUserGeneratedContent
+                                    ContentType.UserGenerated -> item.isUserGeneratedContent
+                                }
+                            }
+                            else -> true
+                        }
+                    } ?: emptyList(),
                     key = { item -> "item_${System.identityHashCode(item)}_${item.key}" },
                     itemContent = itemContent
                 )

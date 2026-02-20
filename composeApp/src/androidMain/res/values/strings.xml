@@ -1106,4 +1106,7 @@
 <string name="voice_speak_now">Speak now...</string>
 <string name="voice_device_not_supported">Your device does not support voice input</string>
 <string name="loading_please_wait">Loading, please wait...</string>
+<string name="content_type_all">All</string>
+<string name="content_type_official">Official</string>
+<string name="content_type_user_generated">User Generated</string>
 </resources>
