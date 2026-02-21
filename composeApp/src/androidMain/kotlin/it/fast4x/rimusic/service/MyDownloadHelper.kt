@@ -65,6 +65,7 @@ import timber.log.Timber
 import java.io.File
 import java.util.concurrent.Executors
 import kotlin.io.path.createTempDirectory
+import it.fast4x.rimusic.utils.ExternalUris
 
 @UnstableApi
 object MyDownloadHelper {
@@ -293,10 +294,10 @@ object MyDownloadHelper {
             .Builder(
                 /* id      = */ mediaItem.mediaId,
                 /* uri     = */ mediaItem.requestMetadata.mediaUri
-                    ?: Uri.parse("https://music.youtube.com/watch?v=${mediaItem.mediaId}")
+                    ?: Uri.parse(ExternalUris.youtubeMusic(mediaItem.mediaId))
             )
             .setCustomCacheKey(mediaItem.mediaId)
-            .setData("${mediaItem.mediaMetadata.artist.toString()} - ${mediaItem.mediaMetadata.title.toString()}".encodeToByteArray())
+            .setData("${mediaItem.mediaMetadata.artist ?: ""} - ${mediaItem.mediaMetadata.title ?: ""}".encodeToByteArray()) // Title in notification
             .build()
 
         Database.asyncTransaction {

@@ -154,7 +154,7 @@ import me.bush.translator.Language
 import me.bush.translator.Translator
 import me.knighthat.component.SongItem
 import me.knighthat.utils.Toaster
-
+import it.fast4x.rimusic.utils.ExternalUris
 
 @ExperimentalTextApi
 @SuppressLint("SuspiciousIndentation")
@@ -450,7 +450,7 @@ fun PlaylistSongList(
                                     .align(Alignment.TopEnd)
                                     .padding(top = 5.dp, end = 5.dp),
                                 onClick = {
-                                    (playlistPage?.playlist?.thumbnail?.url ?: "https://music.youtube.com/playlist?list=${browseId.removePrefix("VL")}").let { url ->
+                                     ExternalUris.youtubeMusicPlaylist(browseId.removePrefix("VL")).let { url ->
                                         val sendIntent = Intent().apply {
                                             action = Intent.ACTION_SEND
                                             type = "text/plain"
