@@ -1061,7 +1061,6 @@
 <string name="check_beta_update_enabled">BETA enabled</string>
 <string name="check_beta_update_disabled">BETA disabled</string>
 <string name="cache_status">Cache status</string>
-<string name="cache_working">Cache working</string>
 <string name="cache_empty">Cache empty</string>
 <string name="rewind">Rewind</string>
 <string name="donate">Donate</string>

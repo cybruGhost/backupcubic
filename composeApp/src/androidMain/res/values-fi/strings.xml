@@ -1053,6 +1053,5 @@
   <string name="check_beta_update_enabled">BETA käytössä</string>
   <string name="check_beta_update_disabled">BETA pois käytöstä</string>
   <string name="cache_status">Välimuistin tila</string>
-  <string name="cache_working">Välimuisti toimii</string>
   <string name="cache_empty">Välimuisti tyhjä</string>
 </resources>
