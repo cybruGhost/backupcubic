@@ -160,7 +160,11 @@ fun HomeLibrary(
         PlaylistsType.MonthlyPlaylist to stringResource(R.string.monthly_playlists)
     // END - Additional playlists
 
-
+LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
+        if (!showPinnedPlaylists && playlistType == PlaylistsType.PinnedPlaylist) playlistType = PlaylistsType.Playlist
+        if (!showMonthlyPlaylists && playlistType == PlaylistsType.MonthlyPlaylist) playlistType = PlaylistsType.Playlist
+        if (!showPipedPlaylists && playlistType == PlaylistsType.PipedPlaylist) playlistType = PlaylistsType.Playlist
+    }
     // START - New playlist
     newPlaylistDialog.Render()
     // END - New playlist
@@ -248,9 +252,19 @@ fun HomeLibrary(
                             PlaylistsType.YTPlaylist -> YTP_PREFIX
                         }
                     val condition: (PlaylistPreview) -> Boolean = {
-                        if (playlistType == PlaylistsType.YTPlaylist){
-                            it.playlist.isYoutubePlaylist
-                        } else it.playlist.name.startsWith( listPrefix, true )
+                       when (playlistType) {
+                            PlaylistsType.YTPlaylist -> it.playlist.isYoutubePlaylist
+                            PlaylistsType.Playlist -> {
+                                val isMonthly = it.playlist.name.startsWith(MONTHLY_PREFIX, true)
+                                val isPinned = it.playlist.name.startsWith(PINNED_PREFIX, true)
+                                val isPiped = it.playlist.name.startsWith(PIPED_PREFIX, true)
+                                
+                                (!isMonthly || showMonthlyPlaylists) && 
+                                (!isPinned || showPinnedPlaylists) && 
+                                (!isPiped || showPipedPlaylists)
+                            }
+                            else -> it.playlist.name.startsWith(listPrefix, true)
+                        }
                     }
                     items(
                         items = itemsOnDisplay.filter( condition ),
