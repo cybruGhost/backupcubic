@@ -99,11 +99,11 @@ private fun AppLogoText( navController: NavController ) {
     }
 
     BasicText(
-        text = "Cubic",
+        text = "Cubic-Music", // Changed from "Cubic-Music" to just "Cubic"
         style = TextStyle(
-            fontSize = typography().m.semiBold.fontSize, // Changed from s to m (medium)
-            fontWeight = typography().s.semiBold.fontWeight,
-            fontFamily = typography().s.semiBold.fontFamily,
+            fontSize = typography().xl.semiBold.fontSize, // Kept xl size for boldness
+            fontWeight = typography().xl.semiBold.fontWeight, // Using xl fontWeight
+            fontFamily = typography().xl.semiBold.fontFamily, // Using xl fontFamily
             color = AppBar.contentColor()
         ),
         modifier = Modifier
