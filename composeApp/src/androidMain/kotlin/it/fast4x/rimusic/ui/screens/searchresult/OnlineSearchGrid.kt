@@ -62,6 +62,7 @@ import it.fast4x.rimusic.utils.preferences
 import it.fast4x.rimusic.utils.showButtonPlayerVideoKey
 import it.fast4x.rimusic.enums.NavRoutes
 import it.fast4x.rimusic.typography
+import it.fast4x.rimusic.ui.items.ArtistItem
 import it.fast4x.rimusic.ui.items.AlbumItem
 import it.fast4x.rimusic.ui.items.AlbumItemGridPlaceholder
 import it.fast4x.rimusic.ui.items.PlaylistItem
@@ -167,6 +168,8 @@ fun OnlineSearchGrid(
                         album = item,
                         thumbnailSizePx = thumbnailSizePx,
                         thumbnailSizeDp = thumbnailSizeDp,
+                        alternative = true,
+                        showInfo = false,
                         modifier = Modifier
                             .combinedClickable(
                                 onClick = {
@@ -183,6 +186,9 @@ fun OnlineSearchGrid(
                         thumbnailSizePx = thumbnailSizePx,
                         thumbnailSizeDp = thumbnailSizeDp,
                         showSongsCount = false,
+                        alternative = true,
+                        showName = false,
+                        showInfo = false,
                         modifier = Modifier.clickable {
                             when (tabIndex) {
                                 4, 5 -> navController.navigate("${NavRoutes.playlist.name}/${item.key}")
@@ -193,10 +199,12 @@ fun OnlineSearchGrid(
                     )
                 }
                 is Innertube.ArtistItem -> {
-                    it.fast4x.rimusic.ui.items.ArtistItem(
+                    ArtistItem(
                         artist = item,
                         thumbnailSizePx = thumbnailSizePx,
                         thumbnailSizeDp = thumbnailSizeDp,
+                        alternative = true,
+                        showName = false,
                         modifier = Modifier
                             .clickable(onClick = {
                                 navController.navigate("${NavRoutes.artist.name}/${item.key}")

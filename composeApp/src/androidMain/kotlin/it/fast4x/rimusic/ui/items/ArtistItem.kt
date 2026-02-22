@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -77,6 +78,7 @@ fun ArtistItem(
     thumbnailSizeDp: Dp,
     modifier: Modifier = Modifier,
     alternative: Boolean = false,
+    showName: Boolean = true,
     disableScrollingText: Boolean,
     isYoutubeArtist : Boolean = false,
     smallThumbnail: Boolean = false
@@ -89,6 +91,7 @@ fun ArtistItem(
         thumbnailSizeDp = thumbnailSizeDp,
         modifier = modifier,
         alternative = alternative,
+        showName = showName,
         disableScrollingText = disableScrollingText,
         isYoutubeArtist = isYoutubeArtist,
         smallThumbnail = smallThumbnail
@@ -115,14 +118,15 @@ fun ArtistItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
     ) {
-        Box {
-            ImageCacheFactory.AsyncImage(
-                thumbnailUrl = thumbnailUrl?.thumbnail(thumbnailSizePx),
-                contentDescription = null,
-                modifier = Modifier
-                    //.clip(CircleShape)
-                    .clip(thumbnailShape())
-                    .requiredSize(thumbnailSizeDp)
+        Box(
+            modifier = Modifier
+                .conditional(alternative) { fillMaxWidth().aspectRatio(1f) }
+                .conditional(!alternative) { size(thumbnailSizeDp) }
+                .clip(thumbnailShape())
+        ) {
+            ImageCacheFactory.Thumbnail(
+                thumbnailUrl = thumbnailUrl,
+                contentScale = if (alternative) ContentScale.FillWidth else ContentScale.Crop
             )
             if (isYoutubeArtist) {
                 Image(
