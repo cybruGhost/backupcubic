@@ -5,13 +5,15 @@ import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -230,18 +232,33 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
                     columns = GridCells.Adaptive( itemSize.size.dp ),
                     modifier = Modifier
                         .background(colorPalette().background0)
+                        .fillMaxSize(),
+                    contentPadding = PaddingValues( bottom = Dimensions.bottomSpacer )
                 ) {
                     item(
                         key = "separator",
                         contentType = 0,
                         span = { GridItemSpan(maxLineSpan) }) {
-                        ButtonsRow(
-                            chips = buttonsList,
-                            currentValue = playlistType,
-                            onValueUpdate = { playlistType = it },
-                            modifier = Modifier.padding(start = 12.dp, end = 12.dp)
-                        )
+
+                         Row(
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(bottom = 8.dp)
+                                .fillMaxWidth()
+                        ) {
+                            Box {
+                                ButtonsRow(
+                                    chips = buttonsList,
+                                    currentValue = playlistType,
+                                    onValueUpdate = { playlistType = it },
+                                    modifier = Modifier.padding(end = 12.dp)
+                                )
+                            }
+                        }
                     }
+                    
 
                     val listPrefix =
                         when( playlistType ) {
@@ -287,14 +304,6 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
                             isYoutubePlaylist = preview.playlist.isYoutubePlaylist,
                             isEditable = preview.playlist.isEditable
                         )
-                    }
-
-                    item(
-                        key = "footer",
-                        contentType = 0,
-                        span = { GridItemSpan(maxLineSpan) }
-                    ) {
-                        Spacer(modifier = Modifier.height(Dimensions.bottomSpacer))
                     }
 
                 }

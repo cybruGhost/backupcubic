@@ -410,8 +410,8 @@ fun AIRecommendationSettings(
                 icon = R.drawable.calendar,
                 content = {
                     OtherSwitchSettingEntry(
-						title = "${stringResource(R.string.show)} ${stringResource(R.string.monthly_playlists)}",
-						text = stringResource(R.string.disable_if_you_do_not_want_to_see) + " " + stringResource(R.string.monthly_playlists),
+						title = stringResource(R.string.show_monthly_playlists_in_library),
+						text = stringResource(R.string.disable_if_you_do_not_want_to_see) + " " + stringResource(R.string.monthly_playlists) + " " + stringResource(R.string.in_txt) + " " + stringResource(R.string.library),
 						isChecked = showMonthlyPlaylists,
 						onCheckedChange = {
 							showMonthlyPlaylists = it
