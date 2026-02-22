@@ -153,6 +153,7 @@ fun PlaylistItem(
     showName: Boolean = true,
     disableScrollingText: Boolean,
     isYoutubePlaylist: Boolean,
+    showInfo: Boolean = true,
     isEditable: Boolean
 ) {
     val context = LocalContext.current
@@ -184,6 +185,7 @@ fun PlaylistItem(
         showName = showName,
         disableScrollingText = disableScrollingText,
         isYoutubePlaylist = isYoutubePlaylist,
+        showInfo = showInfo,
         isEditable = isEditable
     )
 }
@@ -196,8 +198,10 @@ fun PlaylistItem(
     modifier: Modifier = Modifier,
     alternative: Boolean = false,
     showSongsCount: Boolean = true,
+    showName: Boolean = true,
     disableScrollingText: Boolean,
     isYoutubePlaylist : Boolean = false,
+    showInfo: Boolean = true,
     isEditable : Boolean = false
 ) {
     PlaylistItem(
@@ -218,8 +222,10 @@ fun PlaylistItem(
         thumbnailSizeDp = thumbnailSizeDp,
         modifier = modifier,
         alternative = alternative,
+        showName = showName,
         disableScrollingText = disableScrollingText,
         isYoutubePlaylist = isYoutubePlaylist,
+        showInfo = showInfo,
         isEditable = isEditable
     )
 }
@@ -238,6 +244,7 @@ fun PlaylistItem(
     showSongsCount: Boolean = true,
     disableScrollingText: Boolean,
     isYoutubePlaylist : Boolean = false,
+    showInfo: Boolean = true,
     isEditable : Boolean = false
 ) {
     ItemContainer(
@@ -246,10 +253,11 @@ fun PlaylistItem(
         modifier = modifier
     ) {
         BoxWithConstraints(
-            modifier = Modifier.fillMaxWidth()
-                               .aspectRatio( 1f )
-                               .clip( thumbnailShape() )
-                               .background( colorPalette().background4 )
+            modifier = Modifier
+                .conditional(alternative) { fillMaxWidth().aspectRatio(1f) }
+                .conditional(!alternative) { size(thumbnailSizeDp) }
+                .clip(thumbnailShape())
+                .background(colorPalette().background4)
         ) {
             thumbnailContent()
 
@@ -259,7 +267,7 @@ fun PlaylistItem(
                     painterResource( R.drawable.piped_logo ) to colorPalette().red
 
                 name.startsWith( PINNED_PREFIX, true ) ->
-                    painterResource( R.drawable.pin_good ) to colorPalette().accent
+                    painterResource( R.drawable.pin_filled ) to colorPalette().accent
 
                 name.startsWith( MONTHLY_PREFIX, true ) ->
                     painterResource( R.drawable.stat_month ) to colorPalette().accent
@@ -297,33 +305,35 @@ fun PlaylistItem(
             }
         }
 
-        ItemInfoContainer(
-            horizontalAlignment = if (alternative && channelName == null) Alignment.CenterHorizontally else Alignment.Start,
-            modifier = Modifier
-                .fillMaxSize()
-        ) {
-            if (showName)
-                if (name != null) {
+        if (showInfo) {
+            ItemInfoContainer(
+                horizontalAlignment = if (alternative && channelName == null) Alignment.CenterHorizontally else Alignment.Start,
+                modifier = Modifier
+                    .fillMaxSize()
+            ) {
+                if (showName)
+                    if (name != null) {
+                        BasicText(
+                            //text = name.substringAfter(PINNED_PREFIX) ?: "",
+                            text = cleanPrefix(name),
+                            style = typography().xs.semiBold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
+                        )
+                    }
+
+                channelName?.let {
                     BasicText(
-                        //text = name.substringAfter(PINNED_PREFIX) ?: "",
-                        text = cleanPrefix(name),
-                        style = typography().xs.semiBold,
+                        text = channelName,
+                        style = typography().xs.semiBold.secondary,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier
                             .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
                     )
                 }
-
-            channelName?.let {
-                BasicText(
-                    text = channelName,
-                    style = typography().xs.semiBold.secondary,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier
-                        .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
-                )
             }
         }
     }

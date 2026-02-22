@@ -19,6 +19,10 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import it.fast4x.rimusic.ui.components.themed.Loader
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -73,7 +77,6 @@ fun NewAlbums(
     Column(
         modifier = Modifier
             .background(colorPalette().background0)
-            //.fillMaxSize()
             .fillMaxHeight()
             .fillMaxWidth(
                 if (navigationBarPosition == NavigationBarPosition.Left ||
@@ -85,7 +88,15 @@ fun NewAlbums(
     ) {
 
         /***************/
-        discoverPage?.getOrNull()?.let { page ->
+    val page = discoverPage?.getOrNull()
+        if (page == null) {
+            Box(
+                modifier = Modifier.fillMaxSize(),
+                contentAlignment = Alignment.Center
+            ) {
+                Loader()
+            }
+        } else {
             LazyVerticalGrid(
                 state = lazyGridState,
                 columns = GridCells.Adaptive(Dimensions.thumbnails.album + 24.dp),

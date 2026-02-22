@@ -1,5 +1,7 @@
+@file:UnstableApi
 package it.fast4x.rimusic.ui.items
 
+import androidx.annotation.OptIn
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
@@ -8,6 +10,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
@@ -28,6 +31,7 @@ import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import it.fast4x.innertube.Innertube
 import it.fast4x.rimusic.cleanPrefix
@@ -57,6 +61,7 @@ fun AlbumItem(
     yearCentered: Boolean = true,
     showAuthors: Boolean = false,
     disableScrollingText: Boolean,
+    showInfo: Boolean = true,
     isYoutubeAlbum: Boolean = false
 ) {
     AlbumItem(
@@ -71,6 +76,7 @@ fun AlbumItem(
         showAuthors = showAuthors,
         modifier = modifier,
         disableScrollingText = disableScrollingText,
+        showInfo = showInfo,
         isYoutubeAlbum = isYoutubeAlbum
     )
 }
@@ -85,6 +91,7 @@ fun AlbumItem(
     yearCentered: Boolean? = true,
     showAuthors: Boolean? = false,
     isYoutubeAlbum: Boolean = false,
+    showInfo: Boolean = true,
     disableScrollingText: Boolean
 ) {
     AlbumItem(
@@ -98,6 +105,7 @@ fun AlbumItem(
         alternative = alternative,
         modifier = modifier,
         disableScrollingText = disableScrollingText,
+        showInfo = showInfo,
         isYoutubeAlbum = isYoutubeAlbum
     )
 }
@@ -115,6 +123,7 @@ fun AlbumItem(
     alternative: Boolean = false,
     showAuthors: Boolean? = false,
     disableScrollingText: Boolean,
+    showInfo: Boolean = true,
     isYoutubeAlbum: Boolean = false
 ) {
     ItemContainer(
@@ -123,10 +132,15 @@ fun AlbumItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
     ) {
-        Box {
+        Box(
+            modifier = Modifier
+                .conditional(alternative) { fillMaxWidth().aspectRatio(1f) }
+                .conditional(!alternative) { size(thumbnailSizeDp) }
+                .clip(thumbnailShape())
+        ) {
             ImageCacheFactory.Thumbnail(
                 thumbnailUrl = thumbnailUrl,
-                contentScale = ContentScale.FillWidth
+                contentScale = if (alternative) ContentScale.FillWidth else ContentScale.Crop
             )
 
             if (isYoutubeAlbum) {
@@ -141,39 +155,41 @@ fun AlbumItem(
                 )
             }
         }
-        ItemInfoContainer(
-            horizontalAlignment = if (yearCentered == true) Alignment.CenterHorizontally else Alignment.Start
-        ) {
-            BasicText(
-                text = cleanPrefix(title ?: ""),
-                style = typography().xs.semiBold,
-                maxLines = 1, //if (alternative) 1 else 2,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
-            )
+        if (showInfo) {
+            ItemInfoContainer(
+                horizontalAlignment = if (yearCentered == true) Alignment.CenterHorizontally else Alignment.Start
+            ) {
+                BasicText(
+                    text = cleanPrefix(title ?: ""),
+                    style = typography().xs.semiBold,
+                    maxLines = 1, //if (alternative) 1 else 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
+                )
 
-            if (!alternative || showAuthors == true) {
-                authors?.let {
-                    BasicText(
-                        text = cleanPrefix(authors),
-                        style = typography().xs.semiBold.secondary,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
-                    )
+                if (!alternative || showAuthors == true) {
+                    authors?.let {
+                        BasicText(
+                            text = cleanPrefix(authors),
+                            style = typography().xs.semiBold.secondary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier
+                                .conditional(!disableScrollingText) { basicMarquee(iterations = Int.MAX_VALUE) }
+                        )
+                    }
                 }
-            }
 
-            BasicText(
-                text = year ?: "",
-                style = typography().xxs.semiBold.secondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .padding(top = 4.dp)
-            )
+                BasicText(
+                    text = year ?: "",
+                    style = typography().xxs.semiBold.secondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier
+                        .padding(top = 4.dp)
+                )
+            }
         }
     }
 }
@@ -195,7 +211,7 @@ fun AlbumItemPlaceholder(
                 .size(thumbnailSizeDp)
         )
 
-         ItemInfoContainer(
+        ItemInfoContainer(
             horizontalAlignment = if (alternative) Alignment.CenterHorizontally else Alignment.Start
         ) {
             TextPlaceholder()
@@ -216,6 +232,7 @@ fun AlbumItemPlaceholder(
  * New component is more resemble to the final
  * [AlbumItem] that's currently being used.
  */
+@OptIn(UnstableApi::class)
 @Composable
 fun AlbumPlaceholder(
     showYear: Boolean = true,
@@ -223,7 +240,7 @@ fun AlbumPlaceholder(
 ) {
     val thumbnailSizeDp = Dimensions.thumbnails.album
 
-    val thumbnailRoundness by rememberPreference( thumbnailRoundnessKey, ThumbnailRoundness.None )
+    val thumbnailRoundness by rememberPreference( thumbnailRoundnessKey, ThumbnailRoundness.Medium )
 
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
