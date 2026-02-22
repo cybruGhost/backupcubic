@@ -44,7 +44,6 @@ import it.fast4x.rimusic.utils.semiBold
 import it.fast4x.rimusic.utils.thumbnail
 import it.fast4x.rimusic.utils.shimmerEffect
 import me.knighthat.coil.ImageCacheFactory
-import androidx.compose.foundation.layout.aspectRatio
 
 @Composable
 fun ArtistItem(
@@ -116,14 +115,14 @@ fun ArtistItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
     ) {
-   Box(
-            modifier = Modifier
-                .conditional(alternative) { fillMaxWidth().aspectRatio(1f) }
-                .clip(thumbnailShape())
-        ) {
-            ImageCacheFactory.Thumbnail(
-                thumbnailUrl = thumbnailUrl,
-                contentScale = if (alternative) ContentScale.FillWidth else ContentScale.Crop
+        Box {
+            ImageCacheFactory.AsyncImage(
+                thumbnailUrl = thumbnailUrl?.thumbnail(thumbnailSizePx),
+                contentDescription = null,
+                modifier = Modifier
+                    //.clip(CircleShape)
+                    .clip(thumbnailShape())
+                    .requiredSize(thumbnailSizeDp)
             )
             if (isYoutubeArtist) {
                 Image(
