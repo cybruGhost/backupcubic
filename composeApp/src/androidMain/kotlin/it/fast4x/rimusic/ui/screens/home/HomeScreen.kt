@@ -83,7 +83,7 @@ fun HomeScreen(
     val preferences = LocalContext.current.preferences
     val enableQuickPicksPage by rememberPreference(enableQuickPicksPageKey, true)
 
-    PersistMapCleanup("home/")
+//    PersistMapCleanup("home/")
 
     val openTabFromShortcut1 by remember { mutableIntStateOf(openTabFromShortcut) }
 

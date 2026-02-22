@@ -108,9 +108,8 @@ fun HomeArtists(
     var filterBy by rememberPreference(filterByKey, FilterBy.All)
 
 
-    var items by persistList<Artist>( "")
-    var itemsToFilter by persistList<Artist>( "home/artists" )
-
+    var items by persistList<Artist>( "home/artists/items")
+    var itemsToFilter by persistList<Artist>( "home/artists/itemsToFilter" )
     var itemsOnDisplay by persistList<Artist>( "home/artists/on_display" )
 
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)

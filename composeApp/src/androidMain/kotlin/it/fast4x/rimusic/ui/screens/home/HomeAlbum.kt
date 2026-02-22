@@ -126,8 +126,8 @@ fun HomeAlbums(
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
     var albumType by rememberPreference(albumTypeKey, AlbumsType.Favorites )
 
-    var items by persistList<Album>( "home/albums" )
-    var itemsToFilter by persistList<Album>( "home/artists" )
+    var items by persistList<Album>( "home/albums/items" )
+    var itemsToFilter by persistList<Album>( "home/albums/itemsToFilter" )
     var filterBy by rememberPreference(filterByKey, FilterBy.All)
     val (colorPalette, typography) = LocalAppearance.current
 

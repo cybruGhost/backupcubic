@@ -269,7 +269,7 @@ fun PlaylistSongList(
             }!!
     } else playlistPage?.songs = playlistSongs
 
-    var playlistNotLikedSongs by persistList<Innertube.SongItem>("")
+    var playlistNotLikedSongs by persistList<Innertube.SongItem>("playlist/$browseId/notLikedSongs")
 
     var searching by rememberSaveable { mutableStateOf(false) }
 

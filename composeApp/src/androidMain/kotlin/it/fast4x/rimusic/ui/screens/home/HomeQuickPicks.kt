@@ -232,34 +232,34 @@ fun HomeQuickPicks(
     val windowInsets = LocalPlayerAwareWindowInsets.current
     var playEventType by rememberPreference(playEventsTypeKey, PlayEventsType.CasualPlayed)
 // ===== ADDEED THE REWIND SECTION HERE =====
-// Check if current date is between Dec 6th and Dec 31st
-val calendar = java.util.Calendar.getInstance()
-val currentMonth = calendar.get(java.util.Calendar.MONTH) // 0-11, where 11=December
-val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
+    // Check if current date is between Dec 6th and Dec 31st
+    val calendar = java.util.Calendar.getInstance()
+    val currentMonth = calendar.get(java.util.Calendar.MONTH) // 0-11, where 11=December
+    val currentDay = calendar.get(java.util.Calendar.DAY_OF_MONTH)
 
-    var trendingList by remember { mutableStateOf<List<Song>>(emptyList()) }
-    var trending by persist<Song?>("home/trending")
-    val trendingInit by persist<Song?>(tag = "home/trending")
+    var trendingList by persistList<Song>("home/quickpicks/trending_list")
+    var trending by persist<Song?>("home/quickpicks/trending")
+    val trendingInit by persist<Song?>(tag = "home/quickpicks/trending_init")
     var trendingPreference by rememberPreference(quickPicsTrendingSongKey, trendingInit)
     var showNewUserMessage by remember { mutableStateOf(false) }
 
     // Variable to store the real most popular song (before shuffle)
     var mostPopularSong by remember { mutableStateOf<Song?>(null) }
 
-    var relatedPageResult by persist<Result<Innertube.RelatedPage?>?>(tag = "home/relatedPageResult")
+    var relatedPageResult by persist<Result<Innertube.RelatedPage?>?>(tag = "home/quickpicks/relatedPageResult")
     var relatedInit by persist<Innertube.RelatedPage?>(tag = "home/relatedPage")
     var relatedPreference by rememberPreference(quickPicsRelatedPageKey, relatedInit)
 
-    var discoverPageResult by persist<Result<Innertube.DiscoverPage?>>("home/discoveryAlbums")
-    var discoverPageInit by persist<Innertube.DiscoverPage>("home/discoveryAlbums")
+    var discoverPageResult by persist<Result<Innertube.DiscoverPage?>>("home/quickpicks/discoveryAlbumsResult")
+    var discoverPageInit by persist<Innertube.DiscoverPage>("home/quickpicks/discoveryAlbumsInit")
     var discoverPagePreference by rememberPreference(quickPicsDiscoverPageKey, discoverPageInit)
 
-    var homePageResult by persist<Result<HomePage?>>("home/homePage")
-    var homePageInit by persist<HomePage?>("home/homePage")
+    var homePageResult by persist<Result<HomePage?>>("home/quickpicks/homePageResult")
+    var homePageInit by persist<HomePage?>("home/quickpicks/homePageInit")
     var homePagePreference by rememberPreference(quickPicsHomePageKey, homePageInit)
 
-    var chartsPageResult by persist<Result<Innertube.ChartsPage?>>("home/chartsPage")
-    var chartsPageInit by persist<Innertube.ChartsPage>("home/chartsPage")
+    var chartsPageResult by persist<Result<Innertube.ChartsPage?>>("home/quickpicks/chartsPageResult")
+    var chartsPageInit by persist<Innertube.ChartsPage>("home/quickpicks/chartsPageInit")
 //    var chartsPagePreference by rememberPreference(quickPicsChartsPageKey, chartsPageInit)
 
     var downloadState by remember {
@@ -923,58 +923,77 @@ if (showTips) {
     }
 
                     BasicText(
-                        text = playEventType.text,
-                        style = typography().xxs.secondary,
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp)
-                            .padding(bottom = 8.dp)
-                    )
+                text = playEventType.text,
+                style = typography().xxs.secondary,
+                modifier = Modifier
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 8.dp)
+            )
 
-                    if (relatedPageResult != null) {
-                        // Prepare the final list : 6 locals (or less depending on the local recommandations number) + 14 YT recommendations (or less), then shuffle to show max 21 songs
-                        val recommendations = remember(trendingList, relatedInit, localCount, playEventType) {
-                            val mainIds = trendingList.map { it.id }.toSet()
-                            if (playEventType == PlayEventsType.MostPlayed || playEventType == PlayEventsType.LastPlayed) {
-                                val first = trendingList.firstOrNull()
-                                val others = trendingList.drop(1)
-                                val relatedSongs = relatedInit?.songs
-                                    ?.map { it.asSong }
-                                    ?.filter { it.id !in mainIds }
-                                    ?.distinctBy { it.id }
-                                        ?.take(21 - (1 + others.size))
-                                    .orEmpty()
-                                val total = (others + relatedSongs)
-                                val extra = if (total.size < 21) {
-                                    relatedInit?.songs
-                                        ?.map { it.asSong }
-                                        ?.filter { it.id !in (others.map { s -> s.id } + (first?.id ?: "")) }
-                                        ?.distinctBy { it.id }
-                                        ?.take(21 - total.size)
-                                        .orEmpty()
-                                } else emptyList()
-                                (listOfNotNull(first) + (total + extra).shuffled()).distinctBy { it.id }
-                            } else {
-                                // Random Mode will randomize the list : all mixed
-                                val locals = trendingList.take(localCount)
-                                val relatedSongs = relatedInit?.songs
-                                    ?.map { it.asSong }
-                                    ?.filter { it.id !in locals.map { it.id } }
-                                    ?.distinctBy { it.id }
-                                    ?.take(21 - locals.size)
-                                    .orEmpty()
-                                val total = (locals + relatedSongs)
-                                val extra = if (total.size < 21) {
-                                    relatedInit?.songs
-                                        ?.map { it.asSong }
-                                        ?.filter { it.id !in total.map { s -> s.id } }
-                                        ?.distinctBy { it.id }
-                                        ?.take(21 - total.size)
-                                        .orEmpty()
-                                } else emptyList()
-                                (total + extra).shuffled().distinctBy { it.id }
-                            }
-                        }
-
+            if (relatedPageResult != null) {
+                // Prepare the final list : 6 locals (or less depending on the local recommandations number) + 14 YT recommendations (or less), then shuffle to show max 21 songs
+                
+                // KEEP the persistList for persistence
+                var recommendations by persistList<Song>("home/quickpicks/recommendations_list")
+                
+                // Use LaunchedEffect to update recommendations when source data changes
+                LaunchedEffect(trendingList, relatedInit, localCount, playEventType) {
+                    val mainIds = trendingList.map { it.id }.toSet()
+                    
+                    // Create a stable seed based on the content IDs for consistent shuffling
+                    val seed = (trendingList.joinToString { it.id } + 
+                                (relatedInit?.songs?.joinToString { it.key } ?: "")).hashCode()
+                    val random = kotlin.random.Random(seed)
+                    
+                    val newRecommendations = if (playEventType == PlayEventsType.MostPlayed || 
+                                                playEventType == PlayEventsType.LastPlayed) {
+                        val first = trendingList.firstOrNull()
+                        val others = trendingList.drop(1)
+                        val relatedSongs = relatedInit?.songs
+                            ?.map { it.asSong }
+                            ?.filter { it.id !in mainIds }
+                            ?.distinctBy { it.id }
+                            ?.take(21 - (1 + others.size))
+                            .orEmpty()
+                        val total = (others + relatedSongs)
+                        val extra = if (total.size < 21) {
+                            relatedInit?.songs
+                                ?.map { it.asSong }
+                                ?.filter { it.id !in (others.map { s -> s.id } + (first?.id ?: "")) }
+                                ?.distinctBy { it.id }
+                                ?.take(21 - total.size)
+                                .orEmpty()
+                        } else emptyList()
+                        
+                        // Use seeded random for consistent shuffling
+                        (listOfNotNull(first) + (total + extra)).shuffled(random).distinctBy { it.id }
+                    } else {
+                        // Random Mode will randomize the list : all mixed
+                        val locals = trendingList.take(localCount)
+                        val relatedSongs = relatedInit?.songs
+                            ?.map { it.asSong }
+                            ?.filter { it.id !in locals.map { it.id } }
+                            ?.distinctBy { it.id }
+                            ?.take(21 - locals.size)
+                            .orEmpty()
+                        val total = (locals + relatedSongs)
+                        val extra = if (total.size < 21) {
+                            relatedInit?.songs
+                                ?.map { it.asSong }
+                                ?.filter { it.id !in total.map { s -> s.id } }
+                                ?.distinctBy { it.id }
+                                ?.take(21 - total.size)
+                                .orEmpty()
+                        } else emptyList()
+                        
+                        // Use seeded random for consistent shuffling
+                        (total + extra).shuffled(random).distinctBy { it.id }
+                    }
+                    
+                    // Update the persisted recommendations
+                    recommendations = newRecommendations
+                }
+                
                         LazyHorizontalGrid(
                             state = quickPicksLazyGridState,
                             rows = GridCells.Fixed(if (relatedInit != null) 3 else 1),
@@ -1170,7 +1189,7 @@ notificationInit?.let { notification ->
                                 .distinctUntilChanged()
                     }.collectAsState( emptyList(), Dispatchers.IO )
 
-                    var newReleaseAlbumsFiltered by persistList<Innertube.AlbumItem>("discovery/newalbumsartist")
+                     var newReleaseAlbumsFiltered by persistList<Innertube.AlbumItem>("home/shared/newalbumsartist")
                     page.newReleaseAlbums.forEach { album ->
                         artists.forEach { artist ->
                             if (artist.name == album.authors?.first()?.name) {

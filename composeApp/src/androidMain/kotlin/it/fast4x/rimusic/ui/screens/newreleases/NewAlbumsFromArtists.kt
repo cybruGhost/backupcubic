@@ -63,7 +63,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 fun NewAlbumsFromArtists(
     navController: NavController
 ) {
-    var discoverPage by persist<Result<Innertube.DiscoverPageAlbums>>("home/discoveryAlbums")
+     var discoverPage by persist<Result<Innertube.DiscoverPageAlbums>>("newreleases/albumsFromArtists/pageResult")
     LaunchedEffect(Unit) {
         discoverPage = Innertube.discoverPageNewAlbums()
     }
@@ -100,7 +100,7 @@ fun NewAlbumsFromArtists(
                         .distinctUntilChanged()
             }.collectAsState( emptyList(), Dispatchers.IO )
 
-            var newReleaseAlbumsFiltered by persistList<Innertube.AlbumItem>("discovery/newalbumsartist")
+          var newReleaseAlbumsFiltered by persistList<Innertube.AlbumItem>("home/shared/newalbumsartist")
             page.newReleaseAlbums.forEach { album ->
                 artists.forEach { artist ->
                     if (artist.name == album.authors?.first()?.name) {

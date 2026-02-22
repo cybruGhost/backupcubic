@@ -113,6 +113,9 @@ import it.fast4x.innertube.models.bodies.BrowseBody
 import it.fast4x.innertube.requests.playlistPage
 import it.fast4x.innertube.requests.song
 import it.fast4x.innertube.utils.LocalePreferenceItem
+import it.fast4x.compose.persist.PersistMap
+import it.fast4x.compose.persist.PersistMapOwner
+import it.fast4x.compose.persist.LocalPersistMap
 import it.fast4x.innertube.utils.LocalePreferences
 import it.fast4x.innertube.utils.NewPipeDownloaderImpl
 import it.fast4x.innertube.utils.ProxyPreferenceItem
@@ -251,8 +254,8 @@ import kotlin.system.exitProcess
 class MainActivity :
 //MonetCompatActivity(),
     AppCompatActivity(),
-    MonetColorsChangedListener
-//,PersistMapOwner
+   MonetColorsChangedListener,
+    PersistMapOwner
 {
     var downloadHelper = MyDownloadHelper
 
@@ -275,7 +278,7 @@ class MainActivity :
     private var binder by mutableStateOf<PlayerServiceModern.Binder?>(null)
     private var intentUriData by mutableStateOf<Uri?>(null)
 
-    //override lateinit var persistMap: PersistMap
+   override val persistMap = PersistMap()
 
     private var sensorManager: SensorManager? = null
     private var acceleration = 0f
@@ -995,6 +998,7 @@ class MainActivity :
                             LocalDownloadHelper provides downloadHelper,
                             LocalPlayerSheetState provides playerState,
                             LocalMonetCompat provides monet,
+                            LocalPersistMap provides persistMap,
                             //LocalInternetConnected provides internetConnected
                         ) {
 

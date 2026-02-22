@@ -139,7 +139,7 @@ fun HistoryList(
         isLocalLoading = false
     }
 
-    var historyPage by persist<Result<HistoryPage>>("home/historyPage")
+    var historyPage by persist<Result<HistoryPage>>("home/history/pageResult")
     LaunchedEffect(historyType) {
         if (historyType == HistoryType.YTMHistory && isYouTubeLoggedIn()) {
             isYTMLoading = true
