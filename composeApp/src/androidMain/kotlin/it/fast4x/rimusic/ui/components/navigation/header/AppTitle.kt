@@ -40,6 +40,7 @@ import it.fast4x.rimusic.typography
 import it.fast4x.rimusic.ui.components.themed.Button
 import it.fast4x.rimusic.utils.semiBold
 import me.knighthat.utils.Toaster
+import androidx.compose.ui.unit.sp
 
 private fun appIconClickAction(
     navController: NavController,
@@ -101,7 +102,7 @@ private fun AppLogoText( navController: NavController ) {
     BasicText(
         text = "Cubic-Music", // Changed from "Cubic-Music" to just "Cubic"
         style = TextStyle(
-            fontSize = typography().xl.semiBold.fontSize, // Kept xl size for boldness
+            fontSize = 20.sp, // Slightly higher than typical medium (~16-18sp), but smaller than xl (~24sp)
             fontWeight = typography().xl.semiBold.fontWeight, // Using xl fontWeight
             fontFamily = typography().xl.semiBold.fontFamily, // Using xl fontFamily
             color = AppBar.contentColor()

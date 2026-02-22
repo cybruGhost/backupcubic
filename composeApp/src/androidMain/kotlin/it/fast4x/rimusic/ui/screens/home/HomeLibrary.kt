@@ -99,7 +99,7 @@ fun HomeLibrary(
     var playlistType by rememberPreference(playlistTypeKey, PlaylistsType.Playlist)
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
 
-    var items by persistList<PlaylistPreview>("home/playlists")
+    var items by persistList<PlaylistPreview>("home/playlists/items")
 
     var itemsOnDisplay by persistList<PlaylistPreview>("home/playlists/on_display")
 

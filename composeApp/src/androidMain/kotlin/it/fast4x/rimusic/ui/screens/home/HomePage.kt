@@ -102,7 +102,7 @@ fun HomePage(
     val windowInsets = LocalPlayerAwareWindowInsets.current
 
 
-    var homePageResult by persist<Result<HomePage?>>("home/homePage")
+     var homePageResult by persist<Result<HomePage?>>("home/home/pageResult")
 
     var downloadState by remember {
         mutableStateOf(Download.STATE_STOPPED)

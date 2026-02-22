@@ -59,7 +59,7 @@ fun MoodsPage(
 ) {
     val windowInsets = LocalPlayerAwareWindowInsets.current
 
-    var discoverPage by persist<Result<Innertube.DiscoverPage>>("home/discoveryMoods")
+  var discoverPage by persist<Result<Innertube.DiscoverPage>>("moods/discovery/pageResult")
     LaunchedEffect(Unit) {
         discoverPage = Innertube.discoverPage()
     }
