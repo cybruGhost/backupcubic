@@ -193,7 +193,7 @@ fun AlbumScreen(
                 ) {
                     albumPage.value?.let {
                         AsyncImage(
-                            model = albumPage.value!!.thumbnail?.url?.resize(1200, 1200),
+                            model = albumPage.value!!.thumbnail?.url?.resize(1000, 1000),
                             contentDescription = "loading...",
                             modifier = Modifier
                                 .fillMaxWidth()

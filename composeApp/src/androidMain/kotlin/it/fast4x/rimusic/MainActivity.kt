@@ -767,7 +767,7 @@ class MainActivity :
 
                                 if (colorPaletteName == ColorPaletteName.Dynamic) {
                                     // Toujours appeler setDynamicPalette quand on passe au thème dynamique
-                                    val currentArtworkUri = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri?.thumbnail(1200)?.toString()
+                                    val currentArtworkUri = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri?.thumbnail(1000)?.toString()
                                     setDynamicPalette(currentArtworkUri)
                                 } else {
                                     //bitmapListenerJob?.cancel()
@@ -845,7 +845,7 @@ class MainActivity :
                     val colorPaletteName =
                         getEnum(colorPaletteNameKey, ColorPaletteName.Dynamic)
                     if (colorPaletteName == ColorPaletteName.Dynamic) {
-                        val currentArtworkUri = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri?.thumbnail(1200)?.toString()
+                      val currentArtworkUri = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri?.thumbnail(1000)?.toString()
                         setDynamicPalette(currentArtworkUri)
                     }
 
@@ -973,7 +973,7 @@ class MainActivity :
                                         PipModuleCover(
                                             url = binder?.player?.currentMediaItem?.mediaMetadata?.artworkUri
                                                 ?.toString()
-                                                ?.resize(1200, 1200)
+                                                ?.resize(1000, 1000)
                                                 .orEmpty()
                                         )
                                     }
@@ -1139,7 +1139,7 @@ class MainActivity :
                                 }
                             }
 
-                                                         setDynamicPalette(mediaItem?.mediaMetadata?.artworkUri?.thumbnail(1200)?.toString())
+                                                       setDynamicPalette(mediaItem?.mediaMetadata?.artworkUri?.thumbnail(1000)?.toString())
                         }
 
 

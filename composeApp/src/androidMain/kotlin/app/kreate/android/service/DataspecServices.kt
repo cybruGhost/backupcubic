@@ -17,6 +17,7 @@ import com.google.gson.Gson
 import com.grack.nanojson.JsonObject
 import io.ktor.client.statement.bodyAsText
 import it.fast4x.innertube.Innertube
+import it.fast4x.rimusic.models.Song
 import it.fast4x.innertube.Innertube.createPoTokenChallenge
 import it.fast4x.innertube.models.PlayerResponse
 import it.fast4x.innertube.models.bodies.NextBody
@@ -108,6 +109,9 @@ private fun upsertSongFormat( videoId: String, format: PlayerResponse.StreamingD
 
     runCatching {
         Database.asyncTransaction {
+                  // Ensure Song exists first to satisfy Foreign Key constraint
+            songTable.insertIgnore(Song.makePlaceholder(videoId))
+
             formatTable.insertIgnore(Format(
                 videoId,
                 format.itag,
