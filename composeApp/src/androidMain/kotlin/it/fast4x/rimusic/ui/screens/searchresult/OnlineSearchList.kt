@@ -181,6 +181,7 @@ fun OnlineSearchList(
                                 .clip(thumbnailShape())
                         )
                     }
+
                     Column(
                         verticalArrangement = Arrangement.spacedBy(8.dp),
                         modifier = Modifier.weight(1f)

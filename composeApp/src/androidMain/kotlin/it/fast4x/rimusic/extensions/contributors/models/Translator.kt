@@ -30,7 +30,7 @@ import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.*
 import com.google.gson.annotations.SerializedName
 import app.kreate.android.R
 import it.fast4x.rimusic.ui.styling.favoritesIcon

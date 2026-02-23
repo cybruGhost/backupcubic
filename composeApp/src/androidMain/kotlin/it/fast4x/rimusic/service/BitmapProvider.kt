@@ -87,7 +87,7 @@ class BitmapProvider(
 
         loadJob = scope.launch(Dispatchers.IO) {
             try {
-                val loadedBitmap = ImageCacheFactory.loadBitmap(uri.toString(), allowHardware = false)
+              val loadedBitmap: Bitmap? = ImageCacheFactory.loadBitmap(uri.toString(), allowHardware = false)
                 
                 withContext(Dispatchers.Main) {
                     if (loadedBitmap != null) {

@@ -31,7 +31,6 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
-import coil3.request.ImageRequest
 import it.fast4x.innertube.Innertube
 import it.fast4x.rimusic.cleanPrefix
 
@@ -42,7 +41,7 @@ import it.fast4x.rimusic.typography
 import it.fast4x.rimusic.utils.conditional
 import it.fast4x.rimusic.utils.secondary
 import it.fast4x.rimusic.utils.semiBold
-import it.fast4x.rimusic.utils.thumbnail
+import me.knighthat.coil.thumbnail
 import it.fast4x.rimusic.utils.shimmerEffect
 import me.knighthat.coil.ImageCacheFactory
 

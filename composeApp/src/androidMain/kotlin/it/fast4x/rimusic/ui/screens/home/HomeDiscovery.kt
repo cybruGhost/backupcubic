@@ -109,7 +109,7 @@ fun HomeDiscovery(
     val thumbnailSizeDp = 20.dp
     //val thumbnailSizePx = thumbnailSizeDp.px
 
-    var discoverPage by persist<Result<Innertube.DiscoverPage>>("home/discovery")
+   var discoverPage by persist<Result<Innertube.DiscoverPage>>("home/discovery/pageResult")
 
     LaunchedEffect(key1 = Unit) {
         discoverPage = Innertube.discoverPage()
@@ -167,7 +167,7 @@ fun HomeDiscovery(
                             .distinctUntilChanged()
                 }.collectAsState( emptyList(), Dispatchers.IO )
 
-                var newReleaseAlbumsFiltered by persistList<Innertube.AlbumItem>("discovery/newalbumsartist")
+               var newReleaseAlbumsFiltered by persistList<Innertube.AlbumItem>("home/shared/newalbumsartist")
                 page.newReleaseAlbums.forEach { album ->
                     artists.forEach { artist ->
                         if (artist.name == album.authors?.first()?.name) {

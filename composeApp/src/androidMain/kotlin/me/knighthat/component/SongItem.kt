@@ -88,6 +88,7 @@ import me.knighthat.component.menu.song.SongItemMenu
 import me.knighthat.component.tab.ItemSelector
 import timber.log.Timber
 
+
 private interface SongIndicator: Icon {
     override val sizeDp: Dp
         get() = 18.dp

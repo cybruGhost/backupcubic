@@ -20,8 +20,6 @@ import androidx.media3.exoplayer.offline.DownloadRequest
 import androidx.media3.exoplayer.offline.DownloadService
 import androidx.media3.exoplayer.scheduler.Requirements
 import app.kreate.android.service.createDataSourceFactory
-import coil3.request.CachePolicy
-import coil3.request.ImageRequest
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
@@ -46,7 +44,7 @@ import it.fast4x.rimusic.utils.getEnum
 import it.fast4x.rimusic.utils.isNetworkConnected
 import it.fast4x.rimusic.utils.preferences
 import it.fast4x.rimusic.utils.removeDownload
-import it.fast4x.rimusic.utils.thumbnail
+import me.knighthat.coil.thumbnail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -60,6 +58,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.thumbnail
 import me.knighthat.utils.Toaster
 import timber.log.Timber
 import java.io.File
@@ -313,14 +312,7 @@ object MyDownloadHelper {
                 println("MyDownloadHelper scheduleDownload exception ${it.stackTraceToString()}")
             }
             downloadSyncedLyrics(mediaItem.asSong)
-            ImageCacheFactory.LOADER.execute(
-                ImageRequest.Builder(context)
-                    .networkCachePolicy(CachePolicy.ENABLED)
-                    .data(imageUrl)
-                    .size(1200)
-                    .diskCacheKey(imageUrl.toString())
-                    .build()
-            )
+            ImageCacheFactory.preloadImage(mediaItem.mediaMetadata.artworkUri.toString())
         }
     }
 

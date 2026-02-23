@@ -9,7 +9,7 @@ suspend fun getBitmapFromUrl(context: Context, url: String): Bitmap {
         throw IllegalArgumentException("URL is empty or null")
     }
     
-    val bitmap = ImageCacheFactory.loadBitmap(url, allowHardware = false)
+    val bitmap: Bitmap? = ImageCacheFactory.loadBitmap(url, allowHardware = false)
     
     if (bitmap != null && bitmap.width > 0 && bitmap.height > 0 && !bitmap.isRecycled) {
         return bitmap

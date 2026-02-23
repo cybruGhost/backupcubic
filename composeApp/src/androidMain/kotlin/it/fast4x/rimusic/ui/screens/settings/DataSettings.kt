@@ -20,7 +20,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
-import coil.annotation.ExperimentalCoilApi
 import it.fast4x.rimusic.Database
 import it.fast4x.rimusic.LocalPlayerServiceBinder
 import it.fast4x.rimusic.colorPalette
@@ -59,8 +58,7 @@ import me.knighthat.component.import.ImportDatabase
 import me.knighthat.component.import.ImportMigration
 import me.knighthat.component.import.ImportSettings
 import me.knighthat.utils.Toaster
-import me.knighthat.coil.ImageCacheFactory
-// First, make sure you have these imports at the top of your DataSettings.kt file:
+import me.knighthat.coil.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.runtime.*
 import androidx.compose.ui.unit.dp
@@ -85,11 +83,11 @@ import androidx.compose.ui.window.Dialog
 
 
 @SuppressLint("SuspiciousIndentation")
-@OptIn(ExperimentalCoilApi::class)
 @ExperimentalAnimationApi
 @UnstableApi
 @Composable
 fun DataSettings() {
+    
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
 

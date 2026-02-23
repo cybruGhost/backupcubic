@@ -27,7 +27,7 @@ import it.fast4x.rimusic.utils.rememberPreference
 import it.fast4x.rimusic.utils.transitionEffectKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
-import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.*
 import me.knighthat.utils.PropUtils
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi

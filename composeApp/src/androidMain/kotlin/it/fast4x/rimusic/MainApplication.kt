@@ -5,8 +5,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.os.Build
 import android.content.Context
-import coil3.ImageLoader
 import coil3.SingletonImageLoader
+import coil3.ImageLoader
 
 import app.kreate.android.R
 import it.fast4x.rimusic.service.modern.PlayerServiceModern
@@ -40,7 +40,7 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         Thread.setDefaultUncaughtExceptionHandler(CaptureCrash(dir.absolutePath))
         
         if (logEnabled) {
-            Timber.plant(FileLoggingTree(File(dir, "Cubic-Music_log.txt")))
+            Timber.plant(FileLoggingTree(File(dir, "N-Zik_log.txt")))
             Timber.d("Log enabled at ${dir.absolutePath}")
         } else {
             Timber.uprootAll()
@@ -87,7 +87,15 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         }
     }
 
-    override fun newImageLoader(context: Context): ImageLoader = ImageLoader.Builder(context).build()
+    override fun newImageLoader(context: Context): ImageLoader {
+        return if (Dependencies.isInitialized) {
+            me.knighthat.coil.ImageCacheFactory.LOADER
+        } else {
+            ImageLoader.Builder(context).build()
+        }
+    }
+
+
 
 }
 
@@ -95,7 +103,11 @@ object Dependencies {
     lateinit var application: MainApplication
         private set
 
+    val isInitialized: Boolean
+        get() = ::application.isInitialized
+
     internal fun init(application: MainApplication) {
+
         this.application = application
     }
 }

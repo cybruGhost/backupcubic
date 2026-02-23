@@ -92,16 +92,11 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.compose.rememberNavController
-import androidx.palette.graphics.Palette
 import app.kreate.android.BuildConfig
 import app.kreate.android.R
 import app.kreate.android.Threads
 import android.graphics.Bitmap
-import android.graphics.drawable.Drawable
-import coil3.Image
-import coil3.request.allowHardware
-import coil3.toBitmap
-import androidx.core.graphics.drawable.toBitmap
+import androidx.palette.graphics.Palette
 import com.kieronquinn.monetcompat.core.MonetActivityAccessException
 import com.kieronquinn.monetcompat.core.MonetCompat
 import com.kieronquinn.monetcompat.interfaces.MonetColorsChangedListener
@@ -219,7 +214,6 @@ import it.fast4x.rimusic.utils.proxyHostnameKey
 import it.fast4x.rimusic.utils.proxyModeKey
 import it.fast4x.rimusic.utils.proxyPortKey
 import it.fast4x.rimusic.utils.rememberPreference
-import it.fast4x.rimusic.utils.resize
 import it.fast4x.rimusic.utils.restartActivityKey
 import it.fast4x.rimusic.utils.setDefaultPalette
 import it.fast4x.rimusic.utils.shakeEventEnabledKey
@@ -227,7 +221,7 @@ import it.fast4x.rimusic.utils.showButtonPlayerVideoKey
 import it.fast4x.rimusic.utils.showSearchTabKey
 import it.fast4x.rimusic.utils.showTotalTimeQueueKey
 import it.fast4x.rimusic.utils.textCopyToClipboard
-import it.fast4x.rimusic.utils.thumbnail
+import me.knighthat.coil.thumbnail
 import it.fast4x.rimusic.utils.thumbnailRoundnessKey
 import it.fast4x.rimusic.utils.transitionEffectKey
 import it.fast4x.rimusic.utils.useSystemFontKey
@@ -237,7 +231,7 @@ import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.*
 import me.knighthat.invidious.Invidious
 import me.knighthat.piped.Piped
 import me.knighthat.utils.Toaster
@@ -254,7 +248,7 @@ import kotlin.system.exitProcess
 class MainActivity :
 //MonetCompatActivity(),
     AppCompatActivity(),
-   MonetColorsChangedListener,
+    MonetColorsChangedListener,
     PersistMapOwner
 {
     var downloadHelper = MyDownloadHelper
@@ -278,7 +272,7 @@ class MainActivity :
     private var binder by mutableStateOf<PlayerServiceModern.Binder?>(null)
     private var intentUriData by mutableStateOf<Uri?>(null)
 
-   override val persistMap = PersistMap()
+    override val persistMap = PersistMap()
 
     private var sensorManager: SensorManager? = null
     private var acceleration = 0f
@@ -507,7 +501,7 @@ class MainActivity :
             val navController = rememberNavController()
             var showPlayer by rememberSaveable { mutableStateOf(false) }
             var switchToAudioPlayer by rememberSaveable { mutableStateOf(false) }
-            var animatedGradient by rememberPreference(animatedGradientKey, AnimatedGradient.Linear)
+            var animatedGradient by rememberPreference(animatedGradientKey, AnimatedGradient.FluidCoverColorGradient)
             var customColor by rememberPreference(customColorKey, Color.Green.hashCode())
             val lightTheme = colorPaletteMode == ColorPaletteMode.Light || (colorPaletteMode == ColorPaletteMode.System && (!isSystemInDarkTheme()))
 
@@ -614,24 +608,26 @@ class MainActivity :
                     preferences.getEnum(colorPaletteModeKey, ColorPaletteMode.Dark)
                 coroutineScope.launch(Dispatchers.IO) {
                     try {
-                        val bitmap = ImageCacheFactory.loadBitmap(url, allowHardware = false)
+                        val bitmap: Bitmap? = ImageCacheFactory.loadBitmap(url, allowHardware = false)
+
                         
                         val isPicthBlack = colorPaletteMode == ColorPaletteMode.PitchBlack
                         val isDark =
                             colorPaletteMode == ColorPaletteMode.Dark || isPicthBlack || (colorPaletteMode == ColorPaletteMode.System && isSystemInDarkTheme)
 
                         if (bitmap != null) {
-                            val palette = Palette
+                            val palette: Palette = Palette
                                 .from(bitmap)
                                 .maximumColorCount(8)
-                                .addFilter(if (isDark) ({ _, hsl -> hsl[0] !in 36f..100f }) else null)
+                                .addFilter(if (isDark) ({ _: Int, hsl: FloatArray -> hsl[0] !in 36f..100f }) else null)
                                 .generate()
 
-                            dynamicColorPaletteOf(bitmap, isDark)?.let {
+
+                            dynamicColorPaletteOf(bitmap, isDark)?.let { paletteResult ->
                                 withContext(Dispatchers.Main) {
-                                    setSystemBarAppearance(it.isDark)
+                                    setSystemBarAppearance(paletteResult.isDark)
                                     val newAppearance = appearance.copy(
-                                        colorPalette = if (!isPicthBlack) it else it.copy(
+                                        colorPalette = if (!isPicthBlack) paletteResult else paletteResult.copy(
                                             background0 = Color.Black,
                                             background1 = Color.Black,
                                             background2 = Color.Black,
@@ -639,11 +635,12 @@ class MainActivity :
                                             background4 = Color.Black,
                                             // text = Color.White
                                         ),
-                                        typography = appearance.typography.copy(it.text)
+                                        typography = appearance.typography.copy(paletteResult.text)
                                     )
                                     appearance = newAppearance
                                 }
                             }
+
                         }
                     } catch (e: Exception) {
                         e.printStackTrace()
@@ -1019,7 +1016,7 @@ class MainActivity :
 
                             val thumbnailRoundness by rememberPreference(
                                 thumbnailRoundnessKey,
-                                ThumbnailRoundness.Heavy
+                                ThumbnailRoundness.Medium
                             )
 
                             val isVideo = binder?.player?.currentMediaItem?.isVideo ?: false

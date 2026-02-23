@@ -81,11 +81,12 @@ import it.fast4x.rimusic.utils.rememberPreference
 import it.fast4x.rimusic.utils.secondary
 import it.fast4x.rimusic.utils.semiBold
 import it.fast4x.rimusic.utils.shimmerEffect
-import it.fast4x.rimusic.utils.thumbnail
+import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.size
+import me.knighthat.coil.thumbnail
+import me.knighthat.utils.Toaster
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
-import me.knighthat.coil.ImageCacheFactory
-import me.knighthat.utils.Toaster
 
 
 @UnstableApi
@@ -722,6 +723,7 @@ fun SongItem(
  * New component is more resemble to the final
  * SongItem that's currently being used.
  */
+ @androidx.annotation.OptIn(UnstableApi::class)
 @Composable
 fun SongItemPlaceholder( modifier: Modifier = Modifier ) {
     Row(

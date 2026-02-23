@@ -97,7 +97,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
-import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.*
 import me.knighthat.utils.Toaster
 import timber.log.Timber
 import java.net.UnknownHostException
