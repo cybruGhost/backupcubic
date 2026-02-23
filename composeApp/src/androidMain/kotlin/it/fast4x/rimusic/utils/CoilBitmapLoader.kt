@@ -7,9 +7,7 @@ import android.net.Uri
 import androidx.media3.common.util.BitmapLoader
 import androidx.media3.common.util.UnstableApi
 import me.knighthat.coil.ImageCacheFactory
-import coil3.request.ImageRequest
-import coil3.request.allowHardware
-import coil3.request.bitmapConfig
+
 import coil3.toBitmap
 import com.google.common.util.concurrent.ListenableFuture
 import kotlinx.coroutines.CoroutineScope
@@ -32,14 +30,7 @@ class CoilBitmapLoader(
 
     override fun loadBitmap(uri: Uri): ListenableFuture<Bitmap> =
         scope.future(Dispatchers.IO) {
-            val imageRequest = ImageRequest.Builder(context)
-                .data(uri.toString())
-                .bitmapConfig(Bitmap.Config.ARGB_8888)
-                .allowHardware(false)
-                .size(bitmapSize, bitmapSize)
-                .build()
-            
-            val result = ImageCacheFactory.LOADER.execute(imageRequest)
-            result.image?.toBitmap() ?: error("Could not load image")
+           val bitmap = ImageCacheFactory.loadBitmap(uri.toString(), allowHardware = false)
+            bitmap ?: error("Could not load image")
         }
 }

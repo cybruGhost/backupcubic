@@ -69,6 +69,7 @@ import it.fast4x.rimusic.ui.items.PlaylistItem
 import it.fast4x.rimusic.ui.styling.Dimensions
 import it.fast4x.rimusic.ui.styling.px
 import it.fast4x.rimusic.utils.conditional
+import me.knighthat.coil.ImageCacheFactory
 
 @androidx.annotation.OptIn(UnstableApi::class)
 @OptIn(ExperimentalFoundationApi::class, ExperimentalAnimationApi::class)
@@ -181,6 +182,7 @@ fun OnlineSearchGrid(
                     )
                 }
                 is Innertube.PlaylistItem -> {
+
                     PlaylistItem(
                         playlist = item,
                         thumbnailSizePx = thumbnailSizePx,
@@ -199,6 +201,7 @@ fun OnlineSearchGrid(
                     )
                 }
                 is Innertube.ArtistItem -> {
+
                     ArtistItem(
                         artist = item,
                         thumbnailSizePx = thumbnailSizePx,

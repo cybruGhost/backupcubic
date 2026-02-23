@@ -30,7 +30,7 @@ import it.fast4x.rimusic.cleanPrefix
 import it.fast4x.rimusic.colorPalette
 import it.fast4x.rimusic.models.Playlist
 import it.fast4x.rimusic.ui.items.PlaylistItem
-import it.fast4x.rimusic.utils.thumbnail
+import me.knighthat.coil.thumbnail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map

@@ -48,7 +48,6 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import app.kreate.android.R
-import coil3.compose.AsyncImagePainter
 import it.fast4x.compose.persist.PersistMapCleanup
 import it.fast4x.innertube.Innertube
 import it.fast4x.rimusic.Database
@@ -76,7 +75,7 @@ import it.fast4x.rimusic.ui.items.AlbumItem
 import it.fast4x.rimusic.ui.items.AlbumItemPlaceholder
 import it.fast4x.rimusic.ui.components.themed.Loader
 import it.fast4x.rimusic.ui.items.SongItemPlaceholder
-
+import androidx.compose.ui.graphics.painter.Painter
 import it.fast4x.rimusic.ui.styling.Dimensions
 import it.fast4x.rimusic.ui.styling.px
 import it.fast4x.rimusic.utils.addNext
@@ -129,8 +128,9 @@ fun AlbumDetails(
     navController: NavController,
     browseId: String,
     album: Album?,
-    thumbnailPainter: AsyncImagePainter,
+    thumbnailPainter: Painter,
     alternatives: List<Innertube.AlbumItem>,
+
     description: String,
     onSearchClick: () -> Unit,
     onSettingsClick: () -> Unit
@@ -439,7 +439,7 @@ fun AlbumDetails(
 
                         // List all alternatives
                         ItemsList(
-                            tag = "album/$browseId/alternatives",
+                            tag = "album/$browseId/alternatives_list",
                             headerContent = {},
                             initialPlaceholderCount = 1,
                             continuationPlaceholderCount = 1,

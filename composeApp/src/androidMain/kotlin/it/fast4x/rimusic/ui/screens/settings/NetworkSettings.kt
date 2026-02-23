@@ -44,7 +44,7 @@ import it.fast4x.rimusic.enums.AudioQualityFormat
 import it.fast4x.rimusic.ui.components.themed.ValueSelectorDialog
 import it.fast4x.rimusic.utils.audioQualityFormatKey
 import it.fast4x.rimusic.utils.RestartPlayerService
-import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.*
 import androidx.compose.runtime.produceState
 import kotlinx.coroutines.delay
 

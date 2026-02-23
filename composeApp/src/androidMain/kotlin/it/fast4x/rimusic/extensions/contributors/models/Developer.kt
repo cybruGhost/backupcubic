@@ -31,7 +31,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import app.kreate.android.R
-import me.knighthat.coil.ImageCacheFactory
+import me.knighthat.coil.*
 import com.google.gson.annotations.SerializedName
 import it.fast4x.rimusic.colorPalette
 import it.fast4x.rimusic.typography
