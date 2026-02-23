@@ -148,7 +148,7 @@ fun ArtistScreen(
                 ) {
                     artistPage.value?.let {
                         AsyncImage(
-                            model = artistPage.value!!.thumbnail?.url?.resize(1200, 1200),
+                            model = artistPage.value!!.thumbnail?.url?.resize(1000, 1000),
                             contentDescription = "loading...",
                             modifier = Modifier
                                 .fillMaxWidth()

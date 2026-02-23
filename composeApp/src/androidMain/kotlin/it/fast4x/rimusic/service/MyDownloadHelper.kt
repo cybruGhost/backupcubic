@@ -303,7 +303,7 @@ object MyDownloadHelper {
             insertIgnore(mediaItem)
         }
 
-        val imageUrl = mediaItem.mediaMetadata.artworkUri.thumbnail(1200)
+         val imageUrl = mediaItem.mediaMetadata.artworkUri.thumbnail(1000)
 
         coroutineScope.launch {
             context.download<MyDownloadService>(downloadRequest).exceptionOrNull()?.let {

@@ -13,6 +13,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.runtime.withFrameNanos
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import app.kreate.android.R
@@ -39,6 +40,7 @@ fun Player.positionAndDurationState(): State<Pair<Long, Long>> {
 
     LaunchedEffect(this) {
         var isSeeking = false
+        var needsUpdate = false
 
         val listener = object : Player.Listener {
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -48,10 +50,9 @@ fun Player.positionAndDurationState(): State<Pair<Long, Long>> {
             }
 
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                // Use safe values to prevent negative numbers
-                val currentPos = currentPosition.coerceAtLeast(0L)
-                val currentDur = duration.coerceAtLeast(0L)
-                state.value = currentPos to currentDur
+                // Do not modify the state directly in the callback
+                // The polling coroutine will take care of it.
+                needsUpdate = true
             }
 
             override fun onPositionDiscontinuity(
@@ -61,10 +62,7 @@ fun Player.positionAndDurationState(): State<Pair<Long, Long>> {
             ) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK) {
                     isSeeking = true
-                    // Use safe values to prevent negative numbers
-                    val currentPos = currentPosition.coerceAtLeast(0L)
-                    val currentDur = duration.coerceAtLeast(0L)
-                    state.value = currentPos to currentDur
+                    needsUpdate = true
                 }
             }
         }
@@ -73,12 +71,10 @@ fun Player.positionAndDurationState(): State<Pair<Long, Long>> {
 
         val pollJob = launch {
             while (isActive) {
-                delay(500)
-                if (!isSeeking) {
-                    // Use safe values to prevent negative numbers
-                    val currentPos = currentPosition.coerceAtLeast(0L)
-                    val currentDur = duration.coerceAtLeast(0L)
-                    state.value = currentPos to currentDur
+                withFrameNanos { }
+                if (!isSeeking || needsUpdate) {
+                    state.value = currentPosition to duration
+                    needsUpdate = false
                 }
             }
         }
@@ -105,31 +101,20 @@ fun rememberEqualizerLauncher(
 
     return rememberUpdatedState {
         try {
-            val sessionId = audioSessionId()
-            // Only launch if we have a valid audio session ID
-            if (sessionId != null && sessionId != 0) {
-                launcher.launch(
-                    Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
-                        replaceExtras(EqualizerIntentBundleAccessor.bundle {
-                            audioSession = sessionId
-                            packageName = context.packageName
-                            this.contentType = contentType
-                        })
-                    }
-                )
-            } else {
-                // Show error if no valid audio session
-                Toaster.w(R.string.info_not_find_application_audio)
-            }
+            launcher.launch(
+                Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
+                    replaceExtras(EqualizerIntentBundleAccessor.bundle {
+                        audioSessionId()?.let { audioSession = it }
+                        packageName = context.packageName
+                        this.contentType = contentType
+                    })
+                }
+            )
         } catch (e: ActivityNotFoundException) {
-            Toaster.w(R.string.info_not_find_application_audio)
-        } catch (e: Exception) {
-            // Catch any other exceptions to prevent crashes
-            Toaster.w(R.string.info_not_find_application_audio)
+            Toaster.w( R.string.info_not_find_application_audio )
         }
     }
 }
-
 @Composable
 fun Player.playbackStateState(): State<Int> {
     val state = remember {
@@ -145,77 +130,4 @@ fun Player.playbackStateState(): State<Int> {
     }
 
     return state
-}
-
-/**
- * Safe utility functions to prevent the "Out of range" IllegalArgumentException
- * These can be used throughout the app where player position/duration calculations are done
- */
-
-/**
- * Safe version of getBufferedPercentage that handles edge cases and prevents negative values
- */
-fun Player.getSafeBufferedPercentage(): Int {
-    return try {
-        val bufferedPosition = bufferedPosition.coerceAtLeast(0L)
-        val currentDuration = duration.coerceAtLeast(0L)
-        
-        if (currentDuration <= 0L) return 0
-        if (bufferedPosition <= 0L) return 0
-        
-        // Calculate percentage safely
-        val percentage = (bufferedPosition * 100 / currentDuration.toDouble()).toInt()
-        percentage.coerceIn(0, 100)
-    } catch (e: Exception) {
-        0 // Return 0% in case of any calculation errors
-    }
-}
-
-/**
- * Safe version of getCurrentPosition that prevents negative values
- */
-fun Player.getSafeCurrentPosition(): Long {
-    return currentPosition.coerceAtLeast(0L)
-}
-
-/**
- * Safe version of getDuration that prevents negative values  
- */
-fun Player.getSafeDuration(): Long {
-    return duration.coerceAtLeast(0L)
-}
-
-/**
- * Safe seek function that validates parameters
- */
-fun Player.safeSeekTo(positionMs: Long) {
-    try {
-        val safePosition = positionMs.coerceAtLeast(0L)
-        seekTo(safePosition)
-    } catch (e: Exception) {
-        // Log error but don't crash
-        android.util.Log.e("PlayerUtils", "Error seeking to position: ${e.message}")
-    }
-}
-
-/**
- * Safe media item index validation
- */
-fun Player.isValidMediaItemIndex(index: Int): Boolean {
-    return index in 0 until mediaItemCount
-}
-
-/**
- * Get safe media item at index with bounds checking
- */
-fun Player.getSafeMediaItemAt(index: Int): MediaItem? {
-    return try {
-        if (isValidMediaItemIndex(index)) {
-            getMediaItemAt(index)
-        } else {
-            null
-        }
-    } catch (e: Exception) {
-        null
-    }
 }

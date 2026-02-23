@@ -894,7 +894,7 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
             playerBackgroundColors == PlayerBackgroundColors.AnimatedGradient || updateBrush
         ) {
             try {
-                val imageUrl = mediaItem.mediaMetadata.artworkUri.thumbnail(1200).toString()
+                 val imageUrl = mediaItem.mediaMetadata.artworkUri.thumbnail(1000).toString()
                 val bitmap = getBitmapFromUrl(
                     context,
                     imageUrl

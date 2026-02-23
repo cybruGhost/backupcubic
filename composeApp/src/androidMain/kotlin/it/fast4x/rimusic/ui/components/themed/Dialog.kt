@@ -667,7 +667,7 @@ inline fun SelectorArtistsDialog(
 
                         Box {
                             ImageCacheFactory.AsyncImage(
-                                thumbnailUrl = artist?.thumbnailUrl?.resize(1200, 1200),
+                               thumbnailUrl = artist?.thumbnailUrl?.resize(1000, 1000),
                                 contentDescription = "",
                                 contentScale = ContentScale.Fit,
                                 modifier = Modifier
