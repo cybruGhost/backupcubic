@@ -336,7 +336,7 @@ fun Player(
     val showTotalTimeQueue by rememberPreference( showTotalTimeQueueKey, true )
     val backgroundProgress by rememberPreference( backgroundProgressKey, BackgroundProgress.MiniPlayer )
     var queueLoopState = rememberPreference( queueLoopTypeKey, defaultValue = QueueLoopType.Default )
-    val playerType by rememberPreference( playerTypeKey, PlayerType.Essential )
+    val playerType by rememberPreference( playerTypeKey, PlayerType.Modern )
     val queueType by rememberPreference( queueTypeKey, QueueType.Essential )
     val noblur by rememberPreference( noblurKey, true )
     val fadingedge by rememberPreference( fadingedgeKey, false )
