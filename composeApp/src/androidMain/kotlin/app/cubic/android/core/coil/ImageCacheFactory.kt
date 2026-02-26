@@ -1,4 +1,4 @@
-package app.n_zik.android.core.coil
+package app.cubic.android.core.coil
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -39,9 +39,9 @@ import app.it.fast4x.rimusic.enums.CoilDiskCacheMaxSize
 import app.it.fast4x.rimusic.enums.ExoPlayerCacheLocation
 import app.it.fast4x.rimusic.enums.ImageQualityFormat
 import app.it.fast4x.rimusic.thumbnailShape
-import app.n_zik.android.core.network.NetworkQualityHelper
-import app.n_zik.android.core.network.GlobalNetworkLogger
-import app.n_zik.android.core.network.NetworkQuality as NZikNetworkQuality
+import app.cubic.android.core.network.NetworkQualityHelper
+// import app.cubic.android.core.network.GlobalNetworkLogger
+import app.cubic.android.core.network.enum.NetworkQuality as NZikNetworkQuality
 import app.it.fast4x.rimusic.utils.coilCustomDiskCacheKey
 import app.it.fast4x.rimusic.utils.coilDiskCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.exoPlayerCacheLocationKey
@@ -51,6 +51,7 @@ import app.it.fast4x.rimusic.utils.preferences
 import kotlinx.coroutines.flow.MutableStateFlow
 import okhttp3.OkHttpClient
 import okio.Path.Companion.toOkioPath
+// import timber.log.Timber
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -180,18 +181,16 @@ object ImageCacheFactory {
     }
 
     val LOADER: ImageLoader by lazy {
-        val httpClient = OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
-            .retryOnConnectionFailure(true)
-            .build()
-
         ImageLoader.Builder(appContext())
             .crossfade(true)
             .memoryCache { MemoryCache.Builder().maxSizePercent(appContext(), 0.15).strongReferencesEnabled(true).build() }
             .diskCache(DISK_CACHE)
             .components {
-                add(OkHttpNetworkFetcherFactory(httpClient))
+                add(OkHttpNetworkFetcherFactory(
+                    callFactory = { request: okhttp3.Request ->
+                        app.cubic.android.core.network.NetworkClientFactory.getClient().newCall(request)
+                    }
+                ))
             }
             .build()
     }
@@ -230,7 +229,7 @@ object ImageCacheFactory {
         
         // Return forced quality if set
         if (forcedQuality != ImageQualityFormat.Auto) {
-            GlobalNetworkLogger.logNetworkState("Image_Factory", -1, false, "FORCED", forcedQuality.name)
+           // GlobalNetworkLogger.logNetworkState("Image_Factory", -1, false, "FORCED", forcedQuality.name)
             return when (forcedQuality) {
                 ImageQualityFormat.High -> NetworkQuality.HIGH
                 ImageQualityFormat.Medium -> NetworkQuality.MEDIUM
@@ -244,7 +243,7 @@ object ImageCacheFactory {
             NZikNetworkQuality.MEDIUM -> NetworkQuality.MEDIUM
             else -> NetworkQuality.LOW
         }
-        GlobalNetworkLogger.logNetworkState("Image_Factory", -1, false, "AUTO", detectedQuality.name)
+        // GlobalNetworkLogger.logNetworkState("Image_Factory", -1, false, "AUTO", detectedQuality.name)
         return detectedQuality
     }
 
@@ -255,7 +254,7 @@ object ImageCacheFactory {
             NZikNetworkQuality.MEDIUM -> NetworkQuality.MEDIUM
             else -> NetworkQuality.LOW
         }
-        GlobalNetworkLogger.logNetworkState("Image_UI", -1, false, "REAL_DETECT", quality.name)
+        // GlobalNetworkLogger.logNetworkState("Image_UI", -1, false, "REAL_DETECT", quality.name)
         return quality
     }
 
@@ -299,7 +298,11 @@ object ImageCacheFactory {
         val validUrl = if (thumbnailUrl.isNullOrBlank() || thumbnailUrl == "null") null else thumbnailUrl
         val decision = getDownloadDecision(validUrl)
         val version by storeVersion.collectAsState()
-        var currentUrl by remember(validUrl, version) { mutableStateOf(validUrl?.thumbnail(decision.quality.size)) }
+        var currentUrl by remember(validUrl, version) { 
+            mutableStateOf(validUrl?.thumbnail(decision.quality.size).also { modUrl ->
+                // if (validUrl != null) Timber.tag("ImageCache").d("URL: original=%s, modified=%s", validUrl, modUrl)
+            }) 
+        }
         
         
         val request = ImageRequest.Builder(appContext())
@@ -321,6 +324,7 @@ object ImageCacheFactory {
                 },
                 onError = { _, result ->
                     val errorMsg = result.throwable.message ?: ""
+                    // Timber.tag("ImageCache").e(result.throwable, "Error: original=%s, modified=%s, error=%s", validUrl, currentUrl, errorMsg)
                     val id = currentUrl?.getYouTubeId()
                     
                     // Un-swap fallback for Playlists/Podcasts (handling expired signatures)
@@ -371,7 +375,11 @@ object ImageCacheFactory {
         val validUrl = if (thumbnailUrl.isNullOrBlank() || thumbnailUrl == "null") null else thumbnailUrl
         val decision = getDownloadDecision(validUrl)
         val version by storeVersion.collectAsState()
-        var currentUrl by remember(validUrl, version) { mutableStateOf(validUrl?.thumbnail(decision.quality.size)) }
+        var currentUrl by remember(validUrl, version) { 
+            mutableStateOf(validUrl?.thumbnail(decision.quality.size).also { modUrl ->
+                // if (validUrl != null) Timber.tag("ImageCache").d("URL: original=%s, modified=%s", validUrl, modUrl)
+            }) 
+        }
         
         
         val request = ImageRequest.Builder(appContext())
@@ -393,6 +401,7 @@ object ImageCacheFactory {
                 },
                 onError = { _, result ->
                     val errorMsg = result.throwable.message ?: ""
+                    //Timber.tag("ImageCache").e(result.throwable, "Error: original=%s, modified=%s, error=%s", validUrl, currentUrl, errorMsg)
                     val id = currentUrl?.getYouTubeId()
 
                     if (currentUrl != validUrl && id != null &&
@@ -443,7 +452,11 @@ object ImageCacheFactory {
         val validUrl = if (thumbnailUrl.isNullOrBlank() || thumbnailUrl == "null") null else thumbnailUrl
         val decision = getDownloadDecision(validUrl)
         val version by storeVersion.collectAsState()
-        var currentUrl by remember(validUrl, version) { mutableStateOf(validUrl?.thumbnail(decision.quality.size)) }
+        var currentUrl by remember(validUrl, version) { 
+            mutableStateOf(validUrl?.thumbnail(decision.quality.size).also { modUrl ->
+                //if (validUrl != null) Timber.tag("ImageCache").d("URL: original=%s, modified=%s", validUrl, modUrl)
+            }) 
+        }
         
         val request = ImageRequest.Builder(appContext())
             .data(currentUrl)
@@ -464,6 +477,7 @@ object ImageCacheFactory {
                 },
                 onError = { _, result ->
                     val errorMsg = result.throwable.message ?: ""
+                    //Timber.tag("ImageCache").e(result.throwable, "Error: original=%s, modified=%s, error=%s", validUrl, currentUrl, errorMsg)
                     val id = currentUrl?.getYouTubeId()
 
                     if (currentUrl != validUrl && id != null &&
@@ -518,6 +532,7 @@ object ImageCacheFactory {
         
         val decision = getDownloadDecision(url)
         var currentUrl = url.thumbnail(decision.quality.size)
+        // Timber.tag("ImageCache").d("URL (loadBitmap): original=%s, modified=%s", url, currentUrl)
         var lastError: String? = null
         
         while (currentUrl != null) {
@@ -546,6 +561,7 @@ object ImageCacheFactory {
             }
             
             lastError = (result as? ErrorResult)?.throwable?.message ?: "Unknown error"
+            //Timber.tag("ImageCache").e("Error (loadBitmap): original=%s, modified=%s, error=%s", url, currentUrl, lastError)
             
             // Un-swap fallback for loadBitmap
             val id = currentUrl.getYouTubeId()
@@ -578,6 +594,7 @@ object ImageCacheFactory {
         
         val decision = getDownloadDecision(thumbnailUrl)
         val finalUrl = thumbnailUrl.thumbnail(decision.quality.size)
+        // Timber.tag("ImageCache").d("URL (preload): original=%s, modified=%s", thumbnailUrl, finalUrl)
         
         fun enqueueWithFallback(url: String) {
             val request = ImageRequest.Builder(appContext())
@@ -592,6 +609,7 @@ object ImageCacheFactory {
                     },
                     onError = { _, result ->
                         val errorMsg = result.throwable.message ?: ""
+                        // Timber.tag("ImageCache").e(result.throwable, "Error (preload): original=%s, modified=%s, error=%s", thumbnailUrl, url, errorMsg)
                         if (errorMsg.contains("404") && url.contains("i.ytimg.com/vi/")) {
                             val fallback = url.getNextYouTubeFallback()
                             if (fallback != null) {
@@ -640,30 +658,25 @@ object ImageCacheFactory {
 fun String.resize(width: Int? = null, height: Int? = null): String {
     if (width == null && height == null) return this
     
-    if (contains("googleusercontent.com")) {
-        // Redimensionnement intelligent pour Google (wX-hY ou sX)
+    if (contains("googleusercontent.com") || startsWith("https://yt3.ggpht.com")) {
         val w = width ?: height ?: 0
         val h = height ?: width ?: 0
-        
-        return when {
-            contains("=w") && contains("-h") -> {
-                replace(Regex("=w\\d+"), "=w$w").replace(Regex("-h\\d+"), "-h$h")
-            }
-            contains("=s") || contains("-s") -> {
-                replace(Regex("([=-])s\\d+"), "$1s$w")
-            }
-            else -> {
-                // Remplacement global plus robuste pour w, h et s
-                replace(Regex("([=-])w\\d+"), "$1w$w")
-                    .replace(Regex("([=-])h\\d+"), "$1h$h")
-                    .replace(Regex("([=-])s\\d+"), "$1s$w")
-            }
-        }
-    }
-    
-    if (startsWith("https://yt3.ggpht.com")) {
         val s = width ?: height ?: 0
-        return replace(Regex("([=-])s\\d+"), "$1s$s")
+        
+        if (contains("=")) {
+            val lastEquals = lastIndexOf('=')
+            val base = substring(0, lastEquals)
+            val params = substring(lastEquals)
+            val modParams = params
+                .replace(Regex("([=-])w\\d+(?![0-9a-zA-Z])"), "$1w$w")
+                .replace(Regex("([=-])h\\d+(?![0-9a-zA-Z])"), "$1h$h")
+                .replace(Regex("([=-])s\\d+(?![0-9a-zA-Z])"), "$1s$s")
+            return base + modParams
+        } else {
+            return replace(Regex("([=/-])w\\d+(?![0-9a-zA-Z])"), "$1w$w")
+                .replace(Regex("([=/-])h\\d+(?![0-9a-zA-Z])"), "$1h$h")
+                .replace(Regex("([=/-])s\\d+(?![0-9a-zA-Z])"), "$1s$s")
+        }
     }
     
     return this
@@ -737,9 +750,20 @@ fun String?.thumbnail(size: Int): String? {
     
     // googleusercontent & yt3.ggpht: modify resolution parameters safely
     if (contains("googleusercontent.com") || contains("yt3.ggpht.com")) {
-        return replace(Regex("([=/-])w\\d+(?![0-9a-zA-Z])"), "$1w$size")
-            .replace(Regex("([=/-])h\\d+(?![0-9a-zA-Z])"), "$1h$size")
-            .replace(Regex("([=/-])s\\d+(?![0-9a-zA-Z])"), "$1s$size")
+        if (contains("=")) {
+            val lastEquals = lastIndexOf('=')
+            val base = substring(0, lastEquals)
+            val params = substring(lastEquals)
+            val modParams = params
+                .replace(Regex("([=-])w\\d+(?![0-9a-zA-Z])"), "$1w$size")
+                .replace(Regex("([=-])h\\d+(?![0-9a-zA-Z])"), "$1h$size")
+                .replace(Regex("([=-])s\\d+(?![0-9a-zA-Z])"), "$1s$size")
+            return base + modParams
+        } else {
+            return replace(Regex("([=/-])w\\d+(?![0-9a-zA-Z])"), "$1w$size")
+                .replace(Regex("([=/-])h\\d+(?![0-9a-zA-Z])"), "$1h$size")
+                .replace(Regex("([=/-])s\\d+(?![0-9a-zA-Z])"), "$1s$size")
+        }
     }
     
     return this

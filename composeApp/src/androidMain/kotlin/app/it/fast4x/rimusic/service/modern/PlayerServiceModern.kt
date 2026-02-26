@@ -205,6 +205,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
 import kotlin.math.roundToInt
 import kotlin.system.exitProcess
+import app.it.fast4x.rimusic.repository.QuickPicksRepository
 import android.os.Binder as AndroidBinder
 import androidx.compose.ui.util.fastMap
 import app.it.fast4x.rimusic.utils.isDiscordPresenceEnabledKey
@@ -213,8 +214,8 @@ import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamManager
 
 const val LOCAL_KEY_PREFIX = "local:"
 
-val MediaItem.isLocal get() = mediaId.startsWith(LOCAL_KEY_PREFIX)
-val Song.isLocal get() = id.startsWith(LOCAL_KEY_PREFIX)
+val MediaItem.isLocal get() = mediaId.contains(LOCAL_KEY_PREFIX)
+val Song.isLocal get() = id.contains(LOCAL_KEY_PREFIX)
 
 @UnstableApi
 class PlayerServiceModern : MediaLibraryService(),
@@ -263,7 +264,8 @@ class PlayerServiceModern : MediaLibraryService(),
 
     @kotlin.OptIn(ExperimentalCoroutinesApi::class)
     private val currentSong = currentMediaItem.flatMapLatest { mediaItem ->
-        Database.songTable.findById( mediaItem?.mediaId ?: "" )
+        val songId = mediaItem?.mediaId?.split("/")?.lastOrNull() ?: mediaItem?.mediaId ?: ""
+        Database.songTable.findById( songId )
     }.stateIn(coroutineScope, SharingStarted.Lazily, null)
 
     var currentSongStateDownload = MutableStateFlow(Download.STATE_STOPPED)
@@ -463,7 +465,7 @@ class PlayerServiceModern : MediaLibraryService(),
                     )
                 )
                 .build()
-
+        mediaLibrarySessionCallback.observeRepository(mediaSession)
         player.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
         player.addListener(this@PlayerServiceModern)
         player.addAnalyticsListener(PlaybackStatsListener(false, this@PlayerServiceModern))
@@ -500,7 +502,7 @@ class PlayerServiceModern : MediaLibraryService(),
         MyDownloadHelper.getDownloadManager(this).addListener(downloadListener)
 
         notificationActionReceiver = NotificationActionReceiver(player)
-
+QuickPicksRepository.refreshIfNeeded()
 
         val filter = IntentFilter().apply {
             addAction(Action.play.value)
@@ -673,6 +675,7 @@ class PlayerServiceModern : MediaLibraryService(),
             } catch (e: Exception){
                 Timber.e("PlayerServiceModern onDestroy unregisterReceiver notificationActionReceiver "+e.stackTraceToString())
             }
+            mediaLibrarySessionCallback.release()
             mediaSession.release()
             cache.release()
             //downloadCache.release()
@@ -910,8 +913,9 @@ class PlayerServiceModern : MediaLibraryService(),
         )
 
         // check if error is caused by internet connection
-        val isConnectionError = (error.cause?.cause is PlaybackException)
-                && (error.cause?.cause as PlaybackException).errorCode in playbackConnectionExeptionList
+        val isConnectionError = (error.cause?.cause is PlaybackException && (error.cause?.cause as PlaybackException).errorCode in playbackConnectionExeptionList)
+                || error.cause is java.net.UnknownHostException
+                || error.cause is java.nio.channels.UnresolvedAddressException
 
         if (!isNetworkAvailable.value || isConnectionError) {
             waitingForNetwork.value = true
@@ -930,7 +934,9 @@ class PlayerServiceModern : MediaLibraryService(),
             println("PlayerServiceModern onPlayerError recovered occurred errorCodeName ${error.errorCodeName} cause ${error.cause?.cause}")
             player.pause()
             player.prepare()
-            player.play()
+            if (player.playWhenReady) {
+                player.play()
+            }
             return
         }
 

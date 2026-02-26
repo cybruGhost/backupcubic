@@ -194,7 +194,7 @@ fun HeaderWithIcon (
                 )
             }
         } else {
-            // New behavior for RiMusic and others
+            // New behavior for cubic and others
             Row(
                 horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically,

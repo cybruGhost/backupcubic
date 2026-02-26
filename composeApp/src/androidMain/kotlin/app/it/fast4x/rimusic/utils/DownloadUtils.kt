@@ -1,6 +1,7 @@
 package app.it.fast4x.rimusic.utils
 
 
+import app.cubic.android.core.network.isNetworkAvailable
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -108,7 +109,7 @@ fun manageDownload(
         MyDownloadHelper.removeDownload(context = context, mediaItem = mediaItem)
     }
     else {
-        if (isNetworkAvailable(context)) {
+        if (context.isNetworkAvailable) {
             MyDownloadHelper.addDownload(context = context, mediaItem = mediaItem)
         }
     }
@@ -119,6 +120,7 @@ fun manageDownload(
 @UnstableApi
 @Composable
 fun getDownloadState(mediaId: String): Int {
+    val context = LocalContext.current
     val downloader = LocalDownloadHelper.current
     if (!isNetworkAvailableComposable()) return 3
 
@@ -143,3 +145,4 @@ fun isDownloadedSong(mediaId: String): Boolean {
         else -> false
     }
 }
+

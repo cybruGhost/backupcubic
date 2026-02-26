@@ -167,12 +167,77 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Icon
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.layout.width
+import androidx.compose.ui.draw.shadow
 
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
 
-
-
+// Updated FunctionalPresetChip with selection indicators (glow + underline)
+@Composable
+fun FunctionalPresetChip(
+    colors: List<Color>,
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Box(
+        modifier = Modifier
+            .width(56.dp)
+            .height(42.dp) // Increased height for underline
+            .background(
+                brush = Brush.linearGradient(colors),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .border(
+                width = if (isSelected) 2.dp else 1.dp,
+                color = if (isSelected) 
+                    Color.White 
+                    else Color.White.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .shadow(
+                elevation = if (isSelected) 10.dp else 0.dp,
+                shape = RoundedCornerShape(16.dp),
+                ambientColor = colors[0].copy(alpha = 0.7f),
+                spotColor = colors[0].copy(alpha = 0.7f)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 4.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            BasicText(
+                text = label,
+                style = typography().s.semiBold.copy(
+                    color = Color.White
+                ),
+                maxLines = 1
+            )
+            
+            // Underline indicator for selected preset
+            if (isSelected) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Box(
+                    modifier = Modifier
+                        .width(24.dp)
+                        .height(2.dp)
+                        .background(
+                            color = Color.White,
+                            shape = RoundedCornerShape(1.dp)
+                        )
+                )
+            }
+        }
+    }
+}
 @Composable
 fun DefaultAppearanceSettings() {
     var isShowingThumbnailInLockscreen by rememberPreference(
@@ -185,6 +250,7 @@ fun DefaultAppearanceSettings() {
     var transparentbar by rememberPreference(transparentbarKey, true)
     transparentbar = true
     var blackgradient by rememberPreference(blackgradientKey, false)
+
     blackgradient = false
     var showlyricsthumbnail by rememberPreference(showlyricsthumbnailKey, false)
     showlyricsthumbnail = false
@@ -588,6 +654,7 @@ fun AppearanceSettings(
         var thumbnailFadeEx  by rememberPreference(thumbnailFadeExKey, 5f)
         var thumbnailFade  by rememberPreference(thumbnailFadeKey, 5f)
         var thumbnailSpacing  by rememberPreference(thumbnailSpacingKey, 0f)
+        var selectedPresetIndex by remember { mutableStateOf(-1) }
         var colorPaletteName by rememberPreference(colorPaletteNameKey, ColorPaletteName.Dynamic)
         var colorPaletteMode by rememberPreference(colorPaletteModeKey, ColorPaletteMode.Dark)
         var swipeAnimationNoThumbnail by rememberPreference(swipeAnimationsNoThumbnailKey, SwipeAnimationNoThumbnail.Sliding)
@@ -602,7 +669,7 @@ fun AppearanceSettings(
                 blurStrength = 50f
                 thumbnailRoundness = ThumbnailRoundness.None
                 playerInfoType = PlayerInfoType.Essential
-                playerTimelineType = PlayerTimelineType.ThinBar
+                playerTimelineType = PlayerTimelineType.Wavy
                 playerTimelineSize = PlayerTimelineSize.Biggest
                 playerControlsType = PlayerControlsType.Essential
                 playerPlayButtonType = PlayerPlayButtonType.Disabled
@@ -828,7 +895,7 @@ fun AppearanceSettings(
                 showthumbnail = true
                 playerBackgroundColors = PlayerBackgroundColors.CoverColorGradient
                 playerInfoType = PlayerInfoType.Essential
-                playerTimelineType = PlayerTimelineType.Wavy
+                playerTimelineType = PlayerTimelineType.Ocean
                 playerTimelineSize = PlayerTimelineSize.Biggest
                 playerControlsType = PlayerControlsType.Essential
                 playerPlayButtonType = PlayerPlayButtonType.CircularRibbed
@@ -867,56 +934,345 @@ fun AppearanceSettings(
             }
             )
         }
-
+        
 if (!isLandscape) {
+    // Enhanced Appearance Presets Selector with FUNCTIONAL presets
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(
                 color = colorPalette().background1,
-                shape = RoundedCornerShape(8.dp)
+                shape = RoundedCornerShape(16.dp)
             )
-            .clickable(onClick = { appearanceChooser = true })
-            .padding(vertical = 8.dp)
+            .border(
+                width = 1.dp,
+                color = colorPalette().accent.copy(alpha = 0.3f),
+                shape = RoundedCornerShape(16.dp)
+            )
+            .padding(vertical = 4.dp)
     ) {
+        // Header - clickable to open dialog
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .clickable { appearanceChooser = true }
+                .padding(horizontal = 20.dp, vertical = 16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column {
+            Column(
+                verticalArrangement = Arrangement.spacedBy(4.dp)
+            ) {
+                // Main title with accent color
                 BasicText(
                     text = stringResource(R.string.appearancepresets),
-                    style = typography().m.semiBold.copy(color = colorPalette().text)
+                    style = typography().l.semiBold.copy(
+                        color = colorPalette().accent
+                    )
                 )
+                
+                // Secondary description
                 BasicText(
                     text = stringResource(R.string.appearancepresetssecondary),
-                    style = typography().xs.semiBold.copy(color = colorPalette().textSecondary)
+                    style = typography().s.semiBold.copy(
+                        color = colorPalette().textSecondary
+                    )
                 )
+                
+                // Visual indicator of presets count
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    listOf(
+                        colorPalette().accent,
+                        colorPalette().accent.copy(alpha = 0.7f),
+                        colorPalette().accent.copy(alpha = 0.4f)
+                    ).forEach { color ->
+                        Box(
+                            modifier = Modifier
+                                .size(6.dp)
+                                .background(
+                                    color = color,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    BasicText(
+                        text = "6 ${stringResource(R.string.appearancepresets)}",
+                        style = typography().xs.semiBold.copy(
+                            color = colorPalette().textSecondary
+                        )
+                    )
+                }
             }
             
-            // More noticeable arrow with background
+            // Enhanced arrow with layered background
             Box(
                 modifier = Modifier
                     .background(
-                        color = colorPalette().accent.copy(alpha = 0.2f),
+                        color = colorPalette().accent.copy(alpha = 0.15f),
                         shape = CircleShape
                     )
-                    .padding(8.dp)
+                    .size(48.dp)
+                    .clickable { appearanceChooser = true },
+                contentAlignment = Alignment.Center
             ) {
-                Icon(
-                    painter = painterResource(id = R.drawable.arrow_forward),
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                    tint = colorPalette().accent
+                Box(
+                    modifier = Modifier
+                        .background(
+                            color = colorPalette().accent.copy(alpha = 0.25f),
+                            shape = CircleShape
+                        )
+                        .size(40.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.arrow_forward),
+                        contentDescription = stringResource(R.string.appearancepresets),
+                        modifier = Modifier.size(22.dp),
+                        tint = colorPalette().accent
+                    )
+                }
+            }
+        }
+        
+        // Horizontal scrollable row for preset chips
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(bottom = 16.dp)
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(horizontal = 20.dp),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                // Preset 1 - Classic
+                FunctionalPresetChip(
+                    colors = listOf(
+                        colorPalette().accent,
+                        colorPalette().accent.copy(alpha = 0.7f)
+                    ),
+                    label = stringResource(R.string.preset_classic).take(3),
+                    isSelected = selectedPresetIndex == 0,
+                    onClick = {
+                        selectedPresetIndex = 0
+                        showTopActionsBar = true
+                        showthumbnail = true
+                        playerBackgroundColors = PlayerBackgroundColors.BlurredCoverColor
+                        blurStrength = 50f
+                        thumbnailRoundness = ThumbnailRoundness.None
+                        playerInfoType = PlayerInfoType.Essential
+                        playerTimelineType = PlayerTimelineType.Wavy
+                        playerTimelineSize = PlayerTimelineSize.Biggest
+                        playerControlsType = PlayerControlsType.Essential
+                        playerPlayButtonType = PlayerPlayButtonType.Disabled
+                        transparentbar = true
+                        playerType = PlayerType.Essential
+                        showlyricsthumbnail = false
+                        expandedplayer = true
+                        thumbnailType = ThumbnailType.Modern
+                        playerThumbnailSize = PlayerThumbnailSize.Big
+                        showTotalTimeQueue = false
+                        bottomgradient = true
+                        showRemainingSongTime = true
+                        showNextSongsInPlayer = true
+                        colorPaletteName = ColorPaletteName.Dynamic
+                        colorPaletteMode = ColorPaletteMode.System
+                    }
+                )
+                
+                // Preset 2 - Modern
+                FunctionalPresetChip(
+                    colors = listOf(
+                        colorPalette().text,
+                        colorPalette().textSecondary
+                    ),
+                    label = stringResource(R.string.preset_modern).take(3),
+                    isSelected = selectedPresetIndex == 1,
+                    onClick = {
+                        selectedPresetIndex = 1
+                        showTopActionsBar = true
+                        showthumbnail = true
+                        playerBackgroundColors = PlayerBackgroundColors.BlurredCoverColor
+                        blurStrength = 50f
+                        playerInfoType = PlayerInfoType.Essential
+                        playerPlayButtonType = PlayerPlayButtonType.Disabled
+                        playerTimelineType = PlayerTimelineType.ThinBar
+                        playerControlsType = PlayerControlsType.Essential
+                        transparentbar = true
+                        playerType = PlayerType.Modern
+                        expandedplayer = true
+                        fadingedge = true
+                        thumbnailFadeEx = 4f
+                        thumbnailSpacing = -32f
+                        thumbnailType = ThumbnailType.Essential
+                        carouselSize = CarouselSize.Big
+                        playerThumbnailSize = PlayerThumbnailSize.Biggest
+                        showTotalTimeQueue = false
+                        showRemainingSongTime = true
+                        bottomgradient = true
+                        showlyricsthumbnail = false
+                        thumbnailRoundness = ThumbnailRoundness.Medium
+                        showNextSongsInPlayer = true
+                        colorPaletteName = ColorPaletteName.Dynamic
+                        colorPaletteMode = ColorPaletteMode.System
+                    }
+                )
+                
+                // Preset 3 - Minimal
+                FunctionalPresetChip(
+                    colors = listOf(
+                        colorPalette().background2,
+                        colorPalette().background1
+                    ),
+                    label = stringResource(R.string.preset_minimal).take(3),
+                    isSelected = selectedPresetIndex == 2,
+                    onClick = {
+                        selectedPresetIndex = 2
+                        showTopActionsBar = false
+                        showthumbnail = false
+                        noblur = true
+                        topPadding = false
+                        playerBackgroundColors = PlayerBackgroundColors.BlurredCoverColor
+                        blurStrength = 50f
+                        playerPlayButtonType = PlayerPlayButtonType.Disabled
+                        playerInfoType = PlayerInfoType.Modern
+                        playerInfoShowIcons = false
+                        playerTimelineType = PlayerTimelineType.ThinBar
+                        playerControlsType = PlayerControlsType.Essential
+                        transparentbar = true
+                        playerType = PlayerType.Modern
+                        expandedplayer = true
+                        showTotalTimeQueue = false
+                        showRemainingSongTime = true
+                        bottomgradient = true
+                        showlyricsthumbnail = false
+                        showNextSongsInPlayer = true
+                        colorPaletteName = ColorPaletteName.Dynamic
+                        colorPaletteMode = ColorPaletteMode.System
+                    }
+                )
+                
+                // Preset 4 - Dark Edge
+                FunctionalPresetChip(
+                    colors = listOf(
+                        Color.Black,
+                        Color.DarkGray
+                    ),
+                    label = stringResource(R.string.preset_dark_edge).take(3),
+                    isSelected = selectedPresetIndex == 3,
+                    onClick = {
+                        selectedPresetIndex = 3
+                        showTopActionsBar = false
+                        topPadding = false
+                        showthumbnail = true
+                        playerBackgroundColors = PlayerBackgroundColors.BlurredCoverColor
+                        blurStrength = 50f
+                        playerInfoType = PlayerInfoType.Essential
+                        playerTimelineType = PlayerTimelineType.FakeAudioBar
+                        playerTimelineSize = PlayerTimelineSize.Biggest
+                        playerControlsType = PlayerControlsType.Modern
+                        playerPlayButtonType = PlayerPlayButtonType.Disabled
+                        colorPaletteName = ColorPaletteName.PureBlack
+                        transparentbar = false
+                        playerType = PlayerType.Essential
+                        expandedplayer = false
+                        playerThumbnailSize = PlayerThumbnailSize.Expanded
+                        showTotalTimeQueue = false
+                        showRemainingSongTime = true
+                        bottomgradient = true
+                        showlyricsthumbnail = false
+                        thumbnailType = ThumbnailType.Essential
+                        thumbnailRoundness = ThumbnailRoundness.Light
+                        playerType = PlayerType.Modern
+                        fadingedge = true
+                        thumbnailFade = 5f
+                        showNextSongsInPlayer = true
+                    }
+                )
+                
+                // Preset 5 - Gradient
+                FunctionalPresetChip(
+                    colors = listOf(
+                        Color(0xFF4158D0),
+                        Color(0xFFC850C0)
+                    ),
+                    label = stringResource(R.string.preset_gradient).take(3),
+                    isSelected = selectedPresetIndex == 4,
+                    onClick = {
+                        selectedPresetIndex = 4
+                        showTopActionsBar = false
+                        topPadding = true
+                        showthumbnail = true
+                        playerBackgroundColors = PlayerBackgroundColors.AnimatedGradient
+                        animatedGradient = AnimatedGradient.Linear
+                        playerInfoType = PlayerInfoType.Essential
+                        playerTimelineType = PlayerTimelineType.PinBar
+                        playerTimelineSize = PlayerTimelineSize.Biggest
+                        playerControlsType = PlayerControlsType.Essential
+                        playerPlayButtonType = PlayerPlayButtonType.Square
+                        colorPaletteName = ColorPaletteName.Dynamic
+                        colorPaletteMode = ColorPaletteMode.PitchBlack
+                        transparentbar = false
+                        playerType = PlayerType.Modern
+                        expandedplayer = false
+                        playerThumbnailSize = PlayerThumbnailSize.Biggest
+                        showTotalTimeQueue = false
+                        showRemainingSongTime = true
+                        showlyricsthumbnail = false
+                        thumbnailType = ThumbnailType.Modern
+                        thumbnailRoundness = ThumbnailRoundness.Heavy
+                        fadingedge = true
+                        thumbnailFade = 0f
+                        thumbnailFadeEx = 5f
+                        thumbnailSpacing = -32f
+                        showNextSongsInPlayer = true
+                    }
+                )
+                
+                // Preset 6 - Vibrant
+                FunctionalPresetChip(
+                    colors = listOf(
+                        Color(0xFFFF6B6B),
+                        Color(0xFF4ECDC4)
+                    ),
+                    label = stringResource(R.string.preset_vibrant).take(3),
+                    isSelected = selectedPresetIndex == 5,
+                    onClick = {
+                        selectedPresetIndex = 5
+                        showTopActionsBar = true
+                        showthumbnail = true
+                        playerBackgroundColors = PlayerBackgroundColors.CoverColorGradient
+                        playerInfoType = PlayerInfoType.Essential
+                        playerTimelineType = PlayerTimelineType.Ocean
+                        playerTimelineSize = PlayerTimelineSize.Biggest
+                        playerControlsType = PlayerControlsType.Essential
+                        playerPlayButtonType = PlayerPlayButtonType.CircularRibbed
+                        colorPaletteName = ColorPaletteName.Dynamic
+                        colorPaletteMode = ColorPaletteMode.System
+                        transparentbar = false
+                        playerType = PlayerType.Essential
+                        expandedplayer = true
+                        playerThumbnailSize = PlayerThumbnailSize.Big
+                        showTotalTimeQueue = false
+                        showRemainingSongTime = true
+                        showlyricsthumbnail = false
+                        thumbnailType = ThumbnailType.Modern
+                        thumbnailRoundness = ThumbnailRoundness.Heavy
+                        showNextSongsInPlayer = true
+                    }
                 )
             }
         }
     }
     
-    Spacer(modifier = Modifier.height(8.dp))
+    Spacer(modifier = Modifier.height(16.dp))
+
 
     if (search.inputValue.isBlank() || stringResource(R.string.show_player_top_actions_bar).contains(
             search.inputValue,
@@ -1284,7 +1640,7 @@ if (!isLandscape) {
                 valueText = { it.text },
             )
 
-        if (search.inputValue.isBlank() || stringResource(R.string.player_swap_controls_with_timeline).contains(
+             if (search.inputValue.isBlank() || stringResource(R.string.player_swap_controls_with_timeline).contains(
                 search.inputValue,
                 true
             )
@@ -1296,6 +1652,206 @@ if (!isLandscape) {
                 onCheckedChange = { playerSwapControlsWithTimeline = it }
             )
 
+        // Enhanced Timeline UI Section
+        if (search.inputValue.isBlank() || 
+            stringResource(R.string.timeline).contains(search.inputValue, true) ||
+            stringResource(R.string.transparentbar).contains(search.inputValue, true)) {
+            
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+                    .background(
+                        color = colorPalette().background1.copy(alpha = 0.5f),
+                        shape = RoundedCornerShape(12.dp)
+                    )
+            ) {
+                // Timeline Header with simple preview
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        BasicText(
+                            text = "Timeline Settings",
+                            style = typography().s.semiBold.copy(color = colorPalette().text)
+                        )
+                        BasicText(
+                            text = "Customize progress bar appearance",
+                            style = typography().xs.semiBold.copy(color = colorPalette().textSecondary)
+                        )
+                    }
+                    
+                    // Simple preview box
+                    Box(
+                        modifier = Modifier
+                            .size(48.dp, 24.dp)
+                            .background(
+                                color = if (transparentbar) 
+                                    colorPalette().accent.copy(alpha = 0.3f) 
+                                    else colorPalette().accent,
+                                shape = RoundedCornerShape(4.dp)
+                            )
+                    )
+                }
+                
+                // Timeline Type Selection using EnumValueSelectorSettingsEntry
+               if (
+                    search.inputValue.isBlank() ||
+                    stringResource(R.string.timeline).contains(search.inputValue, true)
+                ) {
+                    EnumValueSelectorSettingsEntry(
+                        title = stringResource(R.string.timeline_style),
+                        selectedValue = playerTimelineType,
+                        onValueSelected = { playerTimelineType = it },
+                        valueText = { it.name }
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                // Transparent bar toggle with visual feedback
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { transparentbar = !transparentbar }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .background(
+                                    color = if (transparentbar) 
+                                        colorPalette().accent.copy(alpha = 0.3f)
+                                        else colorPalette().textDisabled,
+                                    shape = CircleShape
+                                )
+                        )
+                        
+                        Spacer(modifier = Modifier.width(12.dp))
+
+                    Column {
+                        BasicText(
+                            text = stringResource(R.string.transparentbar),
+                            style = typography().s.semiBold.copy(
+                                color = if (transparentbar)
+                                    colorPalette().text
+                                else
+                                    colorPalette().textDisabled
+                            )
+                        )
+
+                        BasicText(
+                            text = stringResource(R.string.transparentbar_description),
+                            style = typography().xs.semiBold.copy(
+                                color = colorPalette().textSecondary
+                            )
+                        )
+                    }
+                     }
+                    // Simple switch indicator
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp, 24.dp)
+                            .background(
+                                color = if (transparentbar) colorPalette().accent else colorPalette().background2,
+                                shape = RoundedCornerShape(12.dp)
+                            )
+                            .padding(horizontal = 2.dp),
+                        contentAlignment = if (transparentbar) Alignment.CenterEnd else Alignment.CenterStart
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .size(20.dp)
+                                .background(
+                                    color = colorPalette().background0,
+                                    shape = CircleShape
+                                )
+                        )
+                    }
+                }
+                
+                // Timeline Size Selector (using existing enum values)
+                if (search.inputValue.isBlank() || stringResource(R.string.timelinesize).contains(search.inputValue, true)) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            BasicText(
+                                text = "Timeline Thickness",
+                                style = typography().s.semiBold.copy(color = colorPalette().text)
+                            )
+                            
+                            BasicText(
+                                text = playerTimelineSize.name,
+                                style = typography().s.semiBold.copy(color = colorPalette().accent)
+                            )
+                        }
+                        
+                        // Simple size indicator row using only available enum values
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceEvenly
+                        ) {
+                            // Use only the enum values that exist in your project
+                            listOf(
+                                PlayerTimelineSize.Small,
+                                PlayerTimelineSize.Medium,
+                                PlayerTimelineSize.Big,
+                                PlayerTimelineSize.Biggest
+                            ).forEach { size ->
+                                val height = when (size) {
+                                    PlayerTimelineSize.Small -> 8.dp
+                                    PlayerTimelineSize.Medium -> 12.dp
+                                    PlayerTimelineSize.Big -> 16.dp
+                                    PlayerTimelineSize.Biggest -> 20.dp
+                                    else -> 12.dp
+                                }
+                                
+                                Box(
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .height(24.dp)
+                                        .clickable { playerTimelineSize = size }
+                                        .padding(horizontal = 4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .height(height)
+                                            .background(
+                                                color = if (size == playerTimelineSize) 
+                                                    colorPalette().accent 
+                                                    else colorPalette().textDisabled.copy(alpha = 0.3f),
+                                                shape = RoundedCornerShape(2.dp)
+                                            )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                
+                Spacer(modifier = Modifier.height(8.dp))
+            }
+            
+            Spacer(modifier = Modifier.height(8.dp))
+        }
+
+        // Keep the original settings as they are - don't remove these
         if (search.inputValue.isBlank() || stringResource(R.string.timeline).contains(
                 search.inputValue,
                 true

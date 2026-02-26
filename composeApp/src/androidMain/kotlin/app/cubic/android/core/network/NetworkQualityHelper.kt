@@ -1,4 +1,4 @@
-package app.n_zik.android.core.network
+package app.cubic.android.core.network
 
 import android.content.Context
 import android.net.ConnectivityManager
@@ -11,6 +11,7 @@ import androidx.compose.runtime.State
 import androidx.compose.runtime.produceState
 import app.it.fast4x.rimusic.utils.isConnectionMeteredEnabledKey
 import app.it.fast4x.rimusic.utils.preferences
+import app.cubic.android.core.network.enum.NetworkQuality
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow

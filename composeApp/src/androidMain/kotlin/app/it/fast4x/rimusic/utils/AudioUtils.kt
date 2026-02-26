@@ -151,8 +151,8 @@ fun ExoPlayer.fadeInEffect(duration: Long) {
 
 @MainThread
 fun ExoPlayer.fadeOutEffect(duration: Long) {
-    if (!isPlaying) return
-    if (duration <= 0L) {
+    if( !isPlaying && !playWhenReady && playbackState != Player.STATE_BUFFERING ) return
+    if( duration == 0L || !isPlaying ) {
         pause()
         return
     }

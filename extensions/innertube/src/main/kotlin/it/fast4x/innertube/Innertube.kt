@@ -66,7 +66,7 @@ object Innertube {
     const val DEFAULT_VISITOR_DATA = "CgtMN0FkbDFaWERfdyi8t4u7BjIKCgJWThIEGgAgWQ%3D%3D"
 
     @OptIn(ExperimentalSerializationApi::class)
-    val client = HttpClient(OkHttp) {
+      private fun createClient() = HttpClient(OkHttp) {
         expectSuccess = true
 
         install(ContentNegotiation) {
@@ -92,9 +92,10 @@ object Innertube {
             deflate(0.8F)
         }
 
-        ProxyPreferences.preference?.let {
+    val p = proxy ?: ProxyPreferences.preference?.let { getProxy(it) }
+        if (p != null) {
             engine {
-                proxy = getProxy(it)
+                 proxy = p
             }
         }
 
@@ -105,12 +106,14 @@ object Innertube {
             }
         }
     }
+ var client = createClient()
+        private set
 
     var proxy: Proxy? = null
         set(value) {
             field = value
             client.close()
-            client
+            client = createClient()
         }
 
     var locale = YouTubeLocale(

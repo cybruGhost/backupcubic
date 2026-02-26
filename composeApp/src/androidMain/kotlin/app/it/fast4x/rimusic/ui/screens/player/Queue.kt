@@ -125,10 +125,9 @@ fun Queue(
     val rippleIndication = ripple(bounded = false)
 
     Box( Modifier.fillMaxSize() ) {
-        var items by persist(
-            tag = "queue/songs",
-            player.currentTimeline.mediaItems.map( MediaItem::asSong )
-        )
+       var items by remember(player.currentTimeline) {
+            mutableStateOf(player.currentTimeline.mediaItems.map( MediaItem::asSong ))
+        }
         player.DisposableListener {
             object : Player.Listener {
                 override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -233,7 +232,7 @@ fun Queue(
             ) {
                 itemsIndexed(
                     items = itemsOnDisplay,
-                    key = { index, song -> "%s-%d".format( System.identityHashCode( song ), index ) }
+                  key = { index, song -> "${song.id}-$index" }
                 ) { index, song ->
 
                     val isLocal by remember { derivedStateOf { song.isLocal } }

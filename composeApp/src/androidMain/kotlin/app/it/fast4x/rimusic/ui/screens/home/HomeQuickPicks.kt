@@ -149,6 +149,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.graphics.ColorFilter
 import coil.compose.AsyncImage
 import coil.compose.rememberAsyncImagePainter
+import app.it.fast4x.rimusic.ui.components.themed.LazyMenu
 import coil.request.ImageRequest
 // checkupdate
 import app.kreate.android.BuildConfig
@@ -1499,17 +1500,15 @@ if (currentMonth == 11 && currentDay in 6..31) {
                             title = "${stringResource(R.string.charts)} (${selectedCountryCode.countryName})",
                             onClick = {
                                 menuState.display {
-                                    Menu {
-                                        Countries.entries.forEach { country ->
-                                            MenuEntry(
-                                                icon = R.drawable.arrow_right,
-                                                text = country.countryName,
-                                                onClick = {
-                                                    selectedCountryCode = country
-                                                    menuState.hide()
-                                                }
-                                            )
-                                        }
+                                    LazyMenu(items = Countries.entries) { country ->
+                                        MenuEntry(
+                                            icon = R.drawable.arrow_right,
+                                            text = country.countryName,
+                                            onClick = {
+                                                selectedCountryCode = country
+                                                menuState.hide()
+                                            }
+                                        )
                                     }
                                 }
                             },
