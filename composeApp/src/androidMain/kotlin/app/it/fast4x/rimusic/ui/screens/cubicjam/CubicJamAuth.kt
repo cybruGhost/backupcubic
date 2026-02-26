@@ -1,33 +1,35 @@
 package app.it.fast4x.rimusic.ui.screens.cubicjam
 
-import androidx.compose.foundation.Image
-import androidx.compose.foundation.border
+import androidx.compose.animation.*
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import app.kreate.android.R
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Visibility
-import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.*
 import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
@@ -35,19 +37,23 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.material3.HorizontalDivider
 import androidx.navigation.NavController
+import app.it.fast4x.rimusic.ui.styling.*
+import app.kreate.android.R
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CubicJamAuth(
     navController: NavController
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    val scrollState = rememberScrollState()
+    val appearance = LocalAppearance.current
+    val colorPalette = appearance.colorPalette
+    val typography = appearance.typography
     
     var isLoginMode by remember { mutableStateOf(true) }
     var email by remember { mutableStateOf("") }
@@ -58,261 +64,390 @@ fun CubicJamAuth(
     var successMessage by remember { mutableStateOf<String?>(null) }
     var passwordVisible by remember { mutableStateOf(false) }
     
-    // Purple-Orange theme colors
-    val PurplePrimary = Color(0xFF9C27B0)
-    val PurpleDark = Color(0xFF7B1FA2)
-    val PurpleLight = Color(0xFFE1BEE7)
-    val OrangePrimary = Color(0xFFFF9800)
-    val OrangeDark = Color(0xFFF57C00)
-    val OrangeLight = Color(0xFFFFE0B2)
-    val TealGlow = Color(0xFF00E5FF)
-    val DarkBackground = Color(0xFF121212)
-    val CardDark = Color(0xFF1E1E1E)
-    val SurfaceDark = Color(0xFF2D2D2D)
+    // Forgot password dialog state
+    var showForgotPasswordDialog by remember { mutableStateOf(false) }
+    var forgotPasswordEmail by remember { mutableStateOf("") }
+    var forgotPasswordLoading by remember { mutableStateOf(false) }
+    var forgotPasswordMessage by remember { mutableStateOf<String?>(null) }
     
+    val infiniteTransition = rememberInfiniteTransition()
+    val glowAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.3f,
+        targetValue = 0.7f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(1500, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        )
+    )
+    
+    val rotation by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(20000, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart
+        )
+    )
+
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(DarkBackground)
+            .background(colorPalette.background0)
     ) {
+        // Animated Background
+        Canvas(modifier = Modifier.fillMaxSize()) {
+            val centerX = size.width / 2
+            val centerY = size.height / 2
+            val radius = size.minDimension * 0.8f
+            
+            rotate(rotation) {
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            colorPalette.accent.copy(alpha = glowAlpha * 0.3f),
+                            Color.Transparent
+                        ),
+                        center = Offset(centerX - radius * 0.3f, centerY - radius * 0.3f)
+                    ),
+                    radius = radius * 0.5f,
+                    center = Offset(centerX, centerY)
+                )
+                
+                drawCircle(
+                    brush = Brush.radialGradient(
+                        colors = listOf(
+                            colorPalette.accent.copy(alpha = glowAlpha * 0.2f),
+                            Color.Transparent
+                        ),
+                        center = Offset(centerX + radius * 0.3f, centerY + radius * 0.3f)
+                    ),
+                    radius = radius * 0.4f,
+                    center = Offset(centerX, centerY)
+                )
+            }
+        }
+
+        // Main Content
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 16.dp),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 24.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(48.dp))
             
-            // Logo/Header Section with teal glow
-Icon(
-    painter = painterResource(R.drawable.multipage),
-    contentDescription = "Cubic Jam",
-    modifier = Modifier
-        .size(64.dp)
-        .drawBehind {
-            drawCircle(
-                color = Color(0xFF00BFA5).copy(alpha = 0.18f),
-                radius = size.minDimension / 1.3f
-            )
-        },
-    tint = Color(0xFF00BFA5)
-)
-
-            Spacer(modifier = Modifier.height(20.dp))
+            // Logo
+            Box(
+                modifier = Modifier
+                    .size(80.dp)
+                    .clip(CircleShape)
+                    .background(
+                        Brush.radialGradient(
+                            colors = listOf(
+                                colorPalette.background2,
+                                colorPalette.background1
+                            )
+                        )
+                    )
+                    .border(
+                        width = 2.dp,
+                        color = colorPalette.accent,
+                        shape = CircleShape
+                    )
+                    .padding(16.dp)
+            ) {
+                Icon(
+                    painter = painterResource(R.drawable.multipage),
+                    contentDescription = "Cubic Jam",
+                    modifier = Modifier.fillMaxSize(),
+                    tint = colorPalette.accent
+                )
+            }
+            
+            Spacer(modifier = Modifier.height(24.dp))
             
             // Title
             Text(
-                text = if (isLoginMode) "Welcome to Cubic Jam" else "Join Cubic Jam",
-                style = MaterialTheme.typography.headlineMedium.copy(
+                text = if (isLoginMode) "Welcome Back" else "Join Cubic Jam",
+                style = typography.xxxl.copy(
                     fontWeight = FontWeight.Bold
                 ),
-                color = Color.White,
+                color = colorPalette.text,
                 textAlign = TextAlign.Center
             )
             
             Spacer(modifier = Modifier.height(8.dp))
             
             // Subtitle
-            Text(
-                text = buildAnnotatedString {
-                    if (isLoginMode) {
-                        append("Share your music journey with friends. ")
-                        withStyle(style = SpanStyle(
-                            fontWeight = FontWeight.SemiBold,
-                            color = OrangeLight
-                        )) {
-                            append("See what everyone's listening to in real-time!")
-                        }
-                    } else {
-                        append("Create an account to connect with friends, ")
-                        append("share your favorite tracks, and ")
-                        withStyle(style = SpanStyle(
-                            fontWeight = FontWeight.SemiBold,
-                            color = OrangeLight
-                        )) {
-                            append("discover new music together!")
-                        }
+            val subtitleText = buildAnnotatedString {
+                if (isLoginMode) {
+                    append("Share your music journey ")
+                    withStyle(style = SpanStyle(
+                        fontWeight = FontWeight.SemiBold,
+                        color = colorPalette.accent
+                    )) {
+                        append("with friends")
                     }
-                },
-                style = MaterialTheme.typography.bodyMedium.copy(
-                    lineHeight = 22.sp
-                ),
-                color = Color(0xFFB0B0B0),
+                } else {
+                    append("Connect with friends, share tracks, and ")
+                    withStyle(style = SpanStyle(
+                        fontWeight = FontWeight.SemiBold,
+                        color = colorPalette.accent
+                    )) {
+                        append("discover together")
+                    }
+                }
+            }
+            
+            Text(
+                text = subtitleText,
+                style = typography.m,
+                color = colorPalette.textSecondary,
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 8.dp)
             )
             
-            Spacer(modifier = Modifier.height(24.dp))
+            Spacer(modifier = Modifier.height(32.dp))
             
-            // Form Section
+            // Form Card
             Card(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
+                shape = RoundedCornerShape(24.dp),
                 colors = CardDefaults.cardColors(
-                    containerColor = CardDark
+                    containerColor = colorPalette.background1
                 ),
-                elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
+                elevation = CardDefaults.cardElevation(
+                    defaultElevation = 4.dp
+                )
             ) {
                 Column(
-                    modifier = Modifier.padding(20.dp),
+                    modifier = Modifier.padding(24.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
-                    // Email Field with validation
+                    // Email Field
                     OutlinedTextField(
                         value = email,
                         onValueChange = { 
                             email = it
-                            // Clear validation errors when user starts typing
-                            if (errorMessage?.contains("email", ignoreCase = true) == true) {
-                                errorMessage = null
-                            }
+                            errorMessage = null
                         },
-                        label = {
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colorPalette.accent,
+                            unfocusedBorderColor = colorPalette.background3,
+                            focusedLabelColor = colorPalette.accent,
+                            unfocusedLabelColor = colorPalette.textSecondary,
+                            focusedTextColor = colorPalette.text,
+                            unfocusedTextColor = colorPalette.text,
+                            cursorColor = colorPalette.accent,
+                            focusedLeadingIconColor = colorPalette.accent,
+                            unfocusedLeadingIconColor = colorPalette.textSecondary,
+                            errorLabelColor = colorPalette.red,
+                            errorLeadingIconColor = colorPalette.red,
+                            errorTextColor = colorPalette.text
+                        ),
+                        label = { 
                             Text(
                                 "Email Address",
-                                color = PurpleLight
+                                style = typography.xs
+                            ) 
+                        },
+                        placeholder = { 
+                            Text(
+                                "your@email.com",
+                                style = typography.xs,
+                                color = colorPalette.textDisabled
+                            ) 
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Email,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
                             )
                         },
-                        placeholder = { Text("you@example.com") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PurplePrimary,
-                            unfocusedBorderColor = SurfaceDark,
-                            focusedLabelColor = PurpleLight,
-                            unfocusedLabelColor = Color(0xFFB0B0B0),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            cursorColor = OrangePrimary,
-                            errorLabelColor = PurpleLight,     // label stays visible
-                            errorLeadingIconColor = Color.White,
-                            errorTrailingIconColor = Color.White,
-                            errorTextColor = Color.White        // ensures text stays white
-
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Next
                         ),
-                        isError = errorMessage?.contains("email", ignoreCase = true) == true || 
-                                errorMessage?.contains("Invalid", ignoreCase = true) == true
+                        singleLine = true,
+                        isError = errorMessage?.contains("email", ignoreCase = true) == true
                     )
                     
-                    // Password Field with validation
+                    // Password Field
                     OutlinedTextField(
                         value = password,
                         onValueChange = { 
                             password = it
-                            // Clear validation errors when user starts typing
-                            if (errorMessage?.contains("password", ignoreCase = true) == true) {
-                                errorMessage = null
-                            }
+                            errorMessage = null
                         },
-                        label = {
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(16.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colorPalette.accent,
+                            unfocusedBorderColor = colorPalette.background3,
+                            focusedLabelColor = colorPalette.accent,
+                            unfocusedLabelColor = colorPalette.textSecondary,
+                            focusedTextColor = colorPalette.text,
+                            unfocusedTextColor = colorPalette.text,
+                            cursorColor = colorPalette.accent,
+                            focusedLeadingIconColor = colorPalette.accent,
+                            unfocusedLeadingIconColor = colorPalette.textSecondary,
+                            focusedTrailingIconColor = colorPalette.accent,
+                            unfocusedTrailingIconColor = colorPalette.textSecondary,
+                            errorLabelColor = colorPalette.red,
+                            errorLeadingIconColor = colorPalette.red,
+                            errorTrailingIconColor = colorPalette.red,
+                            errorTextColor = colorPalette.text
+                        ),
+                        label = { 
                             Text(
                                 "Password",
-                                color = PurpleLight
+                                style = typography.xs
+                            ) 
+                        },
+                        placeholder = { 
+                            Text(
+                                "••••••••",
+                                style = typography.xs,
+                                color = colorPalette.textDisabled
+                            ) 
+                        },
+                        leadingIcon = {
+                            Icon(
+                                imageVector = Icons.Outlined.Lock,
+                                contentDescription = null,
+                                modifier = Modifier.size(20.dp)
                             )
                         },
-                        placeholder = { Text("Enter your password") },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                        visualTransformation = if (passwordVisible) VisualTransformation.None 
-                            else PasswordVisualTransformation(),
                         trailingIcon = {
                             IconButton(
-                                onClick = { passwordVisible = !passwordVisible },
-                                modifier = Modifier.size(24.dp)
+                                onClick = { passwordVisible = !passwordVisible }
                             ) {
                                 Icon(
-                                    imageVector = if (passwordVisible) Icons.Default.Visibility 
-                                        else Icons.Default.VisibilityOff,
-                                    contentDescription = if (passwordVisible) "Hide password" 
-                                        else "Show password",
-                                    tint = OrangePrimary
+                                    imageVector = if (passwordVisible) Icons.Filled.Visibility 
+                                                else Icons.Filled.VisibilityOff,
+                                    contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                                    modifier = Modifier.size(20.dp)
                                 )
                             }
                         },
-                        modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(12.dp),
-                        colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = PurplePrimary,
-                            unfocusedBorderColor = SurfaceDark,
-                            focusedLabelColor = PurpleLight,
-                            unfocusedLabelColor = Color(0xFFB0B0B0),
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White,
-                            cursorColor = OrangePrimary,
-                            errorLabelColor = PurpleLight,     // label stays visible
-                            errorLeadingIconColor = Color.White,
-                            errorTrailingIconColor = Color.White,
-                            errorTextColor = Color.White        // ensures text stays white
-
+                        visualTransformation = if (passwordVisible) VisualTransformation.None 
+                                            else PasswordVisualTransformation(),
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Password,
+                            imeAction = if (isLoginMode) ImeAction.Done else ImeAction.Next
                         ),
-                        isError = errorMessage?.contains("password", ignoreCase = true) == true || 
-                                errorMessage?.contains("Invalid", ignoreCase = true) == true
+                        singleLine = true,
+                        isError = errorMessage?.contains("password", ignoreCase = true) == true
                     )
                     
-                    // Username Field (only for signup)
-                    if (!isLoginMode) {
+                    // Username Field (Sign Up Only)
+                    AnimatedVisibility(
+                        visible = !isLoginMode,
+                        enter = fadeIn() + expandVertically(),
+                        exit = fadeOut() + shrinkVertically()
+                    ) {
                         OutlinedTextField(
                             value = username,
                             onValueChange = { 
                                 username = it
-                                // Clear validation errors when user starts typing
-                                if (errorMessage?.contains("username", ignoreCase = true) == true) {
-                                    errorMessage = null
-                                }
+                                errorMessage = null
                             },
-                            label = {
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(16.dp),
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedBorderColor = colorPalette.accent,
+                                unfocusedBorderColor = colorPalette.background3,
+                                focusedLabelColor = colorPalette.accent,
+                                unfocusedLabelColor = colorPalette.textSecondary,
+                                focusedTextColor = colorPalette.text,
+                                unfocusedTextColor = colorPalette.text,
+                                cursorColor = colorPalette.accent,
+                                focusedLeadingIconColor = colorPalette.accent,
+                                unfocusedLeadingIconColor = colorPalette.textSecondary,
+                                errorLabelColor = colorPalette.red,
+                                errorLeadingIconColor = colorPalette.red,
+                                errorTextColor = colorPalette.text
+                            ),
+                            label = { 
                                 Text(
                                     "Username",
-                                    color = PurpleLight
+                                    style = typography.xs
+                                ) 
+                            },
+                            placeholder = { 
+                                Text(
+                                    "Choose a username",
+                                    style = typography.xs,
+                                    color = colorPalette.textDisabled
+                                ) 
+                            },
+                            leadingIcon = {
+                                Icon(
+                                    imageVector = Icons.Outlined.Person,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(20.dp)
                                 )
                             },
-                            placeholder = { Text("Choose a unique username") },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = OutlinedTextFieldDefaults.colors(
-                                focusedBorderColor = PurplePrimary,
-                                unfocusedBorderColor = SurfaceDark,
-                                focusedLabelColor = OrangePrimary,
-                                unfocusedLabelColor = Color(0xFFB0B0B0),
-                                focusedTextColor = Color.White,
-                                unfocusedTextColor = Color.White,
-                                cursorColor = OrangePrimary, 
-                                errorLabelColor = PurpleLight,     // label stays visible
-                                errorLeadingIconColor = Color.White,
-                                errorTrailingIconColor = Color.White,
-                                errorTextColor = Color.White        // ensures text stays white
-
+                            keyboardOptions = KeyboardOptions(
+                                keyboardType = KeyboardType.Text,
+                                imeAction = ImeAction.Done
                             ),
+                            singleLine = true,
                             isError = errorMessage?.contains("username", ignoreCase = true) == true
                         )
                     }
                     
-                    // Error/Success messages
+                    // Forgot Password Link (Login Mode Only)
+                    if (isLoginMode) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.End
+                        ) {
+                            TextButton(
+                                onClick = { 
+                                    forgotPasswordEmail = email
+                                    showForgotPasswordDialog = true 
+                                },
+                                colors = ButtonDefaults.textButtonColors(
+                                    contentColor = colorPalette.accent
+                                )
+                            ) {
+                                Text(
+                                    text = "Forgot Password?",
+                                    style = typography.xs.copy(
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                )
+                            }
+                        }
+                    }
+                    
+                    // Error/Success Messages
                     errorMessage?.let { message ->
                         Surface(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp)),
-                            color = Color(0xFF311B1B),
-                            contentColor = Color(0xFFEF9A9A)
+                            color = colorPalette.red.copy(alpha = 0.1f),
+                            contentColor = colorPalette.red
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    painter = painterResource(app.kreate.android.R.drawable.alert_circle),
-                                    contentDescription = "Error",
+                                    imageVector = Icons.Default.Error,
+                                    contentDescription = null,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = message,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = typography.xs,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
@@ -324,114 +459,84 @@ Icon(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(12.dp)),
-                            color = Color(0xFF1B1A1F),
-                            contentColor = OrangeLight
+                            color = colorPalette.accent.copy(alpha = 0.1f),
+                            contentColor = colorPalette.accent
                         ) {
                             Row(
                                 modifier = Modifier.padding(12.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    painter = painterResource(app.kreate.android.R.drawable.checkmark),
-                                    contentDescription = "Success",
+                                    imageVector = Icons.Default.CheckCircle,
+                                    contentDescription = null,
                                     modifier = Modifier.size(20.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
                                 Text(
                                     text = message,
-                                    style = MaterialTheme.typography.bodySmall,
+                                    style = typography.xs,
                                     modifier = Modifier.weight(1f)
                                 )
                             }
                         }
                     }
                     
-                    // Submit Button with input validation
+                    // Submit Button
                     Button(
                         onClick = {
                             if (isLoading) return@Button
                             
-                            // Email validation
-                            val emailRegex = Regex("^[A-Za-z](.*)([@]{1})(.{1,})(\\.)(.{1,})")
-                            if (email.isBlank()) {
-                                errorMessage = "Email is required"
-                                return@Button
-                            }
-                            if (!emailRegex.matches(email)) {
-                                errorMessage = "Please enter a valid email address"
-                                return@Button
-                            }
-                            
-                            // Password validation
-                            if (password.isBlank()) {
-                                errorMessage = "Password is required"
-                                return@Button
-                            }
-                            if (password.length < 6) {
-                                errorMessage = "Password must be at least 6 characters"
-                                return@Button
-                            }
-                            
-                            if (!isLoginMode) {
-                                // Username validation for signup
-                                if (username.isBlank()) {
-                                    errorMessage = "Username is required"
-                                    return@Button
-                                }
-                                if (username.length < 3) {
-                                    errorMessage = "Username must be at least 3 characters"
-                                    return@Button
-                                }
-                                if (!username.matches(Regex("^[a-zA-Z0-9_]+$"))) {
+                            when {
+                                email.isBlank() -> errorMessage = "Email is required"
+                                !isValidEmail(email) -> errorMessage = "Invalid email format"
+                                password.isBlank() -> errorMessage = "Password is required"
+                                password.length < 6 -> errorMessage = "Password must be at least 6 characters"
+                                !isLoginMode && username.isBlank() -> errorMessage = "Username is required"
+                                !isLoginMode && username.length < 3 -> errorMessage = "Username must be at least 3 characters"
+                                !isLoginMode && !username.matches(Regex("^[a-zA-Z0-9_]+$")) -> 
                                     errorMessage = "Username can only contain letters, numbers, and underscores"
-                                    return@Button
-                                }
-                            }
-                            
-                            isLoading = true
-                            errorMessage = null
-                            successMessage = null
-                            
-                            scope.launch {
-                                try {
-                                    val result = if (isLoginMode) {
-                                        login(email, password, context)
-                                    } else {
-                                        signup(email, password, username, context)
-                                    }
+                                else -> {
+                                    isLoading = true
+                                    errorMessage = null
                                     
-                                    result.onSuccess { authResponse ->
-                                        if (authResponse.success) {
-                                            successMessage = if (isLoginMode) 
-                                                "Welcome back! Connecting to Cubic Jam..." 
-                                            else 
-                                                "Account created! Welcome to Cubic Jam!"
-                                            
-                                            scope.launch {
-                                                kotlinx.coroutines.delay(1500)
-                                                navController.navigateUp()
-                                            }
+                                    scope.launch {
+                                        val result = if (isLoginMode) {
+                                            login(email, password, context)
                                         } else {
-                                            errorMessage = "Authentication failed. Please try again."
+                                            signup(email, password, username, context)
                                         }
-                                    }.onFailure { throwable ->
-                                        Timber.tag("CubicJam").e(throwable, "Authentication error")
-                                        errorMessage = when {
-                                            throwable.message?.contains("timeout", ignoreCase = true) == true -> 
-                                                "Connection timeout. Please check your internet connection"
-                                            throwable.message?.contains("400", ignoreCase = true) == true -> 
-                                                if (isLoginMode) "Invalid email or password" else "Username already taken"
-                                            throwable.message?.contains("401", ignoreCase = true) == true -> 
-                                                "Invalid credentials. Please check your email and password"
-                                            throwable.message?.contains("network", ignoreCase = true) == true -> 
-                                                "No internet connection. Please check your network"
-                                            else -> "Unable to connect. Please try again later"
-                                        }
+                                        
+                                        result.fold(
+                                            onSuccess = { authResponse ->
+                                                if (authResponse.success) {
+                                                    successMessage = if (isLoginMode) 
+                                                        "Welcome back! 🎵" 
+                                                    else 
+                                                        "Account created! 🎉"
+                                                    
+                                                    delay(1000)
+                                                    isLoading = false
+                                                    navController.navigateUp()
+                                                } else {
+                                                    errorMessage = "Authentication failed. Please try again."
+                                                    isLoading = false
+                                                }
+                                            },
+                                            onFailure = { e ->
+                                                Timber.tag("CubicJam").e(e, "Authentication error")
+                                                errorMessage = when {
+                                                    e.message?.contains("401", ignoreCase = true) == true -> 
+                                                        "Invalid email or password"
+                                                    e.message?.contains("409", ignoreCase = true) == true -> 
+                                                        "Email or username already exists"
+                                                    e.message?.contains("network", ignoreCase = true) == true -> 
+                                                        "Network error. Please check your connection"
+                                                    else -> "Authentication failed: ${e.message}"
+                                                }
+                                                isLoading = false
+                                            }
+                                        )
                                     }
-                                } catch (e: Exception) {
-                                    errorMessage = "Network error: ${e.message}"
-                                } finally {
-                                    isLoading = false
                                 }
                             }
                         },
@@ -439,37 +544,31 @@ Icon(
                             .fillMaxWidth()
                             .height(56.dp),
                         enabled = !isLoading,
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = OrangePrimary,
-                            contentColor = Color.White
+                            containerColor = colorPalette.accent,
+                            contentColor = colorPalette.onAccent,
+                            disabledContainerColor = colorPalette.background3
                         )
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
-                                modifier = Modifier.size(20.dp),
+                                modifier = Modifier.size(24.dp),
                                 strokeWidth = 2.dp,
-                                color = Color.White
+                                color = colorPalette.onAccent
                             )
                         } else {
                             Icon(
-                                painter = painterResource(
-                                    if (isLoginMode) app.kreate.android.R.drawable.people 
-                                    else app.kreate.android.R.drawable.add
-                                ),
+                                imageVector = if (isLoginMode) Icons.Default.Login else Icons.Default.PersonAdd,
                                 contentDescription = null,
                                 modifier = Modifier.size(20.dp)
                             )
-                        }
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Text(
-                            text = if (isLoading) "Please wait..." 
-                                else if (isLoginMode) "Sign In" 
-                                else "Create Account",
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.SemiBold
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text(
+                                text = if (isLoginMode) "Sign In" else "Create Account",
+                                style = typography.m.copy(fontWeight = FontWeight.SemiBold)
                             )
-                        )
+                        }
                     }
                     
                     // Mode Toggle
@@ -483,8 +582,8 @@ Icon(
                                 "Don't have an account?" 
                             else 
                                 "Already have an account?",
-                            color = Color(0xFFB0B0B0),
-                            style = MaterialTheme.typography.bodyMedium
+                            style = typography.xs,
+                            color = colorPalette.textSecondary
                         )
                         Spacer(modifier = Modifier.width(8.dp))
                         TextButton(
@@ -496,81 +595,57 @@ Icon(
                                 if (isLoginMode) username = ""
                             },
                             colors = ButtonDefaults.textButtonColors(
-                                contentColor = OrangePrimary
+                                contentColor = colorPalette.accent
                             )
                         ) {
                             Text(
                                 text = if (isLoginMode) "Sign Up" else "Sign In",
-                                style = MaterialTheme.typography.bodyMedium.copy(
-                                    fontWeight = FontWeight.SemiBold
-                                )
+                                style = typography.s.copy(fontWeight = FontWeight.SemiBold)
                             )
                         }
                     }
                     
-                    // Divider with "or"
+                    // Divider
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         HorizontalDivider(
                             modifier = Modifier.weight(1f),
-                            color = SurfaceDark,
+                            color = colorPalette.background3,
                             thickness = 1.dp
                         )
-
                         Text(
                             text = "or",
                             modifier = Modifier.padding(horizontal = 16.dp),
-                            color = Color(0xFF808080),
-                            style = MaterialTheme.typography.bodySmall
+                            style = typography.xxs,
+                            color = colorPalette.textDisabled
                         )
                         HorizontalDivider(
                             modifier = Modifier.weight(1f),
-                            color = SurfaceDark,
+                            color = colorPalette.background3,
                             thickness = 1.dp
                         )
-
                     }
                     
                     // Back Button
                     OutlinedButton(
                         onClick = { navController.navigateUp() },
                         modifier = Modifier.fillMaxWidth(),
-                        shape = RoundedCornerShape(14.dp),
+                        shape = RoundedCornerShape(16.dp),
                         colors = ButtonDefaults.outlinedButtonColors(
-                            contentColor = PurpleLight,
-                            containerColor = Color.Transparent
-                        ),
-                        border = BorderStroke(
-                            width = 1.dp,
-                            color = PurplePrimary
+                            contentColor = colorPalette.text
                         )
-
                     ) {
                         Icon(
-                            painter = painterResource(app.kreate.android.R.drawable.chevron_back),
+                            imageVector = Icons.Default.ArrowBack,
                             contentDescription = "Back",
-                            modifier = Modifier.size(20.dp),
-                            tint = PurpleLight
+                            modifier = Modifier.size(20.dp)
                         )
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Go Back to Music")
-                    }
-                    
-                    // Footer Info
-                    if (!isLoginMode) {
                         Text(
-                            text = "By signing up, you agree to share your listening activity with friends on Cubic Jam.",
-                            style = MaterialTheme.typography.bodySmall.copy(
-                                fontSize = 12.sp,
-                                lineHeight = 16.sp
-                            ),
-                            color = Color(0xFFB0B0B0).copy(alpha = 0.7f),
-                            textAlign = TextAlign.Center,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(top = 8.dp)
+                            text = "Back to Music",
+                            style = typography.s
                         )
                     }
                 }
@@ -578,52 +653,195 @@ Icon(
             
             Spacer(modifier = Modifier.height(24.dp))
             
-        // Additional Info
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 8.dp),
-            horizontalArrangement = Arrangement.Center,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            // Red Beta Badge
-            Box(
+            // Beta Badge
+            Row(
                 modifier = Modifier
-                    .background(
-                        color = Color.Red.copy(alpha = 0.12f),
-                        shape = RoundedCornerShape(6.dp)
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = Color.Red.copy(alpha = 0.3f),
-                        shape = RoundedCornerShape(6.dp)
-                    )
-                    .padding(horizontal = 10.dp, vertical = 4.dp)
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = "BETA",
-                    style = MaterialTheme.typography.labelSmall.copy(
-                        fontSize = 10.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Red
+                Surface(
+                    modifier = Modifier
+                        .border(
+                            width = 1.dp,
+                            color = colorPalette.accent.copy(alpha = 0.3f),
+                            shape = RoundedCornerShape(4.dp)
+                        ),
+                    color = colorPalette.accent.copy(alpha = 0.1f),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "BETA",
+                        style = typography.xxs.copy(
+                            fontWeight = FontWeight.Bold,
+                            color = colorPalette.accent
+                        ),
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                     )
+                }
+                
+                Spacer(modifier = Modifier.width(8.dp))
+                
+                Text(
+                    text = "This feature is in beta. NOTE THIS SYSTEM NEEDS A REDESIGN AND MIGHT LOG U OUT ALOT OF TYM . WILL FIX IT SOON!",
+                    style = typography.xxs,
+                    color = colorPalette.textDisabled,
+                    textAlign = TextAlign.Center
                 )
             }
             
-            Spacer(modifier = Modifier.width(8.dp))
-            
-            Text(
-                text = "This feature is in beta. More updates coming soon!",
-                style = MaterialTheme.typography.bodySmall.copy(
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                ),
-                color = Color(0xFFB0B0B0).copy(alpha = 0.6f),
-                textAlign = TextAlign.Center
-            )
-        }
-
-        Spacer(modifier = Modifier.height(32.dp))
+            Spacer(modifier = Modifier.height(48.dp))
         }
     }
+    
+    // Forgot Password Dialog
+    if (showForgotPasswordDialog) {
+        AlertDialog(
+            onDismissRequest = { 
+                showForgotPasswordDialog = false
+                forgotPasswordMessage = null
+            },
+            title = {
+                Text(
+                    text = "Reset Password",
+                    style = typography.m.copy(fontWeight = FontWeight.Bold),
+                    color = colorPalette.text
+                )
+            },
+            text = {
+                Column(
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Text(
+                        text = "Enter your email address and we'll send you instructions to reset your password.",
+                        style = typography.xs,
+                        color = colorPalette.textSecondary
+                    )
+                    
+                    OutlinedTextField(
+                        value = forgotPasswordEmail,
+                        onValueChange = { 
+                            forgotPasswordEmail = it
+                            forgotPasswordMessage = null
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = colorPalette.accent,
+                            unfocusedBorderColor = colorPalette.background3,
+                            focusedLabelColor = colorPalette.accent,
+                            unfocusedLabelColor = colorPalette.textSecondary,
+                            focusedTextColor = colorPalette.text,
+                            unfocusedTextColor = colorPalette.text,
+                            cursorColor = colorPalette.accent
+                        ),
+                        label = { 
+                            Text(
+                                "Email Address",
+                                style = typography.xs
+                            ) 
+                        },
+                        placeholder = { 
+                            Text(
+                                "your@email.com",
+                                style = typography.xs,
+                                color = colorPalette.textDisabled
+                            ) 
+                        },
+                        keyboardOptions = KeyboardOptions(
+                            keyboardType = KeyboardType.Email,
+                            imeAction = ImeAction.Done
+                        ),
+                        singleLine = true
+                    )
+                    
+                    forgotPasswordMessage?.let { message ->
+                        Surface(
+                            modifier = Modifier.fillMaxWidth(),
+                            color = if (message.contains("sent", ignoreCase = true)) 
+                                colorPalette.accent.copy(alpha = 0.1f)
+                            else
+                                colorPalette.red.copy(alpha = 0.1f),
+                            shape = RoundedCornerShape(8.dp)
+                        ) {
+                            Text(
+                                text = message,
+                                style = typography.xs,
+                                color = if (message.contains("sent", ignoreCase = true))
+                                    colorPalette.accent
+                                else
+                                    colorPalette.red,
+                                modifier = Modifier.padding(12.dp)
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (forgotPasswordEmail.isBlank()) {
+                            forgotPasswordMessage = "Please enter your email"
+                            return@Button
+                        }
+                        if (!isValidEmail(forgotPasswordEmail)) {
+                            forgotPasswordMessage = "Invalid email format"
+                            return@Button
+                        }
+                        
+                        forgotPasswordLoading = true
+                        scope.launch {
+                            // For now, show success message (you can implement actual password reset later)
+                            delay(1000)
+                            forgotPasswordMessage = "Password reset instructions sent to your email"
+                            forgotPasswordLoading = false
+                            
+                            // Auto-dismiss after 2 seconds
+                            delay(2000)
+                            showForgotPasswordDialog = false
+                            forgotPasswordMessage = null
+                        }
+                    },
+                    enabled = !forgotPasswordLoading,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colorPalette.accent,
+                        contentColor = colorPalette.onAccent
+                    ),
+                    shape = RoundedCornerShape(12.dp)
+                ) {
+                    if (forgotPasswordLoading) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                            color = colorPalette.onAccent
+                        )
+                    } else {
+                        Text("Send Reset Link")
+                    }
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { 
+                        showForgotPasswordDialog = false
+                        forgotPasswordMessage = null
+                    },
+                    colors = ButtonDefaults.textButtonColors(
+                        contentColor = colorPalette.textSecondary
+                    )
+                ) {
+                    Text("Cancel")
+                }
+            },
+            containerColor = colorPalette.background1,
+            titleContentColor = colorPalette.text,
+            textContentColor = colorPalette.textSecondary,
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+}
+
+private fun isValidEmail(email: String): Boolean {
+    return android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches()
 }

@@ -667,7 +667,7 @@ fun AppearanceSettings(
                 showthumbnail = true
                 playerBackgroundColors = PlayerBackgroundColors.BlurredCoverColor
                 blurStrength = 50f
-                thumbnailRoundness = ThumbnailRoundness.None
+                thumbnailRoundness = ThumbnailRoundness.Heavy
                 playerInfoType = PlayerInfoType.Essential
                 playerTimelineType = PlayerTimelineType.Wavy
                 playerTimelineSize = PlayerTimelineSize.Biggest
@@ -677,7 +677,7 @@ fun AppearanceSettings(
                 playerType = PlayerType.Essential
                 showlyricsthumbnail = false
                 expandedplayer = true
-                thumbnailType = ThumbnailType.Modern
+                thumbnailType = ThumbnailType.Essential
                 playerThumbnailSize = PlayerThumbnailSize.Big
                 showTotalTimeQueue = false
                 bottomgradient = true
@@ -1065,7 +1065,7 @@ if (!isLandscape) {
                         showthumbnail = true
                         playerBackgroundColors = PlayerBackgroundColors.BlurredCoverColor
                         blurStrength = 50f
-                        thumbnailRoundness = ThumbnailRoundness.None
+                        thumbnailRoundness = ThumbnailRoundness.Heavy
                         playerInfoType = PlayerInfoType.Essential
                         playerTimelineType = PlayerTimelineType.Wavy
                         playerTimelineSize = PlayerTimelineSize.Biggest
@@ -1075,7 +1075,7 @@ if (!isLandscape) {
                         playerType = PlayerType.Essential
                         showlyricsthumbnail = false
                         expandedplayer = true
-                        thumbnailType = ThumbnailType.Modern
+                        thumbnailType = ThumbnailType.Essential
                         playerThumbnailSize = PlayerThumbnailSize.Big
                         showTotalTimeQueue = false
                         bottomgradient = true
