@@ -77,29 +77,33 @@ fun StatsForNerds(
 //
 //    val connectivityManager = getSystemService(context, ConnectivityManager::class.java) as ConnectivityManager
 
+
     AnimatedVisibility(
         visible = isDisplayed,
         enter = fadeIn(),
         exit = fadeOut(),
     ) {
-        var cachedBytes by remember(mediaId) {
-            mutableStateOf(binder.cache.getCachedBytes(mediaId, 0, -1))
+        val cleanMediaId = remember(mediaId) { mediaId.split("/").lastOrNull() ?: mediaId }
+
+        var cachedBytes by remember(cleanMediaId) {
+            mutableStateOf(binder.cache.getCachedBytes(cleanMediaId, 0, -1))
         }
 
-        var downloadCachedBytes by remember(mediaId) {
-            mutableStateOf(binder.downloadCache.getCachedBytes(mediaId, 0, -1))
+        var downloadCachedBytes by remember(cleanMediaId) {
+            mutableStateOf(binder.downloadCache.getCachedBytes(cleanMediaId, 0, -1))
         }
 
-        val format by remember {
-            Database.formatTable.findBySongId( mediaId )
-        }.collectAsState( null, Dispatchers.IO )
+
+       val format by Database.formatTable.findBySongId( cleanMediaId )
+            .collectAsState( null, Dispatchers.IO )
         val showThumbnail by rememberPreference(showthumbnailKey, true)
         val statsForNerds by rememberPreference(statsfornerdsKey, false)
         val playerType by rememberPreference(playerTypeKey, PlayerType.Essential)
         val transparentBackgroundActionBarPlayer by rememberPreference(
             transparentBackgroundPlayerActionBarKey,
-            false
+            true
         )
+        
         var blackgradient by rememberPreference(blackgradientKey, false)
         val playerBackgroundColors by rememberPreference(
             playerBackgroundColorsKey,

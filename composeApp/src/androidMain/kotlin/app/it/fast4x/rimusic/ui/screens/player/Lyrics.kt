@@ -137,7 +137,7 @@ import app.it.fast4x.rimusic.utils.colorPaletteNameKey
 import app.it.fast4x.rimusic.utils.conditional
 import app.it.fast4x.rimusic.utils.effectRotationKey
 import app.it.fast4x.rimusic.utils.expandedplayerKey
-import app.it.fast4x.rimusic.utils.getHttpClient
+import app.cubic.android.core.network.NetworkClientFactory
 import app.it.fast4x.rimusic.utils.isShowingSynchronizedLyricsKey
 import app.it.fast4x.rimusic.utils.jumpPreviousKey
 import app.it.fast4x.rimusic.utils.landscapeControlsKey
@@ -327,7 +327,7 @@ fun Lyrics(
 
         var languageDestination = languageDestination(otherLanguageApp)
 
-        val translator = Translator(getHttpClient())
+        val translator = Translator(NetworkClientFactory.getKtorClient())
 
         var copyToClipboard by remember {
             mutableStateOf(false)

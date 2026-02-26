@@ -450,27 +450,33 @@ class MainActivity :
 
         intentUriData = intent.data ?: intent.getStringExtra(Intent.EXTRA_TEXT)?.toUri()
 
-        with(preferences) {
-            if (getBoolean(isKeepScreenOnEnabledKey, false)) {
-                window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+       with(preferences) {
+    if (getBoolean(isKeepScreenOnEnabledKey, false)) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+    if (getBoolean(isProxyEnabledKey, false)) {
+        val hostName = getString(proxyHostnameKey, null)
+        val proxyPort = getInt(proxyPortKey, 8080)
+        val proxyMode = getEnum(proxyModeKey, Proxy.Type.HTTP)
+        if (isValidIP(hostName)) {
+            hostName?.let { hName ->
+                ProxyPreferences.preference =
+                    ProxyPreferenceItem(hName, proxyPort, proxyMode)
             }
-            if (getBoolean(isProxyEnabledKey, false)) {
-                val hostName = getString(proxyHostnameKey, null)
-                val proxyPort = getInt(proxyPortKey, 8080)
-                val proxyMode = getEnum(proxyModeKey, Proxy.Type.HTTP)
-                if (isValidIP(hostName)) {
-                    hostName?.let { hName ->
-                        ProxyPreferences.preference =
-                            ProxyPreferenceItem(hName, proxyPort, proxyMode)
-                    }
-                } else
-                    Toaster.e( "Your Proxy Hostname is invalid, please check it" )
-            }
+        } else
+            Toaster.e( "Your Proxy Hostname is invalid, please check it" )
+    }
 
-            val proxy = Innertube.proxy ?: Proxy.NO_PROXY
-            NewPipe.init( NewPipeDownloaderImpl(proxy) )
-        }
-
+    val proxy = Innertube.proxy ?: Proxy.NO_PROXY
+    // Fix: Pass a lambda that returns OkHttpClient, not the proxy directly
+    NewPipe.init( 
+        NewPipeDownloaderImpl {
+            OkHttpClient.Builder()
+                .proxy(proxy)
+                .build()
+        } 
+    )
+}
         setContent {
             val colorPaletteMode by rememberPreference(colorPaletteModeKey, ColorPaletteMode.Dark)
             val isPicthBlack = colorPaletteMode == ColorPaletteMode.PitchBlack

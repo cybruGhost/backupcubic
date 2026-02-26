@@ -48,6 +48,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import app.kreate.android.R
+import androidx.compose.ui.graphics.painter.Painter
+
 import app.it.fast4x.compose.persist.PersistMapCleanup
 import it.fast4x.innertube.Innertube
 import app.it.fast4x.rimusic.Database
@@ -75,7 +77,7 @@ import app.it.fast4x.rimusic.ui.items.AlbumItem
 import app.it.fast4x.rimusic.ui.items.AlbumItemPlaceholder
 import app.it.fast4x.rimusic.ui.components.themed.Loader
 import app.it.fast4x.rimusic.ui.items.SongItemPlaceholder
-import androidx.compose.ui.graphics.painter.Painter
+
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.px
 import app.it.fast4x.rimusic.utils.addNext
@@ -91,7 +93,7 @@ import app.it.fast4x.rimusic.utils.enqueue
 import app.it.fast4x.rimusic.utils.fadingEdge
 import app.it.fast4x.rimusic.utils.forcePlayAtIndex
 import app.it.fast4x.rimusic.utils.formatAsTime
-import app.it.fast4x.rimusic.utils.getHttpClient
+import app.cubic.android.core.network.NetworkClientFactory
 import app.it.fast4x.rimusic.utils.isLandscape
 import app.it.fast4x.rimusic.utils.languageDestination
 import app.it.fast4x.rimusic.utils.medium
@@ -225,7 +227,7 @@ fun AlbumDetails(
     //</editor-fold>
     //<editor-fold defaultstate="collapsed" desc="Translator">
     val translate = Translate.init()
-    val translator = Translator(getHttpClient())
+    val translator = Translator(NetworkClientFactory.getKtorClient())
     val languageDestination = languageDestination()
     //</editor-fold>
 

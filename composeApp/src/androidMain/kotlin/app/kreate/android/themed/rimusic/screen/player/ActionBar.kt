@@ -263,13 +263,21 @@ fun BoxScope.ActionBar(
                         }
                     }
 
+                   // Instant update and snap when the queue itself changes
                     LaunchedEffect( binder.player.mediaItems ) {
                         mediaItems.clear()
                         mediaItems.addAll( binder.player.mediaItems )
 
-                        pagerStateQueue.requestScrollToPage(
-                            nextIndex.coerceIn( 0, pagerStateQueue.pageCount.coerceAtLeast(1) )
-                        )
+                       val targetPage = nextIndex.coerceIn( 0, pagerStateQueue.pageCount.coerceAtLeast(1) - 1 )
+                        pagerStateQueue.requestScrollToPage(targetPage)
+                    }
+
+                    // Smooth slide when only the track skips
+                    LaunchedEffect( nextIndex ) {
+                        if (pagerStateQueue.pageCount > 0) {
+                            val targetPage = nextIndex.coerceIn(0, pagerStateQueue.pageCount - 1)
+                            pagerStateQueue.animateScrollToPage(targetPage)
+                        }
                     }
 
                     Row(

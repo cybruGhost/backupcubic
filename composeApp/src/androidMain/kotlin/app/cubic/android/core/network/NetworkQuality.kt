@@ -1,4 +1,4 @@
-package app.n_zik.android.core.network
+package app.cubic.android.core.network
 
 enum class NetworkQuality {
     LOW,

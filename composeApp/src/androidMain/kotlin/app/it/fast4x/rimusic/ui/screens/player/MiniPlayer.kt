@@ -416,7 +416,7 @@ fun MiniPlayer(
                         .background(colorPalette().background2)
                         .size(42.dp)
                 ) {
-                    if (isBuffering) {
+                    if (isBuffering && shouldBePlaying) {
                         CircularWavyProgressIndicator(
                             color = colorPalette().accent,
                             trackColor = colorPalette().text,

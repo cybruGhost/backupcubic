@@ -4,10 +4,12 @@ package app.it.fast4x.rimusic.utils
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
+import app.cubic.android.core.network.NetworkQualityHelper
+import app.cubic.android.core.network.isNetworkAvailable
+import app.cubic.android.core.network.isNetworkConnected
+import app.cubic.android.core.network.isNetworkAvailableComposable
 import android.provider.MediaStore
 import android.text.format.DateUtils
 import androidx.annotation.OptIn
@@ -22,9 +24,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import com.zionhuang.innertube.pages.LibraryPage
-import io.ktor.client.HttpClient
 import io.ktor.client.plugins.ClientRequestException
-import io.ktor.client.plugins.UserAgent
 import io.ktor.http.HttpStatusCode
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.YtMusic.addToPlaylist
@@ -32,10 +32,9 @@ import it.fast4x.innertube.YtMusic.likeVideoOrSong
 import it.fast4x.innertube.YtMusic.removelikeVideoOrSong
 import it.fast4x.innertube.models.bodies.ContinuationBody
 import it.fast4x.innertube.requests.playlistPage
-import it.fast4x.innertube.utils.ProxyPreferences
-import it.fast4x.innertube.utils.getProxy
 import it.fast4x.kugou.KuGou
 import it.fast4x.lrclib.LrcLib
+import androidx.media3.session.MediaConstants.EXTRAS_KEY_IS_EXPLICIT
 import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.EXPLICIT_PREFIX
 import app.it.fast4x.rimusic.MODIFIED_PREFIX
@@ -87,10 +86,10 @@ val Innertube.Podcast.EpisodeItem.asMediaItem: MediaItem
                         //"albumId" to album?.endpoint?.browseId,
                         "durationText" to durationString,
                         "artistNames" to author,
+                        EXTRAS_KEY_IS_EXPLICIT to false,
                         //"artistIds" to authors?.mapNotNull { it.endpoint?.browseId },
                     )
                 )
-
                 .build()
         )
         .build()
@@ -115,6 +114,7 @@ val Innertube.SongItem.asMediaItem: MediaItem
                             ?.mapNotNull { it.name },
                         "artistIds" to authors?.mapNotNull { it.endpoint?.browseId },
                         EXPLICIT_BUNDLE_TAG to explicit,
+                        EXTRAS_KEY_IS_EXPLICIT to explicit,
                         "setVideoId" to setVideoId,
                     )
                 )
@@ -171,9 +171,13 @@ val Song.asMediaItem: MediaItem
                 .setExtras(
                     bundleOf(
                         "durationText" to durationText,
-                        EXPLICIT_BUNDLE_TAG to title.startsWith( EXPLICIT_PREFIX, true )
+                        EXPLICIT_BUNDLE_TAG to title.startsWith( EXPLICIT_PREFIX, true ),
+                        EXTRAS_KEY_IS_EXPLICIT to title.startsWith( EXPLICIT_PREFIX, true )
                     )
                 )
+                 .setIsPlayable(true)
+                .setIsBrowsable(false)
+                .setMediaType(MediaMetadata.MEDIA_TYPE_MUSIC)
                 .build()
         )
         .setMediaId(id)
@@ -186,9 +190,18 @@ val Song.asMediaItem: MediaItem
         .setCustomCacheKey(id)
         .build()
 
+val Innertube.VideoItem.asSong: Song
+    get() = Song (
+        id = key,
+        title = info?.name ?: "",
+        artistsText = authors?.joinToString(", ") { it.name ?: "" },
+        durationText = durationText,
+        thumbnailUrl = thumbnail?.url
+    )
+
 val MediaItem.asSong: Song
     get() = Song (
-        id = mediaId,
+        id = mediaId.split("/").lastOrNull() ?: mediaId,
         title = mediaMetadata.title.toString(),
         artistsText = mediaMetadata.artist.toString(),
         durationText = mediaMetadata.extras?.getString("durationText"),
@@ -221,8 +234,9 @@ val MediaItem.isExplicit: Boolean
     get() {
         val isTitleContain = mediaMetadata.title?.startsWith( EXPLICIT_PREFIX, true )
         val isBundleContain = mediaMetadata.extras?.getBoolean( EXPLICIT_BUNDLE_TAG )
+        val isStandardContain = mediaMetadata.extras?.getBoolean("androidx.media3.session.EXTRAS_KEY_IS_EXPLICIT")
 
-        return isTitleContain == true || isBundleContain == true
+        return isTitleContain == true || isBundleContain == true || isStandardContain == true
     }
 
 
@@ -366,82 +380,14 @@ fun CheckAvailableNewVersion(
     }
 }
 
-fun isNetworkConnected(context: Context): Boolean {
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-    if (isAtLeastAndroid6) {
-        val networkInfo = cm.getNetworkCapabilities(cm.activeNetwork)
-        return networkInfo?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true &&
-                networkInfo.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-    } else {
-        return try {
-            if (cm.activeNetworkInfo == null) {
-                false
-            } else {
-                cm.activeNetworkInfo?.isConnected!!
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
-}
-
-fun isNetworkAvailable(context: Context): Boolean {
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        ?: return false
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        val networkInfo = cm.getNetworkCapabilities(cm.activeNetwork)
-        // if no network is available networkInfo will be null
-        // otherwise check if we are connected to internet
-        //return networkInfo != null
-        return networkInfo?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ?: false
-    } else {
-        return try {
-            if (cm.activeNetworkInfo == null) {
-                false
-            } else {
-                cm.activeNetworkInfo?.isConnected!!
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
-
-}
+fun isNetworkConnected(context: Context): Boolean = context.isNetworkConnected
 
 @Composable
 fun isNetworkAvailableComposable(): Boolean {
     val context = LocalContext.current
-    val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
-        ?: return false
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-        val networkInfo = cm.getNetworkCapabilities(cm.activeNetwork)
-        // if no network is available networkInfo will be null
-        // otherwise check if we are connected
-        return networkInfo?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) ?: false
-    } else {
-        return try {
-            if (cm.activeNetworkInfo == null) {
-                false
-            } else {
-                cm.activeNetworkInfo?.isConnected!!
-            }
-        } catch (e: Exception) {
-            false
-        }
-    }
+    return context.isNetworkAvailableComposable.value
 }
 
-fun getHttpClient() = HttpClient() {
-    install(UserAgent) {
-        agent = "Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0"
-    }
-    engine {
-        ProxyPreferences.preference?.let{
-            proxy = getProxy(it)
-        }
-
-    }
-}
 
 @Composable
 fun getVersionName(): String {
@@ -676,4 +622,3 @@ suspend fun addToYtLikedSongs(mediaItems: List<MediaItem>){
             }
     }
 }
-

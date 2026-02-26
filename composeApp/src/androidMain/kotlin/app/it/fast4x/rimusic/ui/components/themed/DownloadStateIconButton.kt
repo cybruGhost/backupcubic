@@ -159,7 +159,7 @@ fun MinimalRingProgress(
         // Percentage text in the center
         if (showPercentage && progress > 0.01f) {
             Text(
-                text = "${(progress * 100).toInt()}%",
+                text = "${(progress * 100).toInt()}",
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 color = textColor,

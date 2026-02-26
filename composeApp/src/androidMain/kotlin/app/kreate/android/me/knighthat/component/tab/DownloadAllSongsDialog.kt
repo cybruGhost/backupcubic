@@ -15,7 +15,7 @@ import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.Descriptive
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.MenuIcon
 import app.it.fast4x.rimusic.utils.asMediaItem
-import app.it.fast4x.rimusic.utils.isNetworkAvailable
+import app.cubic.android.core.network.isNetworkAvailable
 import app.kreate.android.me.knighthat.component.MediaDownloadDialog
 
 @UnstableApi
@@ -51,7 +51,8 @@ class DownloadAllSongsDialog(
 
     override fun onAction( media: Song ) {
         // Starts download only when network is available
-        if( isNetworkAvailable(appContext()) )
+        if( appContext().isNetworkAvailable )
             MyDownloadHelper.addDownload( appContext(), media.asMediaItem )
     }
 }
+

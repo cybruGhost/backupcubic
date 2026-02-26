@@ -30,7 +30,8 @@ import app.it.fast4x.rimusic.utils.secondary
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.typography
 import androidx.compose.foundation.basicMarquee
-
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalConfiguration
 import android.content.res.Configuration
@@ -142,4 +143,40 @@ fun MenuEntry(
         trailingContent,
         disableScrollingText
     )
+}
+
+
+@Composable
+inline fun <T> LazyMenu(
+    items: List<T>,
+    modifier: Modifier = Modifier,
+    crossinline itemContent: @Composable LazyItemScope.(T) -> Unit
+) {
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
+
+    LazyColumn(
+        modifier = modifier
+            .padding(top = 48.dp)
+            .let {
+                if (isLandscape) it.padding(horizontal = 72.dp) else it
+            }
+            .fillMaxWidth()
+            .let {
+                if (isLandscape) it.clip(RoundedCornerShape(16.dp))
+                else it.clip(RoundedCornerShape(topStart = 16.dp, topEnd = 16.dp))
+            }
+            .background(colorPalette().background1)
+            .padding(top = 2.dp)
+            .padding(vertical = 8.dp)
+            .navigationBarsPadding()
+    ) {
+        items(
+            count = items.size,
+            itemContent = { index ->
+                itemContent(items[index])
+            }
+        )
+    }
 }

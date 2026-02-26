@@ -13,12 +13,10 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.asPaddingValues
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -75,6 +73,8 @@ import androidx.compose.ui.util.fastFirst
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import app.kreate.android.R
+import app.cubic.android.core.coil.ImageCacheFactory
+import app.cubic.android.core.coil.resize
 import app.it.fast4x.compose.persist.persist
 import app.it.fast4x.compose.persist.persistList
 import it.fast4x.innertube.Innertube
@@ -84,10 +84,9 @@ import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.cleanPrefix
-import app.kreate.android.me.knighthat.coil.*
+
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.enums.NavRoutes
-import app.it.fast4x.rimusic.enums.NavigationBarPosition
 import app.it.fast4x.rimusic.enums.ThumbnailRoundness
 import app.it.fast4x.rimusic.enums.UiType
 import app.it.fast4x.rimusic.models.Playlist
@@ -95,7 +94,6 @@ import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.service.modern.isLocal
 import app.it.fast4x.rimusic.typography
 import app.it.fast4x.rimusic.ui.components.LocalMenuState
-import app.it.fast4x.rimusic.ui.components.ShimmerHost
 import app.it.fast4x.rimusic.ui.components.SwipeablePlaylistItem
 import app.it.fast4x.rimusic.ui.components.themed.AutoResizeText
 import app.it.fast4x.rimusic.ui.components.themed.ConfirmationDialog
@@ -108,7 +106,6 @@ import app.it.fast4x.rimusic.ui.components.themed.LayoutWithAdaptiveThumbnail
 import app.it.fast4x.rimusic.ui.components.themed.PlaylistsItemMenu
 import app.it.fast4x.rimusic.ui.components.themed.adaptiveThumbnailContent
 import app.it.fast4x.rimusic.ui.components.themed.Loader
-import app.it.fast4x.rimusic.ui.items.AlbumItemPlaceholder
 
 import app.it.fast4x.rimusic.ui.items.SongItemPlaceholder
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeSyncEnabled
@@ -128,7 +125,7 @@ import app.it.fast4x.rimusic.utils.forcePlayAtIndex
 import app.it.fast4x.rimusic.utils.forcePlayFromBeginning
 import app.it.fast4x.rimusic.utils.formatAsDuration
 import app.it.fast4x.rimusic.utils.formatAsTime
-import app.it.fast4x.rimusic.utils.getHttpClient
+import app.cubic.android.core.network.NetworkClientFactory
 import app.it.fast4x.rimusic.utils.isDownloadedSong
 import app.it.fast4x.rimusic.utils.isLandscape
 import app.it.fast4x.rimusic.utils.isNetworkConnected
@@ -149,11 +146,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import app.it.fast4x.rimusic.utils.ExternalUris
 import me.bush.translator.Language
 import me.bush.translator.Translator
 import app.kreate.android.me.knighthat.component.SongItem
 import app.kreate.android.me.knighthat.utils.Toaster
-import app.it.fast4x.rimusic.utils.ExternalUris
+
 
 @ExperimentalTextApi
 @SuppressLint("SuspiciousIndentation")
@@ -239,7 +237,7 @@ fun PlaylistSongList(
         mutableStateOf(false)
     }
 
-    val translator = Translator(getHttpClient())
+    val translator = Translator(NetworkClientFactory.getKtorClient())
     val languageDestination = languageDestination()
 
     val localPlaylist by remember( saveCheck ) {
@@ -278,7 +276,7 @@ fun PlaylistSongList(
 
     var thumbnailRoundness by rememberPreference(
         thumbnailRoundnessKey,
-        ThumbnailRoundness.Heavy
+        ThumbnailRoundness.Medium
     )
 
     var showYoutubeLikeConfirmDialog by remember {
@@ -354,12 +352,7 @@ fun PlaylistSongList(
                 .background(colorPalette().background0)
                 //.fillMaxSize()
                 .fillMaxHeight()
-                .fillMaxWidth(
-                    if (NavigationBarPosition.Right.isCurrent())
-                        Dimensions.contentWidthRightBar
-                    else
-                        1f
-                ),
+                .fillMaxWidth(),
             contentAlignment = Alignment.Center
         ) {
             if (playlistPage == null && playlistSongs.isEmpty()) {
@@ -449,7 +442,7 @@ fun PlaylistSongList(
                                     .align(Alignment.TopEnd)
                                     .padding(top = 5.dp, end = 5.dp),
                                 onClick = {
-                                     ExternalUris.youtubeMusicPlaylist(browseId.removePrefix("VL")).let { url ->
+                                    ExternalUris.youtubeMusicPlaylist(browseId.removePrefix("VL")).let { url ->
                                         val sendIntent = Intent().apply {
                                             action = Intent.ACTION_SEND
                                             type = "text/plain"
@@ -781,23 +774,6 @@ fun PlaylistSongList(
                             }
 
 
-                            /*
-                            HeaderIconButton(
-                                icon = R.drawable.share_social,
-                                color = colorPalette().text,
-                                onClick = {
-                                    (playlistPage?.url ?: "https://music.youtube.com/playlist?list=${browseId.removePrefix("VL")}").let { url ->
-                                        val sendIntent = Intent().apply {
-                                            action = Intent.ACTION_SEND
-                                            type = "text/plain"
-                                            putExtra(Intent.EXTRA_TEXT, url)
-                                        }
-
-                                        context.startActivity(Intent.createChooser(sendIntent, null))
-                                    }
-                                }
-                            )
-                             */
 
                         } else {
                             BasicText(
@@ -1089,3 +1065,6 @@ fun PlaylistSongList(
         }
     }
 }
+
+
+
