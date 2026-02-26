@@ -12,7 +12,7 @@ object GlobalNetworkLogger {
         val b = if (bandwidth != -1) bandwidth else lastBandwidth
         val m = if (bandwidth != -1) isMetered else lastIsMetered
         
-        Timber.tag("NZik_Network").i(
+        Timber.tag("cubic_Network").i(
             "[%s] BW: %dKbps | Met: %s | Qual: %s -> Dec: %s",
             source, b, m, detectedQuality, finalDecision
         )

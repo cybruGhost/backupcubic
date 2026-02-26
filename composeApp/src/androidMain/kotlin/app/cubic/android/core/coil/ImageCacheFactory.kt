@@ -41,7 +41,7 @@ import app.it.fast4x.rimusic.enums.ImageQualityFormat
 import app.it.fast4x.rimusic.thumbnailShape
 import app.cubic.android.core.network.NetworkQualityHelper
 // import app.cubic.android.core.network.GlobalNetworkLogger
-import app.cubic.android.core.network.enum.NetworkQuality as NZikNetworkQuality
+import app.cubic.android.core.network.enum.NetworkQuality as cubicNetworkQuality
 import app.it.fast4x.rimusic.utils.coilCustomDiskCacheKey
 import app.it.fast4x.rimusic.utils.coilDiskCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.exoPlayerCacheLocationKey
@@ -239,8 +239,8 @@ object ImageCacheFactory {
 
         // Otherwise, delegate to centralized helper for AUTO mode
         val detectedQuality = when (NetworkQualityHelper.getCurrentNetworkQuality(context)) {
-            NZikNetworkQuality.HIGH -> NetworkQuality.HIGH
-            NZikNetworkQuality.MEDIUM -> NetworkQuality.MEDIUM
+           cubicNetworkQuality.HIGH -> NetworkQuality.HIGH
+           cubicNetworkQuality.MEDIUM -> NetworkQuality.MEDIUM
             else -> NetworkQuality.LOW
         }
         // GlobalNetworkLogger.logNetworkState("Image_Factory", -1, false, "AUTO", detectedQuality.name)
@@ -250,8 +250,8 @@ object ImageCacheFactory {
     // New method to get ONLY the real network quality (ignoring user preference)
     fun getActualNetworkQuality(): NetworkQuality {
         val quality = when (NetworkQualityHelper.getCurrentNetworkQuality(appContext())) {
-            NZikNetworkQuality.HIGH -> NetworkQuality.HIGH
-            NZikNetworkQuality.MEDIUM -> NetworkQuality.MEDIUM
+           cubicNetworkQuality.HIGH -> NetworkQuality.HIGH
+           cubicNetworkQuality.MEDIUM -> NetworkQuality.MEDIUM
             else -> NetworkQuality.LOW
         }
         // GlobalNetworkLogger.logNetworkState("Image_UI", -1, false, "REAL_DETECT", quality.name)
