@@ -44,7 +44,6 @@ import app.it.fast4x.rimusic.utils.getEnum
 import app.it.fast4x.rimusic.utils.isNetworkConnected
 import app.it.fast4x.rimusic.utils.preferences
 import app.it.fast4x.rimusic.utils.removeDownload
-import app.kreate.android.me.knighthat.coil.thumbnail
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -58,10 +57,11 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import app.kreate.android.me.knighthat.coil.ImageCacheFactory
-import app.kreate.android.me.knighthat.coil.thumbnail
 import app.kreate.android.me.knighthat.utils.Toaster
 import timber.log.Timber
+import app.cubic.android.core.coil.thumbnail
 import java.io.File
+import androidx.core.net.toUri
 import java.util.concurrent.Executors
 import kotlin.io.path.createTempDirectory
 import app.it.fast4x.rimusic.utils.ExternalUris
@@ -303,7 +303,7 @@ object MyDownloadHelper {
             insertIgnore(mediaItem)
         }
 
-         val imageUrl = mediaItem.mediaMetadata.artworkUri.thumbnail(1000)
+         val imageUrl = mediaItem.mediaMetadata.artworkUri?.toString()?.thumbnail(1000)?.toUri()
 
         coroutineScope.launch {
             context.download<MyDownloadService>(downloadRequest).exceptionOrNull()?.let {

@@ -67,9 +67,9 @@ import androidx.navigation.NavController
 fun DefaultAIRecommendationSettings() {
     var playEventType by rememberPreference(
         playEventsTypeKey,
-        PlayEventsType.MostPlayed
+        PlayEventsType.CasualPlayed
     )
-    playEventType = PlayEventsType.MostPlayed
+    playEventType = PlayEventsType.CasualPlayed
     var showTips by rememberPreference(showTipsKey, true)
     showTips = true
     var showRelatedAlbums by rememberPreference(showRelatedAlbumsKey, true)
@@ -125,7 +125,7 @@ fun AIRecommendationSettings(
 ) {
     var playEventType by rememberPreference(
         playEventsTypeKey,
-        PlayEventsType.MostPlayed
+        PlayEventsType.CasualPlayed
     )
     var showTips by rememberPreference(showTipsKey, true)
     var showRelatedAlbums by rememberPreference(showRelatedAlbumsKey, true)
@@ -151,10 +151,10 @@ fun AIRecommendationSettings(
     // Statistics Settings
     var showMyTopPlaylist by rememberPreference(showMyTopPlaylistKey, true)
     var showStatsListeningTime by rememberPreference(showStatsListeningTimeKey, true)
-    var maxStatisticsItems by rememberPreference(maxStatisticsItemsKey, MaxStatisticsItems.`10`)
+    var maxStatisticsItems by rememberPreference(maxStatisticsItemsKey, MaxStatisticsItems.`750`)
     
     // Top Playlists Settings
-    var maxTopPlaylistItems by rememberPreference(MaxTopPlaylistItemsKey, MaxTopPlaylistItems.`10`)
+    var maxTopPlaylistItems by rememberPreference(MaxTopPlaylistItemsKey, MaxTopPlaylistItems.`70`)
     
     if (clearEvents) {
         ConfirmationDialog(

@@ -3,9 +3,7 @@ package app.it.fast4x.rimusic.ui.screens.rewind.slides
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
@@ -14,15 +12,20 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.mikepenz.hypnoticcanvas.shaderBackground
+import app.it.fast4x.rimusic.ui.styling.LocalAppearance
+import app.it.fast4x.rimusic.ui.styling.ColorPalette
+import app.it.fast4x.rimusic.ui.styling.Typography
+import app.it.fast4x.rimusic.ui.styling.favoritesIcon
+import app.it.fast4x.rimusic.ui.styling.shimmer
 import app.it.fast4x.rimusic.ui.screens.rewind.RewindData
-
-
+import com.mikepenz.hypnoticcanvas.shaderBackground
+import com.mikepenz.hypnoticcanvas.shaders.InkFlow
 
 @Composable
 fun StatsSlide(
@@ -33,296 +36,364 @@ fun StatsSlide(
     showMinutesInHours: Boolean,
     onNext: () -> Unit
 ) {
-    // Using InkFlow shader
+    val (colorPalette, typography, _) = LocalAppearance.current
+    val configuration = LocalConfiguration.current
+    
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .shaderBackground(com.mikepenz.hypnoticcanvas.shaders.InkFlow)
+            .shaderBackground(InkFlow)
     ) {
-        // Simple dark overlay for better text visibility
+        // Enhanced gradient overlay
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
                         colors = listOf(
-                            Color.Black.copy(alpha = 0.4f),
-                            Color.Black.copy(alpha = 0.3f),
-                            Color.Black.copy(alpha = 0.4f)
+                            colorPalette.background0.copy(alpha = 0.3f),
+                            colorPalette.background2.copy(alpha = 0.2f),
+                            colorPalette.background0.copy(alpha = 0.3f)
                         )
                     )
                 )
         )
         
-        Column(
+        // Decorative circles
+        Box(modifier = Modifier.fillMaxSize()) {
+            // Decorative circle 1
+            Box(
+                modifier = Modifier
+                    .size(250.dp)
+                    .align(Alignment.TopStart)
+                    .offset(x = (-50).dp, y = (-50).dp)
+                    .clip(CircleShape)
+                    .background(colorPalette.accent.copy(alpha = 0.03f))
+            )
+            
+            // Decorative circle 2
+            Box(
+                modifier = Modifier
+                    .size(300.dp)
+                    .align(Alignment.BottomEnd)
+                    .offset(x = 50.dp, y = 50.dp)
+                    .clip(CircleShape)
+                    .background(colorPalette.favoritesIcon.copy(alpha = 0.03f))
+            )
+            
+            // Decorative circle 3
+            Box(
+                modifier = Modifier
+                    .size(200.dp)
+                    .align(Alignment.Center)
+                    .clip(CircleShape)
+                    .background(colorPalette.shimmer.copy(alpha = 0.02f))
+            )
+        }
+        
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp, vertical = 24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .padding(horizontal = 20.dp, vertical = 24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            // Header - improved design
+            // Header Section
+            item {
+                HeaderSection(colorPalette = colorPalette)
+            }
+            
+            // Main Stats Grid
+            item {
+                MainStatsGrid(
+                    data = data,
+                    showMinutesInHours = showMinutesInHours,
+                    colorPalette = colorPalette,
+                    typography = typography
+                )
+            }
+            
+            // Ranking Card
+            item {
+                RankingCard(
+                    userRanking = userRanking,
+                    userPercentile = userPercentile,
+                    colorPalette = colorPalette,
+                    typography = typography
+                )
+            }
+            
+            // Additional Stats Section
+            item {
+                AdditionalStatsSection(
+                    data = data,
+                    colorPalette = colorPalette,
+                    typography = typography
+                )
+            }
+            
+            // Navigation Hint
+            item {
+                NavigationHint(
+                    colorPalette = colorPalette,
+                    typography = typography
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun HeaderSection(
+    colorPalette: ColorPalette
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 8.dp)
+    ) {
+        // Icon container
+        Box(
+            modifier = Modifier
+                .size(90.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            colorPalette.accent.copy(alpha = 0.2f),
+                            colorPalette.background2.copy(alpha = 0.1f),
+                            Color.Transparent
+                        )
+                    )
+                )
+                .border(
+                    width = 2.dp,
+                    brush = Brush.sweepGradient(
+                        colors = listOf(
+                            colorPalette.accent,
+                            colorPalette.shimmer,
+                            colorPalette.favoritesIcon,
+                            colorPalette.accent
+                        )
+                    ),
+                    shape = CircleShape
+                )
+                .drawBehind {
+                    drawCircle(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                colorPalette.accent.copy(alpha = 0.2f),
+                                Color.Transparent
+                            )
+                        ),
+                        radius = size.minDimension / 2
+                    )
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "✨",
+                fontSize = 42.sp,
+                color = colorPalette.text
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(16.dp))
+        
+        // Title
+        Text(
+            text = "YEAR IN MUSIC",
+            fontSize = 28.sp,
+            fontWeight = FontWeight.ExtraBold,
+            color = colorPalette.accent,
+            letterSpacing = 2.sp
+        )
+        
+        Text(
+            text = "Your listening journey visualized",
+            fontSize = 14.sp,
+            color = colorPalette.textSecondary,
+            fontWeight = FontWeight.Medium
+        )
+    }
+}
+
+@Composable
+private fun MainStatsGrid(
+    data: RewindData,
+    showMinutesInHours: Boolean,
+    colorPalette: ColorPalette,
+    typography: Typography
+) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Total Plays Card
+            StatCard(
+                modifier = Modifier.weight(1f),
+                value = data.stats.totalPlays.toString(),
+                label = "Total Plays",
+                icon = "▶",
+                gradientColors = listOf(
+                    Color(0xFFFF6B6B),
+                    Color(0xFFFF8E8E)
+                ),
+                colorPalette = colorPalette,
+                typography = typography
+            )
+            
+            // Listening Time Card
+            StatCard(
+                modifier = Modifier.weight(1f),
+                value = if (showMinutesInHours) {
+                    val hours = data.stats.totalMinutes / 60
+                    val minutes = data.stats.totalMinutes % 60
+                    if (minutes > 0) "${hours}h ${minutes}m" else "${hours}h"
+                } else {
+                    "${data.stats.totalMinutes}m"
+                },
+                label = "Listening Time",
+                icon = "⏱",
+                gradientColors = listOf(
+                    Color(0xFF4ECDC4),
+                    Color(0xFF45B7D1)
+                ),
+                colorPalette = colorPalette,
+                typography = typography
+            )
+        }
+        
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            // Unique Songs Card
+            StatCard(
+                modifier = Modifier.weight(1f),
+                value = data.totalUniqueSongs.toString(),
+                label = "Unique Songs",
+                icon = "🎵",
+                gradientColors = listOf(
+                    Color(0xFFFFD93D),
+                    Color(0xFFFFB347)
+                ),
+                colorPalette = colorPalette,
+                typography = typography
+            )
+            
+            // Active Days Card
+            StatCard(
+                modifier = Modifier.weight(1f),
+                value = data.daysWithMusic.toString(),
+                label = "Active Days",
+                icon = "📅",
+                gradientColors = listOf(
+                    Color(0xFF6C5CE7),
+                    Color(0xFFA463F5)
+                ),
+                colorPalette = colorPalette,
+                typography = typography
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatCard(
+    modifier: Modifier,
+    value: String,
+    label: String,
+    icon: String,
+    gradientColors: List<Color>,
+    colorPalette: ColorPalette,
+    typography: Typography
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Transparent
+        ),
+        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.linearGradient(
+                        colors = listOf(
+                            colorPalette.background2.copy(alpha = 0.4f),
+                            colorPalette.background1.copy(alpha = 0.3f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.3f),
+                            Color.White.copy(alpha = 0.1f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .padding(vertical = 20.dp, horizontal = 12.dp)
+        ) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(bottom = 24.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                // Improved stats icon with gradient
+                // Icon with gradient background
                 Box(
                     modifier = Modifier
-                        .size(70.dp)
+                        .size(48.dp)
                         .clip(CircleShape)
                         .background(
                             Brush.radialGradient(
                                 colors = listOf(
-                                    Color.White.copy(alpha = 0.25f),
-                                    Color.White.copy(alpha = 0.1f)
+                                    gradientColors[0].copy(alpha = 0.3f),
+                                    gradientColors[1].copy(alpha = 0.1f)
                                 )
                             )
                         )
                         .border(
-                            width = 2.dp,
-                            brush = Brush.horizontalGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.4f),
-                                    Color.White.copy(alpha = 0.2f),
-                                    Color.White.copy(alpha = 0.4f)
-                                )
+                            width = 1.5f.dp,
+                            brush = Brush.linearGradient(
+                                colors = gradientColors.map { it.copy(alpha = 0.5f) }
                             ),
                             shape = CircleShape
                         ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
-                        text = "😉", // Better stats emoji
-                        fontSize = 32.sp
+                        text = icon,
+                        fontSize = 24.sp,
+                        color = colorPalette.text
                     )
                 }
                 
                 Spacer(modifier = Modifier.height(12.dp))
                 
-                // Improved title with glow effect
-                Box(
-                    modifier = Modifier.drawBehind {
-                        drawCircle(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color.White.copy(alpha = 0.1f),
-                                    Color.Transparent
-                                )
-                            ),
-                            center = center.copy(y = center.y - 10),
-                            radius = size.width * 0.4f,
-                            blendMode = BlendMode.Screen
-                        )
-                    }
-                ) {
-                    Text(
-                        text = "YOUR YEAR IN MUSIC",
-                        fontSize = 19.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        letterSpacing = 0.5.sp
-                    )
-                }
-                
+                // Value
                 Text(
-                    text = "Annual listening statistics",
-                    fontSize = 14.sp,
-                    color = Color.White.copy(alpha = 0.7f),
+                    text = value,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = gradientColors[0]
+                )
+                
+                Spacer(modifier = Modifier.height(4.dp))
+                
+                // Label
+                Text(
+                    text = label,
+                    fontSize = 12.sp,
+                    color = colorPalette.textSecondary,
                     fontWeight = FontWeight.Medium
-                )
-            }
-            
-            // Main stats grid with better opacity
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 0.dp),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Row 1
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        value = data.stats.totalPlays.toString(),
-                        label = "Total Plays",
-                        icon = "▶︎", // Classic play button
-                        color = Color(0xFFFF7B7B)
-                    )
-                    
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        value = if (showMinutesInHours) {
-                            val hours = data.stats.totalMinutes / 60
-                            val minutes = data.stats.totalMinutes % 60
-                            if (minutes > 0) "$hours h $minutes m" else "$hours h"
-                        } else {
-                            "${data.stats.totalMinutes}m"
-                        },
-                        label = "Listening Time",
-                        icon = "⏱️", // Classic stopwatch
-                        color = Color(0xFF5DDAD6)
-                    )
-                }
-                
-                // Row 2
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        value = data.totalUniqueSongs.toString(),
-                        label = "Unique Songs",
-                        icon = "🎵", // Music note
-                        color = Color(0xFFFFE066)
-                    )
-                    
-                    StatCard(
-                        modifier = Modifier.weight(1f),
-                        value = data.daysWithMusic.toString(),
-                        label = "Active Days",
-                        icon = "📆", // Calendar
-                        color = Color(0xFF7FD3FF)
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Ranking Card with better opacity
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.White.copy(alpha = 0.18f)
-                ),
-                border = BorderStroke(
-                    1.5.dp,
-                    Color.White.copy(alpha = 0.25f)
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = 6.dp
-                )
-            ) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 22.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .size(48.dp)
-                            .clip(CircleShape)
-                            .background(Color(0xFFFFD700).copy(alpha = 0.15f))
-                            .padding(8.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(
-                            text = "🏆",
-                            fontSize = 28.sp
-                        )
-                    }
-                    
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
-                    Text(
-                        text = "YOUR RANKING",
-                        fontSize = 12.sp,
-                        color = Color.White.copy(alpha = 0.7f),
-                        fontWeight = FontWeight.SemiBold,
-                        letterSpacing = 1.2.sp
-                    )
-                    
-                    Spacer(modifier = Modifier.height(8.dp))
-                    
-                    Text(
-                        text = userRanking,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color(0xFFFFD700),
-                        textAlign = TextAlign.Center
-                    )
-                    
-                    Spacer(modifier = Modifier.height(6.dp))
-                    
-                    Text(
-                        text = userPercentile,
-                        fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontWeight = FontWeight.Medium
-                    )
-                }
-            }
-            
-            Spacer(modifier = Modifier.height(24.dp))
-            
-            // Additional Stats with better opacity
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                AdditionalStatRow(
-                    icon = "👤",
-                    label = "Unique Artists",
-                    value = data.totalUniqueArtists.toString()
-                )
-                
-                AdditionalStatRow(
-                    icon = "💿", 
-                    label = "Unique Albums", 
-                    value = data.totalUniqueAlbums.toString()
-                )
-                
-                AdditionalStatRow(
-                    icon = "📋",
-                    label = "Unique Playlists",
-                    value = data.totalUniquePlaylists.toString()
-                )
-            }
-            
-            Spacer(modifier = Modifier.height(32.dp))
-            
-            // Subtle navigation hint
-            Column(
-                modifier = Modifier
-                    .padding(top = 8.dp, bottom = 16.dp)
-                    .fillMaxWidth(),
-                horizontalAlignment = Alignment.CenterHorizontally
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.05f))
-                        .border(
-                            1.dp,
-                            Color.White.copy(alpha = 0.1f),
-                            CircleShape
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Text(
-                        text = "→",
-                        fontSize = 18.sp,
-                        color = Color.White.copy(alpha = 0.6f)
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(6.dp))
-                
-                Text(
-                    text = "swipe for more",
-                    color = Color.White.copy(alpha = 0.4f),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Normal,
-                    letterSpacing = 0.4.sp
                 )
             }
         }
@@ -330,129 +401,273 @@ fun StatsSlide(
 }
 
 @Composable
-fun StatCard(
-    modifier: Modifier = Modifier,
-    value: String,
-    label: String,
-    icon: String,
-    color: Color
+private fun RankingCard(
+    userRanking: String,
+    userPercentile: String,
+    colorPalette: ColorPalette,
+    typography: Typography
 ) {
     Card(
-        modifier = modifier,
-        shape = RoundedCornerShape(16.dp),
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(28.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color.White.copy(alpha = 0.15f) // Less transparent
+            containerColor = Color.Transparent
         ),
-        border = BorderStroke(
-            1.2.dp,
-            Color.White.copy(alpha = 0.2f)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 4.dp
+        elevation = CardDefaults.cardElevation(defaultElevation = 12.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            colorPalette.background2.copy(alpha = 0.4f),
+                            colorPalette.background1.copy(alpha = 0.3f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.5.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            Color(0xFFFFD700).copy(alpha = 0.5f),
+                            Color(0xFFFFA500).copy(alpha = 0.3f),
+                            Color(0xFFFFD700).copy(alpha = 0.5f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(28.dp)
+                )
+                .padding(24.dp)
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Trophy
+                Box(
+                    modifier = Modifier
+                        .size(70.dp)
+                        .drawBehind {
+                            drawCircle(
+                                color = Color(0xFFFFD700).copy(alpha = 0.2f),
+                                radius = size.minDimension / 1.5f
+                            )
+                        }
+                ) {
+                    Text(
+                        text = "🏆",
+                        fontSize = 48.sp,
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+                
+                Spacer(modifier = Modifier.height(16.dp))
+                
+                Text(
+                    text = "LISTENER RANKING",
+                    fontSize = 12.sp,
+                    color = colorPalette.textSecondary,
+                    fontWeight = FontWeight.SemiBold,
+                    letterSpacing = 1.5.sp
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    text = userRanking,
+                    fontSize = 36.sp,
+                    fontWeight = FontWeight.ExtraBold,
+                    color = Color(0xFFFFD700)
+                )
+                
+                Text(
+                    text = userPercentile,
+                    fontSize = 16.sp,
+                    color = colorPalette.accent,
+                    fontWeight = FontWeight.Bold
+                )
+                
+                Spacer(modifier = Modifier.height(12.dp))
+                
+                // Progress bar
+                LinearProgressIndicator(
+                    progress = 0.75f,
+                    modifier = Modifier
+                        .fillMaxWidth(0.7f)
+                        .height(6.dp)
+                        .clip(RoundedCornerShape(3.dp)),
+                    color = Color(0xFFFFD700),
+                    trackColor = colorPalette.background2.copy(alpha = 0.3f)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun AdditionalStatsSection(
+    data: RewindData,
+    colorPalette: ColorPalette,
+    typography: Typography
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = Color.Transparent
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 18.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
+                .background(
+                    Brush.verticalGradient(
+                        colors = listOf(
+                            colorPalette.background1.copy(alpha = 0.3f),
+                            colorPalette.background2.copy(alpha = 0.2f)
+                        )
+                    )
+                )
+                .border(
+                    width = 1.dp,
+                    brush = Brush.horizontalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = 0.2f),
+                            Color.White.copy(alpha = 0.05f)
+                        )
+                    ),
+                    shape = RoundedCornerShape(24.dp)
+                )
+                .padding(16.dp)
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(color.copy(alpha = 0.15f))
-                    .padding(8.dp),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    text = icon,
-                    fontSize = 20.sp
+            val additionalStats = listOf(
+                Triple("👤", "Unique Artists", data.totalUniqueArtists.toString()),
+                Triple("💿", "Unique Albums", data.totalUniqueAlbums.toString()),
+                Triple("📋", "Unique Playlists", data.totalUniquePlaylists.toString())
+            )
+            
+            additionalStats.forEachIndexed { index, (icon, label, value) ->
+                AdditionalStatRow(
+                    icon = icon,
+                    label = label,
+                    value = value,
+                    colorPalette = colorPalette,
+                    typography = typography,
+                    showDivider = index < additionalStats.size - 1
                 )
             }
-            
-            Spacer(modifier = Modifier.height(10.dp))
-            
-            Text(
-                text = value,
-                fontSize = 22.sp,
-                fontWeight = FontWeight.Bold,
-                color = color
-            )
-            
-            Spacer(modifier = Modifier.height(6.dp))
-            
-            Text(
-                text = label,
-                fontSize = 13.sp,
-                color = Color.White.copy(alpha = 0.85f),
-                fontWeight = FontWeight.SemiBold,
-                textAlign = TextAlign.Center
-            )
         }
     }
 }
 
 @Composable
-fun AdditionalStatRow(
+private fun AdditionalStatRow(
     icon: String,
     label: String,
-    value: String
+    value: String,
+    colorPalette: ColorPalette,
+    typography: Typography,
+    showDivider: Boolean
 ) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = Color.White.copy(alpha = 0.12f) // Better opacity
-        ),
-        border = BorderStroke(
-            1.dp,
-            Color.White.copy(alpha = 0.15f)
-        ),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 2.dp
-        )
-    ) {
+    Column {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(vertical = 14.dp, horizontal = 18.dp),
+                .padding(vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(
-                verticalAlignment = Alignment.CenterVertically
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 Box(
                     modifier = Modifier
-                        .size(32.dp)
+                        .size(36.dp)
                         .clip(CircleShape)
-                        .background(Color.White.copy(alpha = 0.08f))
-                        .padding(6.dp),
+                        .background(colorPalette.background2.copy(alpha = 0.3f))
+                        .border(
+                            width = 1.dp,
+                            color = colorPalette.accent.copy(alpha = 0.3f),
+                            shape = CircleShape
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = icon,
-                        fontSize = 15.sp
+                        fontSize = 18.sp,
+                        color = colorPalette.text
                     )
                 }
                 
-                Spacer(modifier = Modifier.width(14.dp))
-                
                 Text(
                     text = label,
-                    fontSize = 15.sp,
-                    color = Color.White.copy(alpha = 0.9f),
+                    fontSize = 14.sp,
+                    color = colorPalette.textSecondary,
                     fontWeight = FontWeight.Medium
                 )
             }
             
             Text(
                 text = value,
-                fontSize = 17.sp,
-                fontWeight = FontWeight.Bold,
-                color = Color.White
+                fontSize = 16.sp,
+                color = colorPalette.text,
+                fontWeight = FontWeight.Bold
             )
         }
+        
+        if (showDivider) {
+            Divider(
+                modifier = Modifier.padding(start = 48.dp),
+                color = colorPalette.background2.copy(alpha = 0.3f),
+                thickness = 1.dp
+            )
+        }
+    }
+}
+
+@Composable
+private fun NavigationHint(
+    colorPalette: ColorPalette,
+    typography: Typography
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 16.dp, bottom = 24.dp)
+    ) {
+        // Arrow
+        Box(
+            modifier = Modifier
+                .size(48.dp)
+                .clip(CircleShape)
+                .background(colorPalette.accent.copy(alpha = 0.1f))
+                .border(
+                    width = 1.dp,
+                    brush = Brush.linearGradient(
+                        colors = listOf(
+                            colorPalette.accent.copy(alpha = 0.5f),
+                            colorPalette.shimmer.copy(alpha = 0.3f)
+                        )
+                    ),
+                    shape = CircleShape
+                ),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = "→",
+                fontSize = 24.sp,
+                color = colorPalette.accent
+            )
+        }
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Text(
+            text = "Swipe to continue your journey",
+            fontSize = 10.sp,
+            color = colorPalette.textDisabled,
+            fontWeight = FontWeight.Normal
+        )
     }
 }

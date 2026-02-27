@@ -346,7 +346,7 @@ fun GeneralSettings(
                  icon = R.drawable.discover,
                  content = {
 
-                                           var showLanguageDialog by remember { mutableStateOf(false) }
+                    var showLanguageDialog by remember { mutableStateOf(false) }
                       if (search.inputValue.isBlank() || stringResource(R.string.app_language).contains(search.inputValue,true)) {
                           OtherSettingsEntry(
                               title = stringResource(R.string.app_language),
@@ -1299,28 +1299,34 @@ Spacer(modifier = Modifier.height(16.dp))
                 }
             }
         }
-// AUDIO FADE SETTING - Add this after bass boost
-if (search.inputValue.isBlank() || "Audio Fade".contains(search.inputValue, true)) {
+// AUDIO FADE SETTING
+if (
+    search.inputValue.isBlank() ||
+    stringResource(R.string.audio_fade_title)
+        .contains(search.inputValue, true)
+) {
     var showFadeDurationDialog by remember { mutableStateOf(false) }
-    
+
     OtherSettingsEntry(
-        title = "Audio Fade", // Use direct string instead of resource
+        title = stringResource(R.string.audio_fade_title),
         text = when (playbackFadeAudioDuration) {
-            DurationInMilliseconds.Disabled -> "Disabled"
+            DurationInMilliseconds.Disabled ->
+                stringResource(R.string.disabled)
             else -> playbackFadeAudioDuration.text
         },
         onClick = { showFadeDurationDialog = true },
-        icon = R.drawable.volume_up // Use existing icon
+        icon = R.drawable.volume_up
     )
-    
+
     if (showFadeDurationDialog) {
         ValueSelectorDialog(
-            title = "Fade Duration",
+            title = stringResource(R.string.fade_duration_title),
             selectedValue = playbackFadeAudioDuration,
             onValueSelected = { playbackFadeAudioDuration = it },
-            valueText = { 
+            valueText = {
                 when (it) {
-                    DurationInMilliseconds.Disabled -> "Disabled"
+                    DurationInMilliseconds.Disabled ->
+                        stringResource(R.string.disabled)
                     else -> it.text
                 }
             },
@@ -1328,15 +1334,14 @@ if (search.inputValue.isBlank() || "Audio Fade".contains(search.inputValue, true
             onDismiss = { showFadeDurationDialog = false }
         )
     }
-    
-    // Optional description
+
     SettingsDescription(
-        text = "Smoothly fade volume between songs and when pausing/playing",
+        text = stringResource(R.string.audio_fade_description),
         modifier = Modifier.padding(start = 25.dp, top = 4.dp),
         textAlign = TextAlign.Start
     )
 }
-                     var showAudioReverbDialog by remember { mutableStateOf(false) }
+      var showAudioReverbDialog by remember { mutableStateOf(false) }
         if (search.inputValue.isBlank() || stringResource(R.string.settings_audio_reverb).contains(search.inputValue,true)) {
                          OtherSettingsEntry(
                 title = stringResource(R.string.settings_audio_reverb),

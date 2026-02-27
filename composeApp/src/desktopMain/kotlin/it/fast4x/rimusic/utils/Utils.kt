@@ -93,7 +93,7 @@ val Innertube.SongItem.asSong: Song
         id = key,
         title = info?.name ?: "",
         artistsText = authors?.joinToString(", ") { it.name ?: "" },
-        durationText = durationText,
+        durationText = durationText ?: "✨",  // Add fallback here too!
         thumbnailUrl = thumbnail?.url
     )
 
@@ -103,9 +103,9 @@ val Innertube.SongItem.asSongEntity: SongEntity
             id = key,
             title = info?.name ?: "",
             artistsText = authors?.joinToString(", ") { it.name ?: "" },
-            durationText = durationText,
+            durationText = durationText ?: "✨",  // Add fallback here
             thumbnailUrl = thumbnail?.url
-            ),
+        ),
         contentLength = null,
         albumTitle = null
     )
