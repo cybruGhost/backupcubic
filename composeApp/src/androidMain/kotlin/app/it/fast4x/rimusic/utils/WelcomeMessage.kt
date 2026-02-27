@@ -638,33 +638,38 @@ private fun ChangeUsernameDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { 
+        title = {
             Text(
-                "Change Your Name",
+                text = stringResource(R.string.change_username_title),
                 color = MaterialTheme.colorScheme.onBackground,
                 fontWeight = FontWeight.SemiBold
-            ) 
+            )
         },
         text = {
             Column {
                 Text(
-                    "Enter your new name (max $maxChars characters):",
+                    text = stringResource(
+                        R.string.change_username_prompt,
+                        maxChars
+                    ),
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
                 OutlinedTextField(
                     value = newUsername,
-                    onValueChange = { 
-                        if (it.length <= maxChars) newUsername = it 
+                    onValueChange = {
+                        if (it.length <= maxChars) newUsername = it
                     },
-                    label = { 
+                    label = {
                         Text(
-                            "Your name",
+                            text = stringResource(R.string.username_label),
                             color = MaterialTheme.colorScheme.onSurfaceVariant
-                        ) 
+                        )
                     },
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Words),
+                    keyboardOptions = KeyboardOptions(
+                        capitalization = KeyboardCapitalization.Words
+                    ),
                     modifier = Modifier.fillMaxWidth(),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedBorderColor = MaterialTheme.colorScheme.primary,
@@ -672,12 +677,20 @@ private fun ChangeUsernameDialog(
                     )
                 )
 
-                // Character count
                 Text(
-                    text = "${newUsername.length} / $maxChars",
+                    text = stringResource(
+                        R.string.character_count,
+                        newUsername.length,
+                        maxChars
+                    ),
                     style = MaterialTheme.typography.labelSmall,
-                    color = if (newUsername.length >= maxChars) Color.Red else MaterialTheme.colorScheme.outline,
-                    modifier = Modifier.align(Alignment.End).padding(top = 4.dp)
+                    color = if (newUsername.length >= maxChars)
+                        Color.Red
+                    else
+                        MaterialTheme.colorScheme.outline,
+                    modifier = Modifier
+                        .align(Alignment.End)
+                        .padding(top = 4.dp)
                 )
             }
         },
@@ -690,12 +703,12 @@ private fun ChangeUsernameDialog(
                 },
                 enabled = newUsername.isNotBlank()
             ) {
-                Text("Save")
+                Text(stringResource(R.string.save))
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Cancel")
+                Text(stringResource(R.string.cancel))
             }
         }
     )

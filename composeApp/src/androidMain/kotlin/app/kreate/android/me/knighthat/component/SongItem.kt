@@ -87,6 +87,8 @@ import app.kreate.android.me.knighthat.coil.ImageCacheFactory
 import app.kreate.android.me.knighthat.component.menu.song.SongItemMenu
 import app.kreate.android.me.knighthat.component.tab.ItemSelector
 import timber.log.Timber
+import app.it.fast4x.rimusic.utils.durationTextToMillis
+import app.it.fast4x.rimusic.utils.formatAsTime
 
 
 private interface SongIndicator: Icon {
@@ -313,12 +315,12 @@ fun SongItem(
                     Song's duration
                     If it's "null", show --:-- instead of leaving it empty
                  */
-                SongText(
-                    text = song.durationText ?: "--:--",
-                    style = typography().xxs.secondary.medium,
-                    modifier = Modifier.padding( top = 4.dp, start = 5.dp  )
-                )
-
+               SongText(
+                text = song.durationText?.let { durationTextToMillis(it) }?.let { formatAsTime(it) } 
+                    ?: song.durationText ?: "✨",
+                style = typography().xxs.secondary.medium,
+                modifier = Modifier.padding(top = 4.dp, start = 5.dp)
+            )
                 Spacer( Modifier.padding(horizontal = 4.dp) )
 
                 // Show download icon when song is NOT local

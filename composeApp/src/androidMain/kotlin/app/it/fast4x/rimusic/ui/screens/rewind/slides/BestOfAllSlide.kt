@@ -1,24 +1,22 @@
 package app.it.fast4x.rimusic.ui.screens.rewind.slides
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
-import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.draw.*
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -27,363 +25,505 @@ import androidx.compose.ui.unit.sp
 import app.it.fast4x.rimusic.ui.screens.rewind.*
 import java.time.LocalDate
 import android.content.Intent
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.background
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalUriHandler
-import java.net.URLEncoder
+import androidx.compose.ui.res.painterResource
+import app.it.fast4x.rimusic.ui.styling.LocalAppearance
 import app.it.fast4x.rimusic.utils.DataStoreUtils
+import app.kreate.android.R
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlin.math.cos
+import kotlin.math.sin
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.graphics.Color
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BestOfAllSlide(data: RewindData, onNext: () -> Unit) {
+    val appearance = LocalAppearance.current
+    val colorPalette = appearance.colorPalette
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val year = LocalDate.now().year
-    val scrollState = rememberScrollState()
-    val scope = rememberCoroutineScope()  // Add this line
+    val scope = rememberCoroutineScope()
     
-    val topSong = data.topSongs.firstOrNull()
-    val topArtist = data.topArtists.firstOrNull()
-    val topAlbum = data.topAlbums.firstOrNull()
     var username by remember { mutableStateOf("Music Fan") }
-   
+    var selectedTab by remember { mutableStateOf(0) }
+    
+    // Fluid animation for background
+    val infiniteTransition = rememberInfiniteTransition()
+    val fluidX by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(15000, easing = LinearEasing)
+        )
+    )
+    val fluidY by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(18000, easing = LinearEasing)
+        )
+    )
+    
     LaunchedEffect(Unit) {
         scope.launch {
-            try {
-                username = runBlocking {
-                    DataStoreUtils.getStringBlocking(context, DataStoreUtils.KEY_USERNAME, "Music Fan")
-                }
-            } catch (e: Exception) {
-                // Handle error if needed
+            username = runBlocking {
+                DataStoreUtils.getStringBlocking(context, DataStoreUtils.KEY_USERNAME, "Music Fan")
             }
         }
     }
     
+    val topSong = data.topSongs.firstOrNull()
+    val topArtist = data.topArtists.firstOrNull()
+    val topAlbum = data.topAlbums.firstOrNull()
+    
     Box(
-        modifier = Modifier.fillMaxSize()
+        modifier = Modifier
+            .fillMaxSize()
+            .background(colorPalette.background0)
     ) {
-        // BlackCherryCosmos inspired background
-        Box(
+        // Fluid background
+        Canvas(
             modifier = Modifier
                 .fillMaxSize()
-                .drawBehind {
-                    drawIntoCanvas { canvas ->
-                        // Deep purple cosmic background
-                        canvas.nativeCanvas.drawColor(Color(0xFF0A0514).toArgb())
-                        
-                        // Cherry blossom effect (purple/pink gradient)
-                        drawRect(
-                            brush = Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0xFF9C27B0).copy(alpha = 0.3f),
-                                    Color(0xFF673AB7).copy(alpha = 0.2f),
-                                    Color(0xFF311B92).copy(alpha = 0.1f),
-                                    Color(0xFF0A0514)
-                                ),
-                                center = center,
-                                radius = this.size.minDimension * 0.9f
-                            )
-                        )
-                        
-                        // Cherry blossom "petals" effect
-                        repeat(80) {
-                            val petalSize = (1..4).random().toFloat()
-                            val alpha = (5..25).random() / 100f
-                            val color = when ((0..2).random()) {
-                                0 -> Color(0xFFE040FB) // Pink
-                                1 -> Color(0xFF7C4DFF) // Purple
-                                else -> Color(0xFF536DFE) // Blue
-                            }
-                            
-                            drawCircle(
-                                color = color.copy(alpha = alpha),
-                                radius = petalSize,
-                                center = androidx.compose.ui.geometry.Offset(
-                                    (0..this.size.width.toInt()).random().toFloat(),
-                                    (0..this.size.height.toInt()).random().toFloat()
-                                )
-                            )
-                        }
-                    }
-                }
-        )
+                .alpha(0.5f)
+        ) {
+            val width = size.width
+            val height = size.height
+            val centerX = width / 2f
+            val centerY = height / 2f
+            
+            // Gradient blobs
+            val colors = listOf(
+                colorPalette.accent.copy(alpha = 0.15f),
+                colorPalette.accent.copy(alpha = 0.1f),
+                Color.Transparent
+            )
+            
+            // Large fluid shape 1
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = colors,
+                    center = Offset(
+                        x = centerX + width * 0.2f * sin(fluidX),
+                        y = centerY + height * 0.1f * cos(fluidY)
+                    ),
+                    radius = width * 0.5f
+                ),
+                radius = width * 0.5f,
+                center = Offset(
+                    x = centerX + width * 0.2f * sin(fluidX),
+                    y = centerY + height * 0.1f * cos(fluidY)
+                )
+            )
+            
+            // Large fluid shape 2
+            drawCircle(
+                brush = Brush.radialGradient(
+                    colors = colors,
+                    center = Offset(
+                        x = centerX - width * 0.2f * cos(fluidX * 1.3f),
+                        y = centerY - height * 0.1f * sin(fluidY * 1.3f)
+                    ),
+                    radius = width * 0.6f
+                ),
+                radius = width * 0.6f,
+                center = Offset(
+                    x = centerX - width * 0.2f * cos(fluidX * 1.3f),
+                    y = centerY - height * 0.1f * sin(fluidY * 1.3f)
+                )
+            )
+        }
         
-        Column(
+        // Main content
+        LazyColumn(
             modifier = Modifier
                 .fillMaxSize()
-                .verticalScroll(scrollState)
-                .padding(horizontal = 24.dp, vertical = 32.dp),
+                .padding(horizontal = 20.dp)
+                .padding(top = 48.dp, bottom = 20.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             verticalArrangement = Arrangement.spacedBy(24.dp)
         ) {
             // Header
-            Column(
-                horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    text = "REWIND $year",
-                    fontSize = 36.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    textAlign = TextAlign.Center,
-                    letterSpacing = 2.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
-                )
-                
-                Text(
-                    text = "Hi $username",
-                    fontSize = 22.sp,
-                    fontWeight = FontWeight.Medium,
-                    color = Color(0xFFE040FB),
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(bottom = 8.dp)
-                )
-                
-                Text(
-                    text = "Your Year in Music",
-                    fontSize = 16.sp,
-                    color = Color.White.copy(alpha = 0.8f),
-                    textAlign = TextAlign.Center
-                )
-            }
-                        // Description Card
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0x152A1F3A)
-                ),
-                border = BorderStroke(1.5.dp, Color(0x30E040FB))
-            ) {
+            item {
                 Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(24.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(bottom = 8.dp)
                 ) {
+                    // Year pill
                     Box(
                         modifier = Modifier
-                            .size(60.dp)
-                            .clip(CircleShape)
-                            .background(
-                                brush = Brush.radialGradient(
-                                    colors = listOf(
-                                        Color(0xFFE040FB),
-                                        Color(0xFF7C4DFF),
-                                        Color(0xFF311B92)
-                                    )
-                                )
-                            ),
-                        contentAlignment = Alignment.Center
+                            .clip(RoundedCornerShape(50))
+                            .background(colorPalette.accent.copy(alpha = 0.15f))
+                            .padding(horizontal = 24.dp, vertical = 12.dp)
                     ) {
                         Text(
-                            text = "✨",
-                            fontSize = 28.sp
+                            text = year.toString(),
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.Black,
+                            color = colorPalette.accent,
+                            letterSpacing = 4.sp
                         )
                     }
                     
-                    Spacer(modifier = Modifier.height(20.dp))
+                    Spacer(modifier = Modifier.height(16.dp))
                     
+                    // Welcome text
                     Text(
-                        text = "View Your Complete Rewind",
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.White,
-                        textAlign = TextAlign.Center
+                        text = "Hey $username,",
+                        fontSize = 24.sp,
+                        fontWeight = FontWeight.Light,
+                        color = colorPalette.textSecondary,
+                        letterSpacing = 1.sp
                     )
                     
-                    Spacer(modifier = Modifier.height(12.dp))
-                    
                     Text(
-                        text = "See your music journey in a whole new way with interactive visualizations, " +
-                               "detailed analytics, and beautiful charts that bring your listening habits to life.",
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 14.sp,
-                        lineHeight = 22.sp,
-                        textAlign = TextAlign.Center
+                        text = "Your Rewind is Ready",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = colorPalette.text,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 4.dp)
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(8.dp))
-            
-            // Share Button
-            Card(
-                onClick = {
-                    val dataString = encodeRewindDataForUrl(data, username, year)
-                    val url = "https://cubicrewind.lovable.app?data=$dataString"
-                    uriHandler.openUri(url)
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                shape = RoundedCornerShape(16.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color.Transparent
-                ),
-                border = BorderStroke(
-                    2.dp,
-                    Brush.linearGradient(
-                        colors = listOf(
-                            Color(0xFFE040FB),
-                            Color(0xFF7C4DFF),
-                            Color(0xFF536DFE)
-                        )
+            // Stats cards
+            item {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    StatCard(
+                        value = "${data.stats.totalPlays}",
+                        label = "Total Plays",
+                        color = colorPalette.accent,
+                        modifier = Modifier.weight(1f),
+                        colorPalette = colorPalette
                     )
-                ),
-                elevation = CardDefaults.cardElevation(
-                    defaultElevation = 12.dp,
-                    pressedElevation = 6.dp
-                )
-            ) {
-                Box(
+                    
+                    StatCard(
+                        value = "${data.totalUniqueSongs}",
+                        label = "Unique Songs",
+                        color = colorPalette.accent.copy(alpha = 0.8f),
+                        modifier = Modifier.weight(1f),
+                        colorPalette = colorPalette
+                    )
+                }
+            }
+            
+            // Tab selector
+            item {
+                Row(
                     modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            brush = Brush.linearGradient(
+                        .fillMaxWidth()
+                        .padding(vertical = 16.dp),
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    TabButton(
+                        text = "Highlights",
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        color = colorPalette.accent,
+                        colorPalette = colorPalette
+                    )
+                    
+                    Spacer(modifier = Modifier.width(16.dp))
+                    
+                    TabButton(
+                        text = "Share",
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        color = colorPalette.accent,
+                        colorPalette = colorPalette
+                    )
+                }
+            }
+            
+            // Content based on selected tab
+            if (selectedTab == 0) {
+                // Top items
+                item {
+                    TopItemCard(
+                        rank = 1,
+                        title = "TOP SONG",
+                        mainText = topSong?.song?.title ?: "No data",
+                        subText = topSong?.song?.artistsText ?: "",
+                        stats = "${topSong?.playCount ?: 0} plays",
+                        minutes = (topSong?.minutes ?: 0).toLong(),  // Fixed: Convert Int to Long
+                        color = colorPalette.accent,
+                        icon = "🎵",
+                        colorPalette = colorPalette
+                    )
+                }
+                
+                item {
+                    TopItemCard(
+                        rank = 1,
+                        title = "TOP ARTIST",
+                        mainText = topArtist?.artist?.name ?: "No data",
+                        subText = "${topArtist?.songCount ?: 0} songs",
+                        stats = "${topArtist?.minutes ?: 0} minutes",
+                        minutes = (topArtist?.minutes ?: 0).toLong(),  // Fixed: Convert Int to Long
+                        color = colorPalette.accent,
+                        icon = "⭐",
+                        colorPalette = colorPalette
+                    )
+                }
+                
+                item {
+                    TopItemCard(
+                        rank = 1,
+                        title = "TOP ALBUM",
+                        mainText = topAlbum?.album?.title ?: "No data",
+                        subText = topAlbum?.album?.authorsText ?: "",
+                        stats = "${topAlbum?.songCount ?: 0} songs",
+                        minutes = (topAlbum?.minutes ?: 0).toLong(),  // Fixed: Convert Int to Long
+                        color = colorPalette.accent,
+                        icon = "💿",
+                        colorPalette = colorPalette
+                    )
+                }
+                
+                // Monthly breakdown
+                if (data.monthlyStats.isNotEmpty()) {
+                    item {
+                        MonthlyMiniChart(
+                            monthlyStats = data.monthlyStats.take(6),
+                            accentColor = colorPalette.accent,
+                            colorPalette = colorPalette
+                        )
+                    }
+                }
+            } else {
+                // Share tab
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(28.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = colorPalette.background2.copy(alpha = 0.5f)
+                        ),
+                        border = BorderStroke(  // Fixed: BorderStroke is now properly referenced
+                            1.dp,
+                            Brush.linearGradient(
                                 colors = listOf(
-                                    Color(0x20E040FB),
-                                    Color(0x107C4DFF),
-                                    Color(0x20E040FB)
+                                    colorPalette.accent.copy(alpha = 0.5f),
+                                    colorPalette.accent.copy(alpha = 0.2f),
+                                    colorPalette.accent.copy(alpha = 0.5f)
                                 )
                             )
-                        ),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.Center,
-                        modifier = Modifier.padding(horizontal = 20.dp)
+                        )
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(42.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFFE040FB))
-                                .padding(8.dp),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = "🌌",
-                                fontSize = 20.sp
-                            )
-                        }
-                        
-                        Spacer(modifier = Modifier.width(16.dp))
-                        
                         Column(
-                            horizontalAlignment = Alignment.Start
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
                         ) {
+                            // Share icon with animation
+                            Box(
+                                modifier = Modifier
+                                    .size(100.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        Brush.radialGradient(
+                                            colors = listOf(
+                                                colorPalette.accent,
+                                                colorPalette.accent.copy(alpha = 0.5f),
+                                                Color.Transparent
+                                            ),
+                                            radius = 150f
+                                        )
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text(
+                                    text = "✨",
+                                    fontSize = 48.sp
+                                )
+                            }
+                            
+                            Spacer(modifier = Modifier.height(24.dp))
+                            
                             Text(
-                                text = "Share on Web",
-                                fontSize = 18.sp,
+                                text = "Share Your Story",
+                                fontSize = 24.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = Color.White
+                                color = colorPalette.text
                             )
+                            
                             Text(
-                                text = "Interactive visualizations & analytics",
-                                fontSize = 12.sp,
-                                color = Color.White.copy(alpha = 0.8f)
+                                text = "Show the world your music journey",
+                                fontSize = 14.sp,
+                                color = colorPalette.textSecondary,
+                                textAlign = TextAlign.Center,
+                                modifier = Modifier.padding(top = 8.dp, bottom = 24.dp)
+                            )
+                            
+                            // Share buttons
+                            ShareButton(
+                                text = "Web Visualization",
+                                description = "Interactive analytics",
+                                icon = "🌐",
+                                color = colorPalette.accent,
+                                onClick = {
+                                    val dataString = encodeRewindDataForUrl(data, username, year)
+                                    val url = "https://cubicrewind.lovable.app?data=$dataString"
+                                    uriHandler.openUri(url)
+                                },
+                                colorPalette = colorPalette
+                            )
+                            
+                            Spacer(modifier = Modifier.height(12.dp))
+                            
+                            ShareButton(
+                                text = "Share Summary",
+                                description = "Text format",
+                                icon = "📱",
+                                color = colorPalette.accent.copy(alpha = 0.8f),
+                                onClick = {
+                                    shareRewindData(
+                                        context = context,
+                                        data = data,
+                                        username = username,
+                                        ranking = "Top Listener",
+                                        year = year
+                                    )
+                                },
+                                colorPalette = colorPalette
                             )
                         }
-                        
-                        Spacer(modifier = Modifier.weight(1f))
-                        
-                        Box(
+                    }
+                }
+                
+                // Stats preview
+                item {
+                    Card(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(24.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = colorPalette.background2.copy(alpha = 0.3f)
+                        )
+                    ) {
+                        Column(
                             modifier = Modifier
-                                .size(42.dp)
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color(0xFF7C4DFF).copy(alpha = 0.6f))
-                                .padding(8.dp),
-                            contentAlignment = Alignment.Center
+                                .fillMaxWidth()
+                                .padding(20.dp)
                         ) {
                             Text(
-                                text = "↗",
-                                fontSize = 20.sp,
-                                color = Color.White
+                                text = "Quick Stats",
+                                fontSize = 16.sp,
+                                fontWeight = FontWeight.Medium,
+                                color = colorPalette.textSecondary,
+                                modifier = Modifier.padding(bottom = 12.dp)
+                            )
+                            
+                            StatRow(
+                                label = "Days with music",
+                                value = "${data.daysWithMusic}",
+                                color = colorPalette.accent,
+                                colorPalette = colorPalette
+                            )
+                            
+                            StatRow(
+                                label = "Average daily",
+                                value = "${data.stats.averageDailyMinutes.toInt()} min",
+                                color = colorPalette.accent.copy(alpha = 0.8f),
+                                colorPalette = colorPalette
+                            )
+                            
+                            StatRow(
+                                label = "Unique artists",
+                                value = "${data.totalUniqueArtists}",
+                                color = colorPalette.accent.copy(alpha = 0.6f),
+                                colorPalette = colorPalette
                             )
                         }
                     }
                 }
             }
             
-            // Top Song
-            TopItemCard(
-                icon = "🎵",
-                title = "TOP SONG",
-                mainText = topSong?.song?.title ?: "N/A",
-                subText = topSong?.song?.artistsText ?: "",
-                stats = "${topSong?.playCount ?: 0} plays • ${topSong?.minutes ?: 0} min",
-                color = Color(0xFFE040FB)
-            )
-            
-            // Top Artist
-            TopItemCard(
-                icon = "⭐",
-                title = "TOP ARTIST",
-                mainText = topArtist?.artist?.name ?: "N/A",
-                subText = "${topArtist?.songCount ?: 0} songs",
-                stats = "${topArtist?.minutes ?: 0} minutes",
-                color = Color(0xFF7C4DFF)
-            )
-            
-            // Top Album
-            TopItemCard(
-                icon = "💿",
-                title = "TOP ALBUM",
-                mainText = topAlbum?.album?.title ?: "N/A",
-                subText = topAlbum?.album?.authorsText ?: "",
-                stats = "${topAlbum?.songCount ?: 0} songs • ${topAlbum?.minutes ?: 0} min",
-                color = Color(0xFF536DFE)
-            )
-            
-            Spacer(modifier = Modifier.height(16.dp))
-            
-            // Alternative share button
-            Card(
-                onClick = {
-                    shareRewindData(
-                        context = context,
-                        data = data,
-                        username = username,
-                        ranking = "Top Listener",
-                        year = year
+            // Continue button
+            item {
+                Button(
+                    onClick = onNext,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .padding(top = 16.dp),
+                    shape = RoundedCornerShape(28.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = colorPalette.accent,
+                        contentColor = colorPalette.onAccent
+                    ),
+                    elevation = ButtonDefaults.buttonElevation(
+                        defaultElevation = 8.dp
                     )
-                },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(50.dp),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = Color(0x157C4DFF)
-                ),
-                border = BorderStroke(1.dp, Color(0x30E040FB))
-            ) {
-                Row(
-                    modifier = Modifier.fillMaxSize(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "📤",
+                        text = "Continue →",
                         fontSize = 18.sp,
-                        modifier = Modifier.padding(end = 8.dp)
-                    )
-                    Text(
-                        text = "Share Summary",
-                        fontSize = 15.sp,
-                        color = Color.White,
-                        fontWeight = FontWeight.Medium
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
             }
             
-            Spacer(modifier = Modifier.height(16.dp))
-            
+            // Footer
+            item {
+                Text(
+                    text = "Your data stays on your device",
+                    fontSize = 11.sp,
+                    color = colorPalette.textDisabled,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun StatCard(
+    value: String,
+    label: String,
+    color: Color,
+    modifier: Modifier = Modifier,
+    colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette  // Fixed: Added colorPalette parameter
+) {
+    Card(
+        modifier = modifier,
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = color.copy(alpha = 0.1f)
+        ),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))  // Fixed: BorderStroke is now properly referenced
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
             Text(
-                text = "Data processed locally • Securely shared",
-                color = Color.White.copy(alpha = 0.4f),
-                fontSize = 10.sp,
+                text = value,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                color = color
+            )
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                color = color.copy(alpha = 0.8f),
                 textAlign = TextAlign.Center
             )
         }
@@ -391,52 +531,74 @@ fun BestOfAllSlide(data: RewindData, onNext: () -> Unit) {
 }
 
 @Composable
-fun TopItemCard(
-    icon: String,
+private fun TabButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    color: Color,
+    colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette  // Fixed: Added colorPalette parameter
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(50))
+            .background(if (selected) color else color.copy(alpha = 0.1f))
+            .clickable { onClick() }
+            .padding(horizontal = 24.dp, vertical = 12.dp)
+    ) {
+        Text(
+            text = text,
+            color = if (selected) colorPalette.onAccent else color,  // Fixed: colorPalette is now accessible
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal
+        )
+    }
+}
+
+@Composable
+private fun TopItemCard(
+    rank: Int,
     title: String,
     mainText: String,
     subText: String,
     stats: String,
-    color: Color
+    minutes: Long,  // Fixed: Changed from Int to Long
+    color: Color,
+    icon: String,
+    colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette  // Fixed: Added colorPalette parameter
 ) {
+    val hours = (minutes / 60).toInt()  // Fixed: Convert Long to Int for hours
+    val remainingMinutes = (minutes % 60).toInt()  // Fixed: Convert Long to Int for minutes
+    
     Card(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(24.dp),
         colors = CardDefaults.cardColors(
-            containerColor = Color(0x152A1F3A)
+            containerColor = color.copy(alpha = 0.1f)
         ),
-        border = BorderStroke(1.5.dp, color.copy(alpha = 0.4f)),
-        elevation = CardDefaults.cardElevation(
-            defaultElevation = 8.dp
-        )
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))  // Fixed: BorderStroke is now properly referenced
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(20.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(16.dp)
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            // Icon
+            // Rank
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .background(
-                        brush = Brush.linearGradient(
-                            colors = listOf(
-                                color.copy(alpha = 0.4f),
-                                color.copy(alpha = 0.2f)
-                            )
-                        )
-                    ),
+                    .size(48.dp)
+                    .clip(CircleShape)
+                    .background(color),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = icon,
-                    fontSize = 26.sp
+                    text = "#$rank",
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colorPalette.onAccent  // Fixed: colorPalette is now accessible
                 )
             }
+            
+            Spacer(modifier = Modifier.width(16.dp))
             
             // Content
             Column(
@@ -445,47 +607,246 @@ fun TopItemCard(
                 Text(
                     text = title,
                     fontSize = 12.sp,
-                    color = color.copy(alpha = 0.9f),
+                    color = color,
                     fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.sp,
-                    modifier = Modifier.padding(bottom = 6.dp)
+                    letterSpacing = 1.sp
                 )
                 
                 Text(
                     text = mainText,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
-                    maxLines = 2,
+                    color = colorPalette.text,  // Fixed: colorPalette is now accessible
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    lineHeight = 22.sp,
-                    modifier = Modifier.padding(bottom = 4.dp)
+                    modifier = Modifier.padding(top = 4.dp)
                 )
                 
-                if (subText.isNotEmpty()) {
+                if (subText.isNotEmpty() && subText != "null") {
                     Text(
                         text = subText,
                         fontSize = 14.sp,
-                        color = Color.White.copy(alpha = 0.7f),
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 18.sp
+                        color = colorPalette.textSecondary,  // Fixed: colorPalette is now accessible
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
                 }
                 
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                Text(
-                    text = stats,
-                    fontSize = 12.sp,
-                    color = color,
-                    fontWeight = FontWeight.SemiBold
-                )
+                Row(
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = stats,
+                        fontSize = 13.sp,
+                        color = color,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                    
+                    if (minutes > 0) {
+                        Box(
+                            modifier = Modifier
+                                .size(4.dp)
+                                .clip(CircleShape)
+                                .background(color.copy(alpha = 0.3f))
+                                .padding(horizontal = 4.dp)
+                        )
+                        
+                        Text(
+                            text = if (hours > 0) "${hours}h ${remainingMinutes}m" else "${remainingMinutes}m",
+                            fontSize = 13.sp,
+                            color = color.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+            }
+            
+            // Icon
+            Text(
+                text = icon,
+                fontSize = 32.sp
+            )
+        }
+    }
+}
+
+@Composable
+private fun MonthlyMiniChart(
+    monthlyStats: List<MonthlyStat>,
+    accentColor: Color,
+    colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette  // Fixed: Added colorPalette parameter
+) {
+    val maxMinutes = monthlyStats.maxOfOrNull { it.minutes } ?: 1
+    
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = accentColor.copy(alpha = 0.05f)
+        ),
+        border = BorderStroke(1.dp, accentColor.copy(alpha = 0.2f))  // Fixed: BorderStroke is now properly referenced
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(20.dp)
+        ) {
+            Text(
+                text = "Monthly Activity",
+                fontSize = 14.sp,
+                fontWeight = FontWeight.Medium,
+                color = accentColor,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+            
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                monthlyStats.forEach { stat ->
+                   val height = if (maxMinutes > 0) {
+                        ((stat.minutes.toFloat() / maxMinutes.toFloat()) * 80f).dp
+                    } else {
+                        0.dp
+                    }
+                    
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally
+                    ) {
+                        Box(
+                            modifier = Modifier
+                                .width(20.dp)
+                                .height(height.coerceAtLeast(4.dp))
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(
+                                    Brush.verticalGradient(
+                                        colors = listOf(
+                                            accentColor,
+                                            accentColor.copy(alpha = 0.3f)
+                                        )
+                                    )
+                                )
+                        )
+                        
+                        Spacer(modifier = Modifier.height(8.dp))
+                        
+                        Text(
+                            text = stat.month.take(3),
+                            fontSize = 11.sp,
+                            color = accentColor.copy(alpha = 0.7f)
+                        )
+                    }
+                }
             }
         }
     }
 }
 
+@Composable
+private fun ShareButton(
+    text: String,
+    description: String,
+    icon: String,
+    color: Color,
+    onClick: () -> Unit,
+    colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette  // Fixed: Added colorPalette parameter
+) {
+    Card(
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = color.copy(alpha = 0.1f)
+        ),
+        border = BorderStroke(1.dp, color.copy(alpha = 0.3f))  // Fixed: BorderStroke is now properly referenced
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon
+            Box(
+                modifier = Modifier
+                    .size(48.dp)
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(color.copy(alpha = 0.2f)),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = icon,
+                    fontSize = 24.sp
+                )
+            }
+            
+            Spacer(modifier = Modifier.width(16.dp))
+            
+            // Text
+            Column(
+                modifier = Modifier.weight(1f)
+            ) {
+                Text(
+                    text = text,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = colorPalette.text  // Fixed: colorPalette is now accessible
+                )
+                Text(
+                    text = description,
+                    fontSize = 12.sp,
+                    color = colorPalette.textSecondary  // Fixed: colorPalette is now accessible
+                )
+            }
+            
+            // Arrow
+            Text(
+                text = "→",
+                fontSize = 20.sp,
+                color = color
+            )
+        }
+    }
+}
+
+@Composable
+private fun StatRow(
+    label: String,
+    value: String,
+    color: Color,
+    colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette  // Fixed: Added colorPalette parameter
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp),
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            color = colorPalette.textSecondary  // Fixed: colorPalette is now accessible
+        )
+        Text(
+            text = value,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold,
+            color = color
+        )
+    }
+}
+
+// Add clickable modifier extension
+private fun Modifier.clickable(onClick: () -> Unit): Modifier = this.then(
+    Modifier.pointerInput(onClick) {
+        detectTapGestures(
+            onTap = { onClick() }
+        )
+    }
+)
+
+// Keep existing helper functions
 private fun encodeRewindDataForUrl(data: RewindData, username: String, year: Int): String {
     return try {
         val jsonString = buildString {
@@ -553,12 +914,12 @@ private fun encodeRewindDataForUrl(data: RewindData, username: String, year: Int
             data.stats.lastPlayDate?.let {
                 append("\"lastPlay\":\"${escapeJsonString(it)}\",")
             }
-            if (toString().endsWith(",")) {
+            if (endsWith(",")) {
                 deleteCharAt(length - 1)
             }
             append("}")
         }
-        URLEncoder.encode(jsonString, "UTF-8")
+        java.net.URLEncoder.encode(jsonString, "UTF-8")
     } catch (e: Exception) {
         ""
     }
@@ -574,16 +935,16 @@ private fun escapeJsonString(str: String): String {
 }
 
 private fun shareRewindData(
-    context: android.content.Context, 
-    data: RewindData, 
-    username: String, 
-    ranking: String, 
+    context: android.content.Context,
+    data: RewindData,
+    username: String,
+    ranking: String,
     year: Int
 ) {
     val shareText = buildString {
         append("🎵 My $year Music Rewind 🎵\n\n")
-        append("🎤 Username: $username\n")
-        append("🏆 Ranking: $ranking\n\n")
+        append("👤 $username\n")
+        append("🏆 $ranking\n\n")
         append("📊 Stats:\n")
         append("• Total Plays: ${data.stats.totalPlays}\n")
         append("• Total Listening: ${data.stats.totalMinutes} minutes\n")

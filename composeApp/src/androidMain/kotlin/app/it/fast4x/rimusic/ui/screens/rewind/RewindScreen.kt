@@ -4,8 +4,6 @@ import app.kreate.android.R
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.ui.draw.shadow
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.CircleShape
@@ -15,37 +13,32 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.navigation.NavController
-import com.mikepenz.hypnoticcanvas.shaderBackground
-import com.mikepenz.hypnoticcanvas.shaders.BlackCherryCosmos
-import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
-import com.mikepenz.hypnoticcanvas.shaders.Shader
+import app.it.fast4x.rimusic.ui.styling.LocalAppearance
 import app.it.fast4x.rimusic.utils.DataStoreUtils
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import java.time.LocalDate
-import kotlin.random.Random
-import androidx.compose.ui.res.painterResource
-import androidx.compose.foundation.Image
-import androidx.compose.ui.layout.ContentScale
-
-
 
 // Import your slide components
 import app.it.fast4x.rimusic.ui.screens.rewind.slides.*
-import app.it.fast4x.rimusic.ui.screens.rewind.slides.AfterTopArtistsSlide
-
-
-// Professional shader backgrounds (only for loading screen)
-val shaderOptions: List<Shader> = listOf(BlackCherryCosmos, GoldenMagma)
+import androidx.compose.animation.core.*
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
+import kotlin.math.cos
+import kotlin.math.sin
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
@@ -53,6 +46,8 @@ fun RewindScreen(
     navController: NavController,
     miniPlayer: @Composable () -> Unit = {},
 ) {
+    val appearance = LocalAppearance.current
+    val colorPalette = appearance.colorPalette
     var rewindData by remember { mutableStateOf<RewindData?>(null) }
     var isLoading by remember { mutableStateOf(true) }
     var username by remember { mutableStateOf("Music Fan") }
@@ -60,21 +55,16 @@ fun RewindScreen(
     val context = LocalContext.current
     val currentYear = LocalDate.now().year
     
-    // Main pager state for slides - REDUCED TO 8 SLIDES (removed daily/hourly)
-   // Change from 8 to 9 slides
+    // Main pager state for slides
     val mainPagerState = rememberPagerState(pageCount = { 10 })
     
     LaunchedEffect(Unit) {
         try {
-            // Get username
             username = runBlocking {
                 DataStoreUtils.getStringBlocking(context, DataStoreUtils.KEY_USERNAME, "Music Fan")
             }
             
-            // Load rewind data WITHOUT daily/hourly stats
             val fetchedData = RewindDataFetcher.getRewindData(currentYear)
-            
-            // Create clean data WITHOUT daily/hourly stats
             rewindData = fetchedData.copy(
                 dailyStats = emptyList(),
                 hourlyStats = emptyList()
@@ -82,27 +72,23 @@ fun RewindScreen(
             
         } catch (e: Exception) {
             e.printStackTrace()
-            // Create empty data if fetch fails
             rewindData = createEmptyRewindData(currentYear)
         } finally {
-            delay(600) // Smooth loading transition
+            delay(600)
             isLoading = false
         }
     }
     
-   Box(
-    modifier = Modifier.fillMaxSize()  // NO PADDING!
-) {
+    Box(modifier = Modifier.fillMaxSize()) {
         if (isLoading) {
-            // Random shader for loading screen only (50/50 chance)
-            val currentShader = remember { shaderOptions.random() }
-            OptimizedLoadingScreen(currentShader)
+            // FLUID LOADING SCREEN using color palette
+            FluidLoadingScreen(colorPalette)
         } else {
-            // FULL SCREEN - NO HEADERS, NO BACKGROUNDS, JUST BLACK
+            // FULL SCREEN SLIDES
             Box(
                 modifier = Modifier
                     .fillMaxSize()
-                    .background(Color.Black)
+                    .background(colorPalette.background0)
             ) {
                 val data = rewindData
                 
@@ -111,7 +97,6 @@ fun RewindScreen(
                     modifier = Modifier.fillMaxSize(),
                     key = { page -> "page_$page" }
                 ) { page ->
-                    // EACH SLIDE IS FULL SCREEN - NO CONTAINERS
                     when (page) {
                         0 -> WelcomeSlide(
                             username = username,
@@ -137,7 +122,7 @@ fun RewindScreen(
                             }
                         )
                         3 -> AfterTopSongsSlide(
-                            topSong = data?.topSongs?.firstOrNull(), // Pass the #1 song
+                            topSong = data?.topSongs?.firstOrNull(),
                             onNext = { scope.launch { mainPagerState.animateScrollToPage(4) } }
                         )
                         4 -> TopArtistsSlide(
@@ -146,43 +131,41 @@ fun RewindScreen(
                                 scope.launch { mainPagerState.animateScrollToPage(5) }
                             }
                         )
-                        5 -> AfterTopArtistsSlide( // NEW SLIDE ADDED HERE
-                            topArtist = data?.topArtists?.firstOrNull(), // Get #1 artist
+                        5 -> AfterTopArtistsSlide(
+                            topArtist = data?.topArtists?.firstOrNull(),
                             onNext = { 
-                                scope.launch { mainPagerState.animateScrollToPage(6) } // Next is now 6
+                                scope.launch { mainPagerState.animateScrollToPage(6) }
                             }
                         )
-                        6 -> TopAlbumsSlide( // Changed from 5 to 6
+                        6 -> TopAlbumsSlide(
                             albums = data?.topAlbums ?: emptyList(),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(7) } // Changed from 6 to 7
+                                scope.launch { mainPagerState.animateScrollToPage(7) }
                             }
                         )
-                        7 -> MonthlyStatsSlide( // Changed from 6 to 7
+                        7 -> MonthlyStatsSlide(
                             monthlyStats = data?.monthlyStats ?: emptyList(),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(8) } // Changed from 7 to 8
+                                scope.launch { mainPagerState.animateScrollToPage(8) }
                             }
                         )
-                        8 -> BestOfAllSlide( // Changed from 7 to 8
+                        8 -> BestOfAllSlide(
                             data = data ?: createEmptyRewindData(currentYear),
                             onNext = {
-                                scope.launch { mainPagerState.animateScrollToPage(9) } // Changed from 8 to 9
+                                scope.launch { mainPagerState.animateScrollToPage(9) }
                             }
                         )
-                        9 -> DonateSlide( // Changed from 8 to 9
+                        9 -> DonateSlide(
                             onNext = {
                                 scope.launch { mainPagerState.animateScrollToPage(0) }
                             }
-
                         )
                     }
                 }
                 
-                // Simple page indicator at the bottom
+                // Page indicator at the bottom
                 Column(
-                    modifier = Modifier
-                        .fillMaxSize(),
+                    modifier = Modifier.fillMaxSize(),
                     verticalArrangement = Arrangement.Bottom
                 ) {
                     Row(
@@ -192,7 +175,7 @@ fun RewindScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
-                        repeat(10) { index ->  // Changed from 10 to 8
+                        repeat(10) { index ->
                             Box(
                                 modifier = Modifier
                                     .padding(horizontal = 4.dp)
@@ -200,9 +183,9 @@ fun RewindScreen(
                                     .clip(CircleShape)
                                     .background(
                                         if (index == mainPagerState.currentPage) 
-                                            Color.White 
+                                            colorPalette.accent
                                         else 
-                                            Color.White.copy(alpha = 0.4f)
+                                            colorPalette.textDisabled
                                     )
                             )
                         }
@@ -216,17 +199,41 @@ fun RewindScreen(
 }
 
 @Composable
-fun OptimizedLoadingScreen(shader: Shader) {
+fun FluidLoadingScreen(colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette) {
+    val configuration = LocalConfiguration.current
+    
     var currentProgress by remember { mutableStateOf(0) }
     var loadingText by remember { mutableStateOf("Loading your music journey...") }
     
+    // FLUID ANIMATION - these are Floats for position calculations, NOT colors
+    val infiniteTransition = rememberInfiniteTransition()
+    val fluidOffset1 by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(8000, easing = LinearEasing)
+        )
+    )
+    val fluidOffset2 by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(12000, easing = LinearEasing)
+        )
+    )
+    val fluidOffset3 by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 2f * Math.PI.toFloat(),
+        animationSpec = infiniteRepeatable(
+            animation = tween(15000, easing = LinearEasing)
+        )
+    )
+    
     LaunchedEffect(Unit) {
-        // Simple progress that completes
         repeat(100) {
             delay(30)
             currentProgress += 1
             
-            // Update text based on progress
             loadingText = when {
                 currentProgress < 25 -> "Fetching your listening data..."
                 currentProgress < 50 -> "Analyzing top songs..."
@@ -240,19 +247,64 @@ fun OptimizedLoadingScreen(shader: Shader) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .shaderBackground(shader),  // Shader background ONLY here
+            .background(colorPalette.background0),
         contentAlignment = Alignment.Center
     ) {
-        // Premium gradient overlay
+        // FLUID BACKGROUND using accent colors - these are fixed Colors, not animated
+        Canvas(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.Transparent)
+        ) {
+            val width = size.width
+            val height = size.height
+            
+            // Create fluid wave effect using accent colors - THESE ARE COLORS, NOT ANIMATED FLOATS
+            val accentColor1 = colorPalette.accent.copy(alpha = 0.15f)
+            val accentColor2 = colorPalette.accent.copy(alpha = 0.1f)
+            val accentColor3 = colorPalette.accent.copy(alpha = 0.05f)
+            
+            // First wave - using fluidOffset1 for POSITION only
+            drawCircle(
+                color = accentColor1, // This is a Color
+                radius = width * 0.8f,
+                center = Offset(
+                    x = width * (0.5f + 0.2f * sin(fluidOffset1)), // fluidOffset1 used for position
+                    y = height * (0.5f + 0.2f * cos(fluidOffset1 * 1.3f))
+                )
+            )
+            
+            // Second wave - using fluidOffset2 for POSITION only
+            drawCircle(
+                color = accentColor2, // This is a Color
+                radius = width * 0.9f,
+                center = Offset(
+                    x = width * (0.5f + 0.25f * cos(fluidOffset2)), // fluidOffset2 used for position
+                    y = height * (0.5f + 0.25f * sin(fluidOffset2 * 1.7f))
+                )
+            )
+            
+            // Third wave - using fluidOffset3 for POSITION only
+            drawCircle(
+                color = accentColor3, // This is a Color
+                radius = width * 1.0f,
+                center = Offset(
+                    x = width * (0.5f + 0.15f * sin(fluidOffset3 * 1.2f)), // fluidOffset3 used for position
+                    y = height * (0.5f + 0.15f * cos(fluidOffset3 * 0.8f))
+                )
+            )
+        }
+        
+        // Gradient overlay - using proper Color list
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.radialGradient(
-                        colors = listOf(
-                            Color.Black.copy(alpha = 0.2f),
-                            Color.Black.copy(alpha = 0.4f),
-                            Color.Black.copy(alpha = 0.6f)
+                        colors = listOf<Color>( // Explicitly typed as List<Color>
+                            Color.Transparent,
+                            colorPalette.background0.copy(alpha = 0.7f),
+                            colorPalette.background0
                         ),
                         radius = 800f
                     )
@@ -269,7 +321,7 @@ fun OptimizedLoadingScreen(shader: Shader) {
                 modifier = Modifier
                     .size(120.dp)
                     .clip(RoundedCornerShape(20.dp))
-                    .background(Color.White.copy(alpha = 0.15f))
+                    .background(colorPalette.background2)
                     .padding(20.dp),
                 contentAlignment = Alignment.Center
             ) {
@@ -288,13 +340,13 @@ fun OptimizedLoadingScreen(shader: Shader) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(16.dp)
             ) {
-                // Title with 3 lines format
+                // Title
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally
                 ) {
                     Text(
                         text = LocalDate.now().year.toString(),
-                        color = Color.White,
+                        color = colorPalette.accent,
                         fontSize = 24.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 2.sp,
@@ -302,13 +354,13 @@ fun OptimizedLoadingScreen(shader: Shader) {
                     )
                     Text(
                         text = "MUSIC",
-                        color = Color.White,
+                        color = colorPalette.text,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                     Text(
                         text = "REWIND",
-                        color = Color.White,
+                        color = colorPalette.accent,
                         fontSize = 28.sp,
                         fontWeight = FontWeight.Black,
                         letterSpacing = 3.sp
@@ -320,7 +372,7 @@ fun OptimizedLoadingScreen(shader: Shader) {
                     modifier = Modifier
                         .fillMaxWidth(0.8f)
                         .clip(RoundedCornerShape(12.dp))
-                        .background(Color.White.copy(alpha = 0.1f))
+                        .background(colorPalette.background2)
                         .padding(horizontal = 16.dp, vertical = 12.dp)
                 ) {
                     Column(
@@ -329,7 +381,7 @@ fun OptimizedLoadingScreen(shader: Shader) {
                     ) {
                         Text(
                             text = loadingText,
-                            color = Color.White.copy(alpha = 0.95f),
+                            color = colorPalette.textSecondary,
                             fontSize = 14.sp,
                             fontWeight = FontWeight.Medium,
                             textAlign = TextAlign.Center,
@@ -342,16 +394,16 @@ fun OptimizedLoadingScreen(shader: Shader) {
                                 .fillMaxWidth()
                                 .height(4.dp)
                                 .clip(RoundedCornerShape(2.dp)),
-                            color = Color.White,
-                            trackColor = Color.White.copy(alpha = 0.3f)
+                            color = colorPalette.accent,
+                            trackColor = colorPalette.background3
                         )
                     }
                 }
                 
-                // Simple hint
+                // Hint
                 Text(
                     text = "Swipe to navigate",
-                    color = Color.White.copy(alpha = 0.6f),
+                    color = colorPalette.textDisabled,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Normal
                 )
@@ -378,8 +430,8 @@ private fun createEmptyRewindData(year: Int): RewindData {
             lastPlayDate = null
         ),
         monthlyStats = emptyList(),
-        dailyStats = emptyList(),  // Empty
-        hourlyStats = emptyList(), // Empty
+        dailyStats = emptyList(),
+        hourlyStats = emptyList(),
         totalUniqueSongs = 0,
         totalUniqueArtists = 0,
         totalUniqueAlbums = 0,

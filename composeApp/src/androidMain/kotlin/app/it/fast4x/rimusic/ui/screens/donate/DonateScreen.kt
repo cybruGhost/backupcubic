@@ -397,7 +397,7 @@ fun DonateScreen(
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
                         Text(
-                            text = "Thank You! 🙏",
+                            text = "Thank You! ",
                             style = typography.xl.copy(
                                 fontWeight = FontWeight.Bold
                             ),
@@ -407,7 +407,7 @@ fun DonateScreen(
                         Spacer(modifier = Modifier.height(12.dp))
                         
                         Text(
-                            text = "Your support mOtivates me. Every contribution, no matter how small, is greatly appreciated!",
+                            text = "Your support motivates me. Every contribution, no matter how small, is greatly appreciated!",
                             style = typography.s,
                             color = colorPalette.textSecondary,
                             textAlign = TextAlign.Center,
