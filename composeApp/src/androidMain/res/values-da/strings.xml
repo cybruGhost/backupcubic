@@ -934,7 +934,7 @@
   <string name="looking_up_artist_online">Slår %s op online...</string>
   <string name="failed_to_fetch_artist">Kunne ikke hente kunstner</string>
   <string name="looking_up_album_from_the_internet">Slår album op på internettet</string>
-  <string name="failed_to_fetch_original_property">Kunne ikke hente original egenskab</string>
+  <string name="failed_to_fetch_original_property">Kunne ikke hente original egewaigweb</string>
   <string name="failed_to_fetch_album">Kunne ikke hente album</string>
   <string name="info_open_reset_dialog">Åbn nulstil-dialogboks</string>
   <string name="title_reset_title">Nulstil titel</string>

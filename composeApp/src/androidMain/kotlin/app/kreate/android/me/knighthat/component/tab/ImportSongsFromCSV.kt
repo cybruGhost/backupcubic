@@ -332,7 +332,7 @@ class ImportSongsFromCSV(
             "it" -> "Italiano"
             "nl" -> "Nederlands"
             "pt" -> "Português"
-            "sv" -> "Svenska"
+            "sv" -> "Svewaigwe"
             "ar" -> "العربية"
             "ja" -> "日本語"
             "tr" -> "Türkçe"
