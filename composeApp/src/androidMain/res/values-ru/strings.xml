@@ -395,7 +395,7 @@
   <string name="copy_lyrics">Копировать текст</string>
   <string name="value_copied">Скопировано</string>
   <string name="do_you_really_want_to_delete_cache">Вы действительно хотите удалить кэш?</string>
-  <string name="lang_swedish">Шведский (Svewaigwe)</string>
+  <string name="lang_swedish">Шведский (Svenska)</string>
   <string name="pinned_playlists">Прикреплено</string>
   <string name="locked">Заблокировано</string>
   <string name="sort_duration">По длительности</string>

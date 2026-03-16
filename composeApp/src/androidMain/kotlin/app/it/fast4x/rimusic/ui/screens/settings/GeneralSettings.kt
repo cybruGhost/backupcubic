@@ -628,7 +628,7 @@ Spacer(modifier = Modifier.height(16.dp))
 // END OF SPOTIFY CANVAS SECTION
 // ============================================================
 // ============================================================
-// waigwe FALLBACK SECTION - SIMPLER VERSION
+// Waigwe FALLBACK SECTION - SIMPLER VERSION
 // ============================================================
 AnimatedVisibility(
     visible = true,
@@ -638,17 +638,17 @@ AnimatedVisibility(
     )
 ) {
     SettingsSectionCard(
-        title = "waigwe Fallback",
+        title = "Waigwe Fallback",
         icon = R.drawable.refresh,
         content = {
-            var waigweFallbackEnabled by rememberPreference("waigweFallbackKey", true)
+            var WaigweFallbackEnabled by rememberPreference("WaigweFallbackKey", true)
             
-            if (search.inputValue.isBlank() || "waigwe Fallback".contains(search.inputValue, true)) {
+            if (search.inputValue.isBlank() || "Waigwe Fallback".contains(search.inputValue, true)) {
                 OtherSwitchSettingEntry(
-                    title = "waigwe Fallback",
+                    title = "Waigwe Fallback",
                     text = "Use alternative source when YouTube fails",
-                    isChecked = waigweFallbackEnabled,
-                    onCheckedChange = { waigweFallbackEnabled = it },
+                    isChecked = WaigweFallbackEnabled,
+                    onCheckedChange = { WaigweFallbackEnabled = it },
                     icon = R.drawable.refresh
                 )
                 
@@ -666,7 +666,7 @@ AnimatedVisibility(
 Spacer(modifier = Modifier.height(16.dp))
 
 // ============================================================
-// COMMENTS BUTTON TOGGLE SECTION - ADD THIS BETWEEN waigwe AND NOTIFICATIONS
+// COMMENTS BUTTON TOGGLE SECTION - ADD THIS BETWEEN Waigwe AND NOTIFICATIONS
 // ============================================================
 AnimatedVisibility(
     visible = true,

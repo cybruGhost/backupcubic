@@ -98,7 +98,7 @@
 <string name="is_android12">Od Android 12, onemogućavanje optimizacije baterije je potrebno da bi opcija „Nepobedivi servis“ stupila na snagu.</string>
 <string name="ignore_battery_optimizations">Ignoriši optimizaciju baterije</string>
 <string name="already_unrestricted">Već neograničeno</string>
-<string name="disable_background_restrictions">Onemogući pozadiwaigwe ograničenja</string>
+<string name="disable_background_restrictions">Onemogući pozadinska ograničenja</string>
 <string name="invincible_service">Nepobediv servis</string>
 <string name="turning_off_battery_optimizations_is_not_enough">Kada gašenje optimizacije baterije nije dovoljno</string>
 <string name="player">Plejer</string>
@@ -215,7 +215,7 @@
 <string name="vt_double_side_circular">Dupla strana kružna</string>
 <string name="vt_full">Puno</string>
 <string name="new_albums_of_your_artists">Novi albumi vaših izvođača</string>
-<string name="timeline">Vremewaigwe linija</string>
+<string name="timeline">Vremenska linija</string>
 <string name="song_cache_by_player">KEŠ PESME (od Plejera)</string>
 <string name="song_cache_by_download">KEŠ PESME (od Preuzimanja)</string>
 <string name="visualizer">Vizualizator</string>
@@ -413,7 +413,7 @@
 <string name="lang_telugu">Teluški</string>
 <string name="media_permission_required_please_grant">Potrebna je medijska dozvola, molim vas odobrite.</string>
 <string name="open_permission_settings">Otvorite podešavanja dozvola</string>
-<string name="background_progress_bar">Pozadiwaigwe traka napretka</string>
+<string name="background_progress_bar">Pozadinska traka napretka</string>
 <string name="minimized_player">Minimiziran plejer</string>
 <string name="both">Oba</string>
 <string name="max_songs_in_queue">Maksimalan broj pesama u redosledu</string>

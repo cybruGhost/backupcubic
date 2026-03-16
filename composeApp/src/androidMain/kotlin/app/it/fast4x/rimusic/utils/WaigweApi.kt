@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 // Make these classes accessible from other files
 @Serializable
-data class waigweVideo(
+data class WaigweVideo(
     val videoId: String,
     val title: String,
     val artist: String? = null,
@@ -20,12 +20,12 @@ data class waigweVideo(
 )
 
 @Serializable
-data class waigweSearchResponse(
-    val videos: List<waigweVideo>,
+data class WaigweSearchResponse(
+    val videos: List<WaigweVideo>,
     val success: Boolean
 )
 
-object waigweApi {
+object WaigweApi {
     private const val API_BASE = "https://yt.omada.cafe/api/v1"
     private val json = Json { ignoreUnknownKeys = true }
     
@@ -43,15 +43,15 @@ object waigweApi {
     private val fallbackLogs = mutableListOf<String>()
     private const val MAX_LOGS = 100
     
-    // Prevent infinite loops - track which songs are using waigwe
-    private val waigweMediaIds = ConcurrentHashMap.newKeySet<String>()
+    // Prevent infinite loops - track which songs are using Waigwe
+    private val WaigweMediaIds = ConcurrentHashMap.newKeySet<String>()
     
     private data class CacheEntry(
-        val response: waigweSearchResponse,
+        val response: WaigweSearchResponse,
         val timestamp: Long
     )
     
-    suspend fun search(query: String): Result<waigweSearchResponse> {
+    suspend fun search(query: String): Result<WaigweSearchResponse> {
         // Check cache first
         val cached = searchCache[query]
         if (cached != null && System.currentTimeMillis() - cached.timestamp < CACHE_DURATION_MS) {
@@ -81,7 +81,7 @@ object waigweApi {
                 
                 if (connection.responseCode == 200) {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
-                    val data = json.decodeFromString<waigweSearchResponse>(response)
+                    val data = json.decodeFromString<WaigweSearchResponse>(response)
                     
                     if (data.success && data.videos.isNotEmpty()) {
                         // Cache successful result
@@ -124,19 +124,19 @@ object waigweApi {
         }
     }
     
-    // Helper to check if a URL is from waigwe (to prevent loops)
-    fun iswaigweUrl(url: String?): Boolean {
+    // Helper to check if a URL is from Waigwe (to prevent loops)
+    fun isWaigweUrl(url: String?): Boolean {
         return url?.contains("yt.omada.cafe") == true
     }
     
-    // Track which media items are using waigwe
-    fun markAswaigweMedia(mediaId: String) {
-        waigweMediaIds.add(mediaId)
-        addLog("Marked as waigwe: ${mediaId.take(20)}...")
+    // Track which media items are using Waigwe
+    fun markAsWaigweMedia(mediaId: String) {
+        WaigweMediaIds.add(mediaId)
+        addLog("Marked as Waigwe: ${mediaId.take(20)}...")
     }
     
-    fun iswaigweMedia(mediaId: String?): Boolean {
-        return mediaId != null && waigweMediaIds.contains(mediaId)
+    fun isWaigweMedia(mediaId: String?): Boolean {
+        return mediaId != null && WaigweMediaIds.contains(mediaId)
     }
     
     // Clear cache (for settings)

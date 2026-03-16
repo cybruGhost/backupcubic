@@ -325,7 +325,7 @@ if (showCharts && (chartsPageResult == null || forceReload))
 if (notificationResult == null || forceReload) {
     notificationResult = runCatching {
         // Replace with your JSON URL
-        val url = "https://raw.githubusercontent.com/cybruGhost/waigwe/main/storex/notification.json"
+        val url = "https://raw.githubusercontent.com/cybruGhost/Waigwe/main/storex/notification.json"
         val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
         connection.requestMethod = "GET"
         connection.connectTimeout = 5000

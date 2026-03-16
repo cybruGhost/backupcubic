@@ -175,7 +175,7 @@
   <string name="czech">tšekki</string>
   <string name="german">saksa</string>
   <string name="spanish">espanja</string>
-  <string name="french">rawaigwe</string>
+  <string name="french">raWaigwe</string>
   <string name="romanian">romania</string>
   <string name="russian">venäjä</string>
   <string name="turkish">turkki</string>
@@ -395,7 +395,7 @@
   <string name="copy_lyrics">Kopioi sanoitukset</string>
   <string name="value_copied">Kopioitu</string>
   <string name="do_you_really_want_to_delete_cache">Haluatko varmasti tyhjentää välimuistin?</string>
-  <string name="lang_swedish">Ruotsi (Svewaigwe)</string>
+  <string name="lang_swedish">Ruotsi (Svenska)</string>
   <string name="pinned_playlists">Kiinnitetty</string>
   <string name="locked">Lukittu</string>
   <string name="sort_duration">Kesto</string>
