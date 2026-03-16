@@ -258,8 +258,8 @@ import app.it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasWorker
 import app.it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasState
 import androidx.compose.ui.viewinterop.AndroidView
 // waigwe fallback api
-import app.it.fast4x.rimusic.utils.WaigweApi
-import app.it.fast4x.rimusic.utils.WaigweSearchResponse
+import app.it.fast4x.rimusic.utils.waigweApi
+import app.it.fast4x.rimusic.utils.waigweSearchResponse
 import app.it.fast4x.rimusic.utils.FadeAdjuster
 import app.it.fast4x.rimusic.enums.DurationInMilliseconds
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -371,7 +371,7 @@ fun Player(
     val spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
     val showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
     
-    // WAIGWE FALLBACK
+    // waigwe FALLBACK
     val waigweFallbackEnabled by rememberPreference("waigweFallbackKey", true)
 
     // AUDIO FADE 
@@ -543,13 +543,13 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
             val currentMediaId = currentItem.mediaId
             
             // Check if already using waigwe (prevents infinite loops)
-            if (WaigweApi.isWaigweMedia(currentMediaId)) {
+            if (waigweApi.iswaigweMedia(currentMediaId)) {
                 return@LaunchedEffect
             }
             
             // Check if current URL is already from waigwe
             val currentUri = currentItem.localConfiguration?.uri?.toString()
-            if (WaigweApi.isWaigweUrl(currentUri)) {
+            if (waigweApi.iswaigweUrl(currentUri)) {
                 return@LaunchedEffect
             }
             
@@ -566,10 +566,10 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
             
             try {
                 // Call waigwe API with retry mechanism
-                var result: Result<WaigweSearchResponse>? = null
+                var result: Result<waigweSearchResponse>? = null
                 
                 for (attempt in 0..2) { // Try up to 3 times
-                    result = WaigweApi.search(query)
+                    result = waigweApi.search(query)
                     
                     if (result.isSuccess) {
                         break
@@ -585,7 +585,7 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
                     val response = result.getOrThrow()
                     if (response.videos.isNotEmpty()) {
                         val firstVideo = response.videos.first()
-                        val streamUrl = WaigweApi.getStreamUrl(firstVideo.videoId)
+                        val streamUrl = waigweApi.getStreamUrl(firstVideo.videoId)
                         
                         // Save current playback state
                         val wasPlaying = binder.player.isPlaying
@@ -599,7 +599,7 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
                             .build()
                         
                         // Mark this media ID as using waigwe
-                        WaigweApi.markAsWaigweMedia("waigwe_${currentMediaId}")
+                        waigweApi.markAswaigweMedia("waigwe_${currentMediaId}")
                         
                         // Replace and play, preserving position
                         binder.player.setMediaItem(newMediaItem)
@@ -615,10 +615,10 @@ LaunchedEffect(playerError, waigweFallbackEnabled) {
                         Toaster.n("No results from waigwe")
                     }
                 } else {
-                    Toaster.n("Waigwe API failed")
+                    Toaster.n("waigwe API failed")
                 }
             } catch (e: Exception) {
-                Toaster.n("Waigwe fallback failed")
+                Toaster.n("waigwe fallback failed")
             }
         } catch (e: Exception) {
             e.printStackTrace()

@@ -11,7 +11,7 @@ import java.util.concurrent.ConcurrentHashMap
 
 // Make these classes accessible from other files
 @Serializable
-data class WaigweVideo(
+data class waigweVideo(
     val videoId: String,
     val title: String,
     val artist: String? = null,
@@ -20,12 +20,12 @@ data class WaigweVideo(
 )
 
 @Serializable
-data class WaigweSearchResponse(
-    val videos: List<WaigweVideo>,
+data class waigweSearchResponse(
+    val videos: List<waigweVideo>,
     val success: Boolean
 )
 
-object WaigweApi {
+object waigweApi {
     private const val API_BASE = "https://yt.omada.cafe/api/v1"
     private val json = Json { ignoreUnknownKeys = true }
     
@@ -47,11 +47,11 @@ object WaigweApi {
     private val waigweMediaIds = ConcurrentHashMap.newKeySet<String>()
     
     private data class CacheEntry(
-        val response: WaigweSearchResponse,
+        val response: waigweSearchResponse,
         val timestamp: Long
     )
     
-    suspend fun search(query: String): Result<WaigweSearchResponse> {
+    suspend fun search(query: String): Result<waigweSearchResponse> {
         // Check cache first
         val cached = searchCache[query]
         if (cached != null && System.currentTimeMillis() - cached.timestamp < CACHE_DURATION_MS) {
@@ -81,7 +81,7 @@ object WaigweApi {
                 
                 if (connection.responseCode == 200) {
                     val response = connection.inputStream.bufferedReader().use { it.readText() }
-                    val data = json.decodeFromString<WaigweSearchResponse>(response)
+                    val data = json.decodeFromString<waigweSearchResponse>(response)
                     
                     if (data.success && data.videos.isNotEmpty()) {
                         // Cache successful result
@@ -125,17 +125,17 @@ object WaigweApi {
     }
     
     // Helper to check if a URL is from waigwe (to prevent loops)
-    fun isWaigweUrl(url: String?): Boolean {
+    fun iswaigweUrl(url: String?): Boolean {
         return url?.contains("yt.omada.cafe") == true
     }
     
     // Track which media items are using waigwe
-    fun markAsWaigweMedia(mediaId: String) {
+    fun markAswaigweMedia(mediaId: String) {
         waigweMediaIds.add(mediaId)
         addLog("Marked as waigwe: ${mediaId.take(20)}...")
     }
     
-    fun isWaigweMedia(mediaId: String?): Boolean {
+    fun iswaigweMedia(mediaId: String?): Boolean {
         return mediaId != null && waigweMediaIds.contains(mediaId)
     }
     
