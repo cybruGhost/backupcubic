@@ -830,16 +830,19 @@ QuickPicksRepository.refreshIfNeeded()
         }
     }
 
-    override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
-        updateDefaultNotification()
-        if (shuffleModeEnabled) {
-            val shuffledIndices = IntArray(player.mediaItemCount) { it }
-            shuffledIndices.shuffle()
-            shuffledIndices[shuffledIndices.indexOf(player.currentMediaItemIndex)] = shuffledIndices[0]
-            shuffledIndices[0] = player.currentMediaItemIndex
-            player.setShuffleOrder(DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis()))
-        }
+override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
+    updateDefaultNotification()
+    
+    // Only apply custom shuffle order if shuffle is being enabled AND there's no manually shuffled queue pending
+    // Add a flag to track if shuffle was manually handled
+    if (shuffleModeEnabled && !binder.isManuallyShuffled) {
+        val shuffledIndices = IntArray(player.mediaItemCount) { it }
+        shuffledIndices.shuffle()
+        shuffledIndices[shuffledIndices.indexOf(player.currentMediaItemIndex)] = shuffledIndices[0]
+        shuffledIndices[0] = player.currentMediaItemIndex
+        player.setShuffleOrder(DefaultShuffleOrder(shuffledIndices, System.currentTimeMillis()))
     }
+}
 
 
 
@@ -1786,9 +1789,13 @@ QuickPicksRepository.refreshIfNeeded()
 
     }
 
-    open inner class Binder : AndroidBinder() {
-        val service: PlayerServiceModern
-            get() = this@PlayerServiceModern
+   open inner class Binder : AndroidBinder() {
+    // ADD THIS FLAG RIGHT HERE
+    var isManuallyShuffled = false
+        internal set
+    
+    val service: PlayerServiceModern
+        get() = this@PlayerServiceModern
 
         /*
         fun setBitmapListener(listener: ((Bitmap?) -> Unit)?) {
