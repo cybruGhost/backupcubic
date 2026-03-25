@@ -80,6 +80,7 @@ import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamManager
 import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamScreen
 import androidx.compose.runtime.remember
 import android.content.Context
+import app.it.fast4x.rimusic.ui.styling.LocalAppearance
 // i should add this import at the top of your AppNavigation.kt file
 import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamWebView
 import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamSwipeScreen
@@ -103,6 +104,7 @@ fun AppNavigation(
     openTabFromShortcut: Int
 ) {
     val transitionEffect by rememberPreference(transitionEffectKey, TransitionEffect.SlideHorizontal)
+     val appearance = app.it.fast4x.rimusic.ui.styling.LocalAppearance.current
 
     @Composable
     fun modalBottomSheetPage(content: @Composable () -> Unit) {
@@ -188,10 +190,13 @@ fun AppNavigation(
         }
 
         composable(route = NavRoutes.gameSnake.name) {
-            modalBottomSheetPage {
-                SnakeGame()
-            }
-        }
+    modalBottomSheetPage {
+        SnakeGame(
+            colorPalette = appearance.colorPalette,
+            typography = appearance.typography
+        )
+    }
+}
 
         composable(route = NavRoutes.queue.name) {
             modalBottomSheetPage {

@@ -634,174 +634,209 @@ fun Lyrics(
             )
         }
 
-        @Composable
-        fun SelectLyricFromTrack(
-            tracks: List<Track>,
-            mediaId: String,
-            lyrics: Lyrics?
-        ) {
-            menuState.display {
-                Menu {
-                    MenuEntry(
-                        icon = R.drawable.chevron_back,
-                        text = stringResource(R.string.cancel),
-                        onClick = { menuState.hide() }
-                    )
-                    Row{
-                        TextField(
-                            value = title,
-                            onValueChange = {
-                                title = it
-                            },
-                            singleLine = true,
-                            colors = textFieldColors,
-                            modifier = Modifier
-                                .padding(horizontal = 6.dp)
-                                .weight(1f)
-                        )
-                        TextField(
-                            value = artistName,
-                            onValueChange = {
-                                artistName = it
-                            },
-                            singleLine = true,
-                            colors = textFieldColors,
-                            modifier = Modifier
-                                .padding(horizontal = 6.dp)
-                                .weight(1f)
-                        )
-                        IconButton(
-                            icon = R.drawable.search,
-                            color = Color.Black,
-                            onClick = {
-                                isPicking = false
-                                menuState.hide()
-                                isPicking = true
-                            },
-                            modifier = Modifier
-                                .background(shape = RoundedCornerShape(4.dp), color = Color.White)
-                                .padding(all = 4.dp)
-                                .size(24.dp)
-                                .align(Alignment.CenterVertically)
-                                .weight(0.2f)
-                        )
-                    }
-                    tracks.forEach {
-                        MenuEntry(
-                            icon = R.drawable.text,
-                            text = "${it.artistName} - ${it.trackName}",
-                            secondaryText = "(${stringResource(R.string.sort_duration)} ${
-                                it.duration.seconds.toComponents { minutes, seconds, _ ->
-                                    "$minutes:${seconds.toString().padStart(2, '0')}"
-                                }
-                            } ${stringResource(R.string.id)} ${it.id}) ",
-                            onClick = {
-                                menuState.hide()
-                                Database.asyncTransaction {
-                                    lyricsTable.upsert(
-                                        Lyrics(
-                                            songId = mediaId,
-                                            fixed = lyrics?.fixed,
-                                            synced = it.syncedLyrics.orEmpty()
-                                        )
-                                    )
-                                }
-                            }
-                        )
-                    }
-                    MenuEntry(
-                        icon = R.drawable.chevron_back,
-                        text = stringResource(R.string.cancel),
-                        onClick = { menuState.hide() }
-                    )
-                }
+@Composable
+fun SelectLyricFromTrack(
+    tracks: List<Track>,
+    mediaId: String,
+    lyrics: Lyrics?
+) {
+    menuState.display {
+        Menu {
+            MenuEntry(
+                icon = R.drawable.chevron_back,
+                text = stringResource(R.string.cancel),
+                onClick = { menuState.hide() }
+            )
+            Row(
+                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ){
+                TextField(
+                    value = title,
+                    onValueChange = {
+                        title = it
+                    },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        unfocusedTextColor = Color(0xFF008080), // Teal
+                        focusedTextColor = Color(0xFF008080), // Teal
+                        unfocusedIndicatorColor = colorPalette().text,
+                        focusedIndicatorColor = colorPalette().text,
+                        unfocusedContainerColor = colorPalette().background2,
+                        focusedContainerColor = colorPalette().background2,
+                        cursorColor = Color(0xFF008080)
+                    ),
+                    modifier = Modifier
+                        .padding(horizontal = 6.dp)
+                        .weight(1f)
+                )
+                TextField(
+                    value = artistName,
+                    onValueChange = {
+                        artistName = it
+                    },
+                    singleLine = true,
+                    colors = TextFieldDefaults.colors(
+                        unfocusedTextColor = Color(0xFF008080), // Teal
+                        focusedTextColor = Color(0xFF008080), // Teal
+                        unfocusedIndicatorColor = colorPalette().text,
+                        focusedIndicatorColor = colorPalette().text,
+                        unfocusedContainerColor = colorPalette().background2,
+                        focusedContainerColor = colorPalette().background2,
+                        cursorColor = Color(0xFF008080)
+                    ),
+                    modifier = Modifier
+                        .padding(horizontal = 6.dp)
+                        .weight(1f)
+                )
+                IconButton(
+                    icon = R.drawable.search,
+                    color = Color.White,
+                    onClick = {
+                        isPicking = false
+                        menuState.hide()
+                        isPicking = true
+                    },
+                    modifier = Modifier
+                        .background(shape = RoundedCornerShape(4.dp), color = Color(0xFF008080))
+                        .padding(all = 4.dp)
+                        .size(28.dp)
+                        .align(Alignment.CenterVertically)
+                )
             }
-            isPicking = false
+            tracks.forEach {
+                MenuEntry(
+                    icon = R.drawable.text,
+                    text = "${it.artistName} - ${it.trackName}",
+                    secondaryText = "(${stringResource(R.string.sort_duration)} ${
+                        it.duration.seconds.toComponents { minutes, seconds, _ ->
+                            "$minutes:${seconds.toString().padStart(2, '0')}"
+                        }
+                    } ${stringResource(R.string.id)} ${it.id}) ",
+                    onClick = {
+                        menuState.hide()
+                        Database.asyncTransaction {
+                            lyricsTable.upsert(
+                                Lyrics(
+                                    songId = mediaId,
+                                    fixed = lyrics?.fixed,
+                                    synced = it.syncedLyrics.orEmpty()
+                                )
+                            )
+                        }
+                    }
+                )
+            }
+            MenuEntry(
+                icon = R.drawable.chevron_back,
+                text = stringResource(R.string.cancel),
+                onClick = { menuState.hide() }
+            )
         }
+    }
+    isPicking = false
+}
 
+     if (isPicking && isShowingSynchronizedLyrics) {
+    var loading by remember { mutableStateOf(true) }
+    val tracks = remember { mutableStateListOf<Track>() }
+    var error by remember { mutableStateOf(false) }
 
-        if (isPicking && isShowingSynchronizedLyrics) {
-            var loading by remember { mutableStateOf(true) }
-            val tracks = remember { mutableStateListOf<Track>() }
-            var error by remember { mutableStateOf(false) }
-
-            LaunchedEffect(Unit) {
-                kotlin.runCatching {
-                    LrcLib.lyrics(
-                        artist = artistName,
-                        title = title
-                    )?.onSuccess {
-                        if (it.isNotEmpty() && playerEnableLyricsPopupMessage)
-                            coroutineScope.launch {
-                                Toaster.e(
-                                    R.string.info_lyrics_tracks_found_on_s,
-                                    "LrcLib.net",
-                                    duration = Toast.LENGTH_LONG
+    LaunchedEffect(Unit) {
+        kotlin.runCatching {
+            LrcLib.lyrics(
+                artist = artistName,
+                title = title
+            )?.onSuccess {
+                if (it.isNotEmpty() && playerEnableLyricsPopupMessage)
+                    coroutineScope.launch {
+                        Toaster.e(
+                            R.string.info_lyrics_tracks_found_on_s,
+                            "LrcLib.net",
+                            duration = Toast.LENGTH_LONG
+                        )
+                    }
+                else
+                    if (playerEnableLyricsPopupMessage)
+                        coroutineScope.launch {
+                            Toaster.e(
+                                R.string.info_lyrics_not_found_on_s,
+                                "LrcLib.net",
+                                duration = Toast.LENGTH_LONG
+                            )
+                        }
+                if (it.isEmpty()){
+                    menuState.display {
+                        Menu {
+                            MenuEntry(
+                                icon = R.drawable.chevron_back,
+                                text = stringResource(R.string.cancel),
+                                onClick = { menuState.hide() }
+                            )
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextField(
+                                    value = title,
+                                    onValueChange = { it ->
+                                        title = it
+                                    },
+                                    singleLine = true,
+                                    colors = TextFieldDefaults.colors(
+                                        unfocusedTextColor = Color(0xFF008080), // Teal
+                                        focusedTextColor = Color(0xFF008080), // Teal
+                                        unfocusedIndicatorColor = colorPalette().text,
+                                        focusedIndicatorColor = colorPalette().text,
+                                        unfocusedContainerColor = colorPalette().background2,
+                                        focusedContainerColor = colorPalette().background2,
+                                        cursorColor = Color(0xFF008080)
+                                    ),
+                                    modifier = Modifier
+                                        .padding(horizontal = 6.dp)
+                                        .weight(1f)
+                                )
+                                TextField(
+                                    value = artistName,
+                                    onValueChange = { it ->
+                                        artistName = it
+                                    },
+                                    singleLine = true,
+                                    colors = TextFieldDefaults.colors(
+                                        unfocusedTextColor = Color(0xFF008080), // Teal
+                                        focusedTextColor = Color(0xFF008080), // Teal
+                                        unfocusedIndicatorColor = colorPalette().text,
+                                        focusedIndicatorColor = colorPalette().text,
+                                        unfocusedContainerColor = colorPalette().background2,
+                                        focusedContainerColor = colorPalette().background2,
+                                        cursorColor = Color(0xFF008080)
+                                    ),
+                                    modifier = Modifier
+                                        .padding(horizontal = 6.dp)
+                                        .weight(1f)
+                                )
+                                IconButton(
+                                    icon = R.drawable.search,
+                                    color = Color.White,
+                                    onClick = {
+                                        isPicking = false
+                                        menuState.hide()
+                                        isPicking = true
+                                    },
+                                    modifier = Modifier
+                                        .background(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = Color(0xFF008080)
+                                        )
+                                        .padding(all = 4.dp)
+                                        .size(28.dp)
+                                        .align(Alignment.CenterVertically)
                                 )
                             }
-                        else
-                            if (playerEnableLyricsPopupMessage)
-                                coroutineScope.launch {
-                                    Toaster.e(
-                                        R.string.info_lyrics_not_found_on_s,
-                                        "LrcLib.net",
-                                        duration = Toast.LENGTH_LONG
-                                    )
-                                }
-                        if (it.isEmpty()){
-                            menuState.display {
-                                Menu {
-                                    MenuEntry(
-                                        icon = R.drawable.chevron_back,
-                                        text = stringResource(R.string.cancel),
-                                        onClick = { menuState.hide() }
-                                    )
-                                    Row {
-                                        TextField(
-                                            value = title,
-                                            onValueChange = { it ->
-                                                title = it
-                                            },
-                                            singleLine = true,
-                                            colors = textFieldColors,
-                                            modifier = Modifier
-                                                .padding(horizontal = 6.dp)
-                                                .weight(1f)
-                                        )
-                                        TextField(
-                                            value = artistName,
-                                            onValueChange = { it ->
-                                                artistName = it
-                                            },
-                                            singleLine = true,
-                                            colors = textFieldColors,
-                                            modifier = Modifier
-                                                .padding(horizontal = 6.dp)
-                                                .weight(1f)
-                                        )
-                                        IconButton(
-                                            icon = R.drawable.search,
-                                            color = Color.Black,
-                                            onClick = {
-                                                isPicking = false
-                                                menuState.hide()
-                                                isPicking = true
-                                            },
-                                            modifier = Modifier
-                                                .background(
-                                                    shape = RoundedCornerShape(4.dp),
-                                                    color = Color.White
-                                                )
-                                                .padding(all = 4.dp)
-                                                .size(24.dp)
-                                                .align(Alignment.CenterVertically)
-                                                .weight(0.2f)
-                                        )
-                                    }
-                                }
-                            }
-                            isPicking = false
                         }
+                    }
+                    isPicking = false
+                }
 
                         tracks.clear()
                         tracks.addAll(it)
