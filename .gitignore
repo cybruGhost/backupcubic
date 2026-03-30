@@ -6,6 +6,7 @@
 ###      IDEA
 .idea
 .gradle
+.gradle-user-home
 .vscode
 
 ###      BUILDS
