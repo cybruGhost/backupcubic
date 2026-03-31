@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -89,7 +90,7 @@ fun YoutubePlayer(
     val player = remember(ytVideoId, resolvedVideoState) {
         (resolvedVideoState as? ResolvedYoutubeVideoState.Ready)?.video?.let { video ->
             ExoPlayer.Builder(context).build().apply {
-                volume = 0f
+                volume = 1f
                 repeatMode = Player.REPEAT_MODE_OFF
                 playWhenReady = true
                 videoScalingMode = androidx.media3.common.C.VIDEO_SCALING_MODE_SCALE_TO_FIT_WITH_CROPPING
@@ -271,9 +272,8 @@ private suspend fun resolveYoutubeVideo(videoId: String): ResolvedYoutubeVideoSt
         getIosPlayerResponse(videoId)
     }.getOrNull() ?: return ResolvedYoutubeVideoState.Unavailable
 
-    if (playerResponse.playabilityStatus?.status != null &&
-        playerResponse.playabilityStatus.status != "OK"
-    ) {
+    val playabilityStatus = playerResponse.playabilityStatus?.status
+    if (playabilityStatus != null && playabilityStatus != "OK") {
         return ResolvedYoutubeVideoState.Unavailable
     }
 
