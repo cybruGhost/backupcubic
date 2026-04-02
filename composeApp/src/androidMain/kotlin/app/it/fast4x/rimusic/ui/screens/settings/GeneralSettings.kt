@@ -94,6 +94,8 @@ import app.it.fast4x.rimusic.utils.customThemeLight_accentKey
 import app.it.fast4x.rimusic.utils.customThemeLight_iconButtonPlayerKey
 import app.it.fast4x.rimusic.utils.customThemeLight_textDisabledKey
 import app.it.fast4x.rimusic.utils.customThemeLight_textSecondaryKey
+import app.it.fast4x.rimusic.utils.crossfadeDurationSecondsKey
+import app.it.fast4x.rimusic.utils.crossfadeEnabledKey
 import app.it.fast4x.rimusic.utils.disableClosingPlayerSwipingDownKey
 import app.it.fast4x.rimusic.utils.discoverKey
 import app.it.fast4x.rimusic.utils.enablePictureInPictureAutoKey
@@ -143,6 +145,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.border
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import android.widget.Toast
@@ -155,6 +158,7 @@ import app.it.fast4x.rimusic.ui.screens.spotify.renewSpotifySession
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.roundToInt
 
 @ExperimentalAnimationApi
 @UnstableApi
@@ -217,6 +221,8 @@ fun GeneralSettings(
     var resetCustomDarkThemeDialog  by rememberSaveable { mutableStateOf(false) }
 
     var playbackFadeAudioDuration    by rememberPreference(playbackFadeAudioDurationKey, DurationInMilliseconds.Disabled)
+    var crossfadeEnabled             by rememberPreference(crossfadeEnabledKey, false)
+    var crossfadeDurationSeconds     by rememberPreference(crossfadeDurationSecondsKey, 21)
     var excludeSongWithDurationLimit by rememberPreference(excludeSongsWithDurationLimitKey, DurationInMinutes.Disabled)
     var playlistindicator            by rememberPreference(playlistindicatorKey, false)
     var nowPlayingIndicator          by rememberPreference(nowPlayingIndicatorKey, MusicAnimationType.Bubbles)
@@ -352,6 +358,62 @@ fun GeneralSettings(
 
         Spacer(modifier = Modifier.height(16.dp))
 
+        val crossfadePresets = remember { listOf(8, 12, 15, 18, 21, 24, 30) }
+        AnimatedVisibility(
+            visible = search.inputValue.isBlank() ||
+                stringResource(R.string.crossfade_title).contains(search.inputValue, true) ||
+                stringResource(R.string.crossfade_duration_title).contains(search.inputValue, true),
+            enter = androidx.compose.animation.fadeIn(animationSpec = tween(660)) +
+                androidx.compose.animation.scaleIn(animationSpec = tween(660), initialScale = 0.9f)
+        ) {
+            SettingsSectionCard(
+                title = stringResource(R.string.crossfade_title),
+                icon = R.drawable.volume_up,
+                content = {
+                    OtherSwitchSettingEntry(
+                        title = stringResource(R.string.crossfade_title),
+                        text = stringResource(R.string.crossfade_description),
+                        isChecked = crossfadeEnabled,
+                        onCheckedChange = { crossfadeEnabled = it },
+                        icon = R.drawable.volume_up
+                    )
+
+                    AnimatedVisibility(visible = crossfadeEnabled) {
+                        Column(
+                            modifier = Modifier.padding(start = 25.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
+                        ) {
+                            OtherSettingsEntry(
+                                title = stringResource(R.string.crossfade_duration_title),
+                                text = stringResource(R.string.crossfade_duration_value, crossfadeDurationSeconds),
+                                onClick = {
+                                    val currentIndex = crossfadePresets.indexOf(crossfadeDurationSeconds)
+                                    val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % crossfadePresets.size
+                                    crossfadeDurationSeconds = crossfadePresets[nextIndex]
+                                },
+                                icon = R.drawable.time
+                            )
+
+                            Slider(
+                                value = crossfadeDurationSeconds.toFloat(),
+                                onValueChange = { crossfadeDurationSeconds = it.roundToInt() },
+                                valueRange = 5f..30f,
+                                steps = 24,
+                                modifier = Modifier.fillMaxWidth()
+                            )
+
+                            SettingsDescription(
+                                text = stringResource(R.string.crossfade_duration_hint),
+                                modifier = Modifier.padding(start = 25.dp, top = 4.dp),
+                                textAlign = TextAlign.Start
+                            )
+                        }
+                    }
+                }
+            )
+        }
+
+        Spacer(modifier = Modifier.height(16.dp))
+
         // ── Cubic Canvas ──────────────────────────────────────────────────────
         AnimatedVisibility(
             visible = true,
@@ -359,7 +421,7 @@ fun GeneralSettings(
                       androidx.compose.animation.scaleIn(animationSpec = tween(650), initialScale = 0.9f)
         ) {
             SettingsSectionCard(
-                title   = "Cubic Canvas",
+                title   = stringResource(R.string.cubic_canvas),
                 icon    = R.drawable.spotifycanvas,
                 content = {
                     val context = LocalContext.current
@@ -394,7 +456,7 @@ fun GeneralSettings(
 
 
                     // ── Main toggle ────────────────────────────────────────────
-                    if (search.inputValue.isBlank() || "Cubic Canvas".contains(search.inputValue, true)) {
+                    if (search.inputValue.isBlank() || stringResource(R.string.cubic_canvas).contains(search.inputValue, true)) {
                         Column {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
@@ -407,20 +469,20 @@ fun GeneralSettings(
                                         .padding(horizontal = 8.dp, vertical = 4.dp)
                                 ) {
                                     androidx.compose.foundation.text.BasicText(
-                                        text  = "BETA",
+                                        text  = stringResource(R.string.beta_short),
                                         style = typography().xs.semiBold.copy(color = Color.Yellow)
                                     )
                                 }
                                 Spacer(modifier = Modifier.width(8.dp))
                                 androidx.compose.foundation.text.BasicText(
-                                    text  = "Experimental feature",
+                                    text  = stringResource(R.string.cubic_canvas_experimental_feature),
                                     style = typography().xs.copy(color = Color.Gray)
                                 )
                             }
 
                             OtherSwitchSettingEntry(
-                                title          = "Cubic Canvas",
-                                text           = "Show animated canvas videos in player",
+                                title          = stringResource(R.string.cubic_canvas),
+                                text           = stringResource(R.string.cubic_canvas_description),
                                 isChecked      = spotifyCanvasEnabled,
                                 onCheckedChange = { newValue ->
                                     if (newValue && !spotifyCanvasEnabled) showBetaWarning = true
@@ -453,7 +515,7 @@ fun GeneralSettings(
                             Spacer(modifier = Modifier.height(12.dp))
 
                             // ── Spotify account login row ──────────────────────
-                            if (search.inputValue.isBlank() || "Spotify account".contains(search.inputValue, true)) {
+                            if (search.inputValue.isBlank() || stringResource(R.string.cubic_canvas_spotify_account).contains(search.inputValue, true)) {
                                 val spotifySessionInfo = getSpotifySessionInfo(context)
                                 val dateFormatter = remember {
                                     SimpleDateFormat("dd MMM yyyy, HH:mm", Locale.getDefault())
@@ -461,12 +523,12 @@ fun GeneralSettings(
                                 val now = System.currentTimeMillis()
                                 val expiresAt = spotifySessionInfo?.expiresAt ?: 0L
                                 val sessionStateText = when {
-                                    spotifySessionInfo == null -> "No session saved yet"
-                                    expiresAt <= 0L -> "Connected"
-                                    expiresAt <= now -> "Session estimate expired"
+                                    spotifySessionInfo == null -> stringResource(R.string.cubic_canvas_no_session_saved)
+                                    expiresAt <= 0L -> stringResource(R.string.spotify_connected)
+                                    expiresAt <= now -> stringResource(R.string.cubic_canvas_session_estimate_expired)
                                     else -> {
                                         val hoursLeft = ((expiresAt - now) / (60L * 60L * 1000L)).coerceAtLeast(0L)
-                                        "Estimated session life: ${hoursLeft}h left"
+                                        stringResource(R.string.cubic_canvas_estimated_session_life, hoursLeft)
                                     }
                                 }
 
@@ -498,14 +560,14 @@ fun GeneralSettings(
                                         Spacer(modifier = Modifier.width(12.dp))
                                         Column(modifier = Modifier.weight(1f)) {
                                             androidx.compose.foundation.text.BasicText(
-                                                text  = "Spotify account",
+                                                text  = stringResource(R.string.cubic_canvas_spotify_account),
                                                 style = typography().s.semiBold.copy(color = colorPalette().text)
                                             )
                                             androidx.compose.foundation.text.BasicText(
                                                 text  = if (isSpotifyConnected)
                                                             sessionStateText
                                                         else
-                                                            "Tap to log in for canvas and cookie support",
+                                                            stringResource(R.string.cubic_canvas_tap_to_login),
                                                 style = typography().xs.copy(
                                                     color = if (isSpotifyConnected) Color(0xFF1DB954)
                                                             else colorPalette().textSecondary
@@ -523,7 +585,7 @@ fun GeneralSettings(
                                                 .padding(horizontal = 8.dp, vertical = 4.dp)
                                         ) {
                                             androidx.compose.foundation.text.BasicText(
-                                                text  = if (isSpotifyConnected) "CONNECTED" else "LOG IN",
+                                                text  = if (isSpotifyConnected) stringResource(R.string.connected_uppercase) else stringResource(R.string.log_in_uppercase),
                                                 style = typography().xs.semiBold.copy(
                                                     color = if (isSpotifyConnected) Color(0xFF1DB954)
                                                             else colorPalette().accent
@@ -549,32 +611,35 @@ fun GeneralSettings(
                                     ) {
                                         Column {
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Spotify session details",
+                                                text = stringResource(R.string.cubic_canvas_spotify_session_details),
                                                 style = typography().s.semiBold.copy(color = colorPalette().text)
                                             )
                                             Spacer(modifier = Modifier.height(6.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Account: ${spotifySessionInfo.accountName.ifBlank { "Spotify account" }}",
+                                                text = stringResource(
+                                                    R.string.cubic_canvas_account_value,
+                                                    spotifySessionInfo.accountName.ifBlank { stringResource(R.string.cubic_canvas_spotify_account) }
+                                                ),
                                                 style = typography().xs.copy(color = colorPalette().text)
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Cookie preview: ${getMaskedSpDc(context)}",
+                                                text = stringResource(R.string.cubic_canvas_cookie_preview_value, getMaskedSpDc(context)),
                                                 style = typography().xs.copy(color = colorPalette().text)
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "sp_dc: ${spotifySessionInfo.spDc}",
+                                                text = stringResource(R.string.cubic_canvas_sp_dc_value, spotifySessionInfo.spDc),
                                                 style = typography().xs.copy(color = colorPalette().textSecondary)
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Saved: ${dateFormatter.format(Date(spotifySessionInfo.savedAt))}",
+                                                text = stringResource(R.string.cubic_canvas_saved_value, dateFormatter.format(Date(spotifySessionInfo.savedAt))),
                                                 style = typography().xs.copy(color = colorPalette().textSecondary)
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Estimated expiry: ${dateFormatter.format(Date(spotifySessionInfo.expiresAt))}",
+                                                text = stringResource(R.string.cubic_canvas_estimated_expiry_value, dateFormatter.format(Date(spotifySessionInfo.expiresAt))),
                                                 style = typography().xs.copy(
                                                     color = if (spotifySessionInfo.expiresAt > now) Color(0xFF1DB954)
                                                     else Color.Yellow
@@ -582,7 +647,7 @@ fun GeneralSettings(
                                             )
                                             Spacer(modifier = Modifier.height(4.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Renewal uses the current Spotify WebView cookies already stored on device.",
+                                                text = stringResource(R.string.cubic_canvas_renewal_uses_current_cookies),
                                                 style = typography().xs.copy(color = colorPalette().textSecondary)
                                             )
                                             Spacer(modifier = Modifier.height(10.dp))
@@ -599,13 +664,13 @@ fun GeneralSettings(
                                                                 showSpotifySessionDetails = true
                                                                 Toast.makeText(
                                                                     context,
-                                                                    "Spotify session renewed from cookies",
+                                                                    context.getString(R.string.cubic_canvas_session_renewed),
                                                                     Toast.LENGTH_SHORT
                                                                 ).show()
                                                             } else {
                                                                 Toast.makeText(
                                                                     context,
-                                                                    "No fresh Spotify cookie found. Log in again.",
+                                                                    context.getString(R.string.cubic_canvas_no_fresh_cookie),
                                                                     Toast.LENGTH_SHORT
                                                                 ).show()
                                                             }
@@ -613,7 +678,7 @@ fun GeneralSettings(
                                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                                 ) {
                                                     androidx.compose.foundation.text.BasicText(
-                                                        text = "Renew session",
+                                                        text = stringResource(R.string.cubic_canvas_renew_session),
                                                         style = typography().xs.semiBold.copy(color = Color(0xFF1DB954))
                                                     )
                                                 }
@@ -630,7 +695,7 @@ fun GeneralSettings(
                                                         .padding(horizontal = 10.dp, vertical = 6.dp)
                                                 ) {
                                                     androidx.compose.foundation.text.BasicText(
-                                                        text = "Open login",
+                                                        text = stringResource(R.string.cubic_canvas_open_login),
                                                         style = typography().xs.semiBold.copy(color = colorPalette().accent)
                                                     )
                                                 }
@@ -659,7 +724,7 @@ fun GeneralSettings(
                                             )
                                             Spacer(modifier = Modifier.width(8.dp))
                                             androidx.compose.foundation.text.BasicText(
-                                                text  = "Disconnect Spotify account",
+                                                text  = stringResource(R.string.cubic_canvas_disconnect_spotify_account),
                                                 style = typography().s.copy(color = Color.Red)
                                             )
                                         }
@@ -671,8 +736,8 @@ fun GeneralSettings(
 
                             // Debug logs toggle
                             OtherSwitchSettingEntry(
-                                title           = "Show debug logs",
-                                text            = "Show canvas fetching information",
+                                title           = stringResource(R.string.spotify_debug_logs),
+                                text            = stringResource(R.string.cubic_canvas_show_fetching_info),
                                 isChecked       = showSpotifyCanvasLogs,
                                 onCheckedChange = { showSpotifyCanvasLogs = it },
                                 icon            = R.drawable.information
@@ -787,7 +852,7 @@ fun GeneralSettings(
                                     Column {
                                         Row(verticalAlignment = Alignment.CenterVertically) {
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "Canvas logs",
+                                                text = stringResource(R.string.cubic_canvas_logs),
                                                 style = typography().s.semiBold.copy(color = colorPalette().text),
                                                 modifier = Modifier.weight(1f)
                                             )
@@ -800,7 +865,7 @@ fun GeneralSettings(
                                                     .padding(horizontal = 10.dp, vertical = 6.dp)
                                             ) {
                                                 androidx.compose.foundation.text.BasicText(
-                                                    text = "Clear",
+                                                    text = stringResource(R.string.clear),
                                                     style = typography().xs.semiBold.copy(color = Color.Red)
                                                 )
                                             }
@@ -810,7 +875,7 @@ fun GeneralSettings(
 
                                         if (filteredLogs.isEmpty()) {
                                             androidx.compose.foundation.text.BasicText(
-                                                text = "No logs for this filter yet.",
+                                                text = stringResource(R.string.cubic_canvas_no_logs_for_filter_yet),
                                                 style = typography().xs.copy(color = colorPalette().textSecondary)
                                             )
                                         } else {
@@ -843,8 +908,8 @@ fun GeneralSettings(
 
                             // Report issues
                             OtherSettingsEntry(
-                                title   = "Report issues",
-                                text    = "Open GitHub issues page",
+                                title   = stringResource(R.string.cubic_canvas_report_issues),
+                                text    = stringResource(R.string.cubic_canvas_open_github_issues),
                                 onClick = {
                                     try {
                                         context.startActivity(
@@ -853,7 +918,7 @@ fun GeneralSettings(
                                             }
                                         )
                                     } catch (_: Exception) {
-                                        Toast.makeText(context, "Cannot open browser", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, context.getString(R.string.cubic_canvas_cannot_open_browser), Toast.LENGTH_SHORT).show()
                                     }
                                 },
                                 icon = try { R.drawable.github_icon } catch (_: Exception) { R.drawable.alert }
@@ -878,7 +943,7 @@ fun GeneralSettings(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     androidx.compose.foundation.text.BasicText(
-                                        text  = "Reset Settings",
+                                        text  = stringResource(R.string.cubic_canvas_reset_settings),
                                         style = typography().s.semiBold.copy(color = Color.Red)
                                     )
                                 }
@@ -900,7 +965,7 @@ fun GeneralSettings(
                                     )
                                     Spacer(modifier = Modifier.width(8.dp))
                                     Text(
-                                        text  = "Beta Feature Warning",
+                                        text  = stringResource(R.string.cubic_canvas_beta_warning_title),
                                         style = typography().l.semiBold.copy(color = colorPalette().text),
                                         color = colorPalette().text
                                     )
@@ -909,13 +974,13 @@ fun GeneralSettings(
                             text = {
                                 Column {
                                     Text(
-                                        text     = "Cubic Canvas is currently in beta testing.",
+                                        text     = stringResource(R.string.cubic_canvas_beta_testing),
                                         style    = typography().s.copy(color = colorPalette().text),
                                         modifier = Modifier.padding(bottom = 8.dp),
                                         color    = colorPalette().text
                                     )
                                     Text(
-                                        text     = "Important notes:",
+                                        text     = stringResource(R.string.cubic_canvas_important_notes),
                                         style    = typography().s.semiBold.copy(color = colorPalette().text),
                                         modifier = Modifier.padding(bottom = 4.dp),
                                         color    = colorPalette().text
@@ -933,7 +998,7 @@ fun GeneralSettings(
                                     )
                                     Spacer(modifier = Modifier.height(12.dp))
                                     Text(
-                                        text  = "By enabling this feature, you acknowledge these limitations.",
+                                        text  = stringResource(R.string.cubic_canvas_beta_acknowledge),
                                         style = typography().xs.copy(color = colorPalette().textSecondary),
                                         color = colorPalette().textSecondary
                                     )
@@ -941,7 +1006,7 @@ fun GeneralSettings(
                             },
                             confirmButton = {
                                 TextButton(onClick = { showBetaWarning = false }) {
-                                    Text(text = "I Understand", color = colorPalette().accent)
+                                    Text(text = stringResource(R.string.cubic_canvas_i_understand), color = colorPalette().accent)
                                 }
                             },
                             containerColor    = colorPalette().background1,
@@ -953,29 +1018,29 @@ fun GeneralSettings(
                     // ── Logout confirmation dialog ──────────────────────────────
                     if (showLogoutDialog) {
                         ConfirmationDialog(
-                            text      = "Disconnect your Spotify account?\nYour session cookie will be cleared.",
+                            text      = stringResource(R.string.cubic_canvas_disconnect_confirm),
                             onDismiss = { showLogoutDialog = false },
                             onConfirm = {
                                 clearSpotifySession(context)
                                 isSpotifyConnected = false
                                 showLogoutDialog   = false
-                                Toast.makeText(context, "Spotify account disconnected", Toast.LENGTH_SHORT).show()
+                                Toast.makeText(context, context.getString(R.string.cubic_canvas_spotify_disconnected), Toast.LENGTH_SHORT).show()
                             },
-                            confirmText = "Disconnect"
+                            confirmText = stringResource(R.string.cubic_canvas_disconnect)
                         )
                     }
 
                     // ── Reset canvas settings dialog ───────────────────────────
                     if (showResetDialog) {
                         ConfirmationDialog(
-                            text      = "Reset Cubic Canvas settings?\nThis will clear all canvas data and preferences.",
+                            text      = stringResource(R.string.cubic_canvas_reset_confirm),
                             onDismiss = { showResetDialog = false },
                             onConfirm = {
                                 spotifyCanvasEnabled  = false
                                 showSpotifyCanvasLogs = false
                                 showResetDialog       = false
                             },
-                            confirmText = "Reset"
+                            confirmText = stringResource(R.string.cubic_canvas_reset)
                         )
                     }
                 }
