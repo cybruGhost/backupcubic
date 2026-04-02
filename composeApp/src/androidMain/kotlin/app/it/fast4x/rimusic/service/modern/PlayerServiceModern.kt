@@ -26,6 +26,7 @@ import android.media.audiofx.PresetReverb
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import androidx.annotation.MainThread
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -125,6 +126,8 @@ import app.it.fast4x.rimusic.utils.bassboostLevelKey
 import app.it.fast4x.rimusic.utils.broadCastPendingIntent
 import app.it.fast4x.rimusic.utils.closebackgroundPlayerKey
 import app.it.fast4x.rimusic.utils.collect
+import app.it.fast4x.rimusic.utils.crossfadeDurationSecondsKey
+import app.it.fast4x.rimusic.utils.crossfadeEnabledKey
 import app.it.fast4x.rimusic.utils.discordPersonalAccessTokenKey
 import app.it.fast4x.rimusic.utils.enableWallpaperKey
 import app.it.fast4x.rimusic.utils.encryptedPreferences
@@ -230,6 +233,10 @@ class PlayerServiceModern : MediaLibraryService(),
     private var mediaLibrarySessionCallback: MediaLibrarySessionCallback =
         MediaLibrarySessionCallback(this, Database, MyDownloadHelper)
     lateinit var player: ExoPlayer
+    private lateinit var crossfadeOverlayPlayer: ExoPlayer
+    private lateinit var stablePlayerBridge: DelegatingExoPlayer
+    private lateinit var sessionPlayer: ExoPlayer
+    private lateinit var crossFadeMediaPlayer: CrossFadeMediaPlayer
     lateinit var cache: Cache
     lateinit var downloadCache: Cache
     private lateinit var audioVolumeObserver: AudioVolumeObserver
@@ -247,6 +254,10 @@ class PlayerServiceModern : MediaLibraryService(),
      */
     private var discordPresenceManager: DiscordPresenceManager? = null
     private var cubicJamManager: CubicJamManager? = null
+    private var lastReportedNotificationMediaId: String? = null
+    private var lastPlaybackSurfaceRefreshMs = 0L
+    private var lastNoInternetToastMs = 0L
+    private var lastSmartMessageMs = 0L
 
     var loudnessEnhancer: LoudnessEnhancer? = null
     private var binder = Binder()
@@ -257,6 +268,7 @@ class PlayerServiceModern : MediaLibraryService(),
 
     lateinit var audioQualityFormat: AudioQualityFormat
     lateinit var sleepTimer: SleepTimer
+    private lateinit var playbackStatsListener: PlaybackStatsListener
     private var timerJob: TimerJob? = null
     private var radio: YouTubeRadio? = null
 
@@ -398,6 +410,8 @@ class PlayerServiceModern : MediaLibraryService(),
         downloadCache = MyDownloadHelper.getDownloadCache(applicationContext)
 
 
+        playbackStatsListener = PlaybackStatsListener(false, this@PlayerServiceModern)
+
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(createMediaSourceFactory())
             .setRenderersFactory(createRendersFactory())
@@ -414,16 +428,54 @@ class PlayerServiceModern : MediaLibraryService(),
             .setSeekBackIncrementMs(5000)
             .setSeekForwardIncrementMs(5000)
             .build()
-            .apply {
-                addListener(this@PlayerServiceModern)
-                sleepTimer = SleepTimer(coroutineScope, this)
-                addListener(sleepTimer)
-                addAnalyticsListener(PlaybackStatsListener(false, this@PlayerServiceModern))
+
+        crossfadeOverlayPlayer = ExoPlayer.Builder(this)
+            .setMediaSourceFactory(createMediaSourceFactory())
+            .setRenderersFactory(createRendersFactory())
+            .setHandleAudioBecomingNoisy(false)
+            .setWakeMode(C.WAKE_MODE_NETWORK)
+            .setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
+                    .build(),
+                false
+            )
+            .setUsePlatformDiagnostics(false)
+            .build()
+
+        crossFadeMediaPlayer = CrossFadeMediaPlayer(
+            currentPlayer = player,
+            nextPlayer = crossfadeOverlayPlayer,
+            targetVolumeProvider = { preferences.getFloat(playbackVolumeKey, 1f) },
+            onPlayersSwapped = ::onCrossfadePlayersSwapped,
+        ).apply {
+            updateConfig(
+                enabled = preferences.getBoolean(crossfadeEnabledKey, false),
+                crossfadeDurationMs = preferences.getInt(crossfadeDurationSecondsKey, 21) * 1000L
+            )
+            onDisplayItemChanged = { mediaItem ->
+                if (mediaItem != null) {
+                    currentMediaItem.value = mediaItem
+                    requestArtworkPlaybackSurfaceRefresh(mediaItem)
+                    if (::stablePlayerBridge.isInitialized) {
+                        stablePlayerBridge.refreshState()
+                    }
+                }
             }
+        }
+        stablePlayerBridge = DelegatingExoPlayer(player).also {
+            it.setDisplayStateProvider { crossFadeMediaPlayer.uiState.value }
+        }
+        sessionPlayer = stablePlayerBridge.player
+        sleepTimer = SleepTimer(coroutineScope, sessionPlayer)
+        sessionPlayer.addListener(sleepTimer)
+        player.addListener(this@PlayerServiceModern)
+        player.addAnalyticsListener(playbackStatsListener)
 
         // Force player to add all commands available, prior to android 13
         val forwardingPlayer =
-            object : ForwardingPlayer(player) {
+            object : ForwardingPlayer(sessionPlayer) {
                 override fun getAvailableCommands(): Player.Commands {
                     return super.getAvailableCommands()
                         .buildUpon()
@@ -466,18 +518,17 @@ class PlayerServiceModern : MediaLibraryService(),
                 )
                 .build()
         mediaLibrarySessionCallback.observeRepository(mediaSession)
+        observeCrossfadeNotificationState()
         player.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
-        player.addListener(this@PlayerServiceModern)
-        player.addAnalyticsListener(PlaybackStatsListener(false, this@PlayerServiceModern))
 
         player.repeatMode = preferences.getEnum(queueLoopTypeKey, QueueLoopType.Default).type
 
-        binder.player.playbackParameters = PlaybackParameters(
+        sessionPlayer.playbackParameters = PlaybackParameters(
             preferences.getFloat(playbackSpeedKey, 1f),
             preferences.getFloat(playbackPitchKey, 1f)
         )
-        binder.player.volume = preferences.getFloat(playbackVolumeKey, 1f)
-        binder.player.setGlobalVolume(binder.player.volume)
+        sessionPlayer.volume = preferences.getFloat(playbackVolumeKey, 1f)
+        sessionPlayer.setGlobalVolume(sessionPlayer.volume)
 
         // Keep a connected controller so that notification works
         val sessionToken = SessionToken(this, ComponentName(this, PlayerServiceModern::class.java))
@@ -501,7 +552,7 @@ class PlayerServiceModern : MediaLibraryService(),
         }
         MyDownloadHelper.getDownloadManager(this).addListener(downloadListener)
 
-        notificationActionReceiver = NotificationActionReceiver(player)
+        notificationActionReceiver = NotificationActionReceiver(sessionPlayer)
 QuickPicksRepository.refreshIfNeeded()
 
         val filter = IntentFilter().apply {
@@ -668,6 +719,9 @@ QuickPicksRepository.refreshIfNeeded()
             stopService(intent<MyDownloadService>())
             stopService(intent<PlayerServiceModern>())
             player.removeListener(this)
+            if (::crossFadeMediaPlayer.isInitialized) {
+                crossFadeMediaPlayer.release()
+            }
             player.stop()
             player.release()
             try{
@@ -709,12 +763,21 @@ QuickPicksRepository.refreshIfNeeded()
 
             skipSilenceKey -> if (sharedPreferences != null) {
                 player.skipSilenceEnabled = sharedPreferences.getBoolean(key, false)
+                crossfadeOverlayPlayer.skipSilenceEnabled = sharedPreferences.getBoolean(key, false)
             }
 
             queueLoopTypeKey -> {
                 player.repeatMode =
                     sharedPreferences?.getEnum(queueLoopTypeKey, QueueLoopType.Default)?.type
                         ?: QueueLoopType.Default.type
+                crossfadeOverlayPlayer.repeatMode = Player.REPEAT_MODE_OFF
+            }
+
+            crossfadeEnabledKey, crossfadeDurationSecondsKey -> {
+                crossFadeMediaPlayer.updateConfig(
+                    enabled = preferences.getBoolean(crossfadeEnabledKey, false),
+                    crossfadeDurationMs = preferences.getInt(crossfadeDurationSecondsKey, 21) * 1000L
+                )
             }
 
             bassboostLevelKey, bassboostEnabledKey -> maybeBassBoost()
@@ -747,25 +810,14 @@ QuickPicksRepository.refreshIfNeeded()
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+        crossFadeMediaPlayer.onPrimaryMediaItemTransition(mediaItem)
 
-        currentMediaItem.update { mediaItem }
+        val displayMediaItem = displayedMediaItem() ?: mediaItem
+        currentMediaItem.update { displayMediaItem }
         maybeRecoverPlaybackError()
         maybeNormalizeVolume()
         loadFromRadio(reason)
-        // Update bitmap with proper fallback handling
-        val artworkUri = binder.player.currentMediaItem?.mediaMetadata?.artworkUri
-        if (artworkUri != null) {
-            bitmapProvider.load(artworkUri) {
-                updateDefaultNotification()
-                updateWidgets()
-            }
-        } else {
-            // If no artwork, force the use of the default bitmap
-            bitmapProvider.load(null) {
-                updateDefaultNotification()
-                updateWidgets()
-            }
-        }
+        requestArtworkPlaybackSurfaceRefresh(displayMediaItem, minIntervalMs = 0L)
 
         /**
          * Discord presence
@@ -828,6 +880,7 @@ QuickPicksRepository.refreshIfNeeded()
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
             maybeSavePlayerQueue()
         }
+        crossFadeMediaPlayer.onPrimaryTimelineChanged()
     }
 
 override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -851,7 +904,8 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
      */
         @UnstableApi
     override fun onIsPlayingChanged(isPlaying: Boolean) {
-        val item = player.currentMediaItem
+        crossFadeMediaPlayer.onPrimaryIsPlayingChanged(isPlaying)
+        val item = displayedMediaItem() ?: player.currentMediaItem
         val title = item?.mediaMetadata?.title ?: "<none>"
         val duration = player.duration
         val now = System.currentTimeMillis()
@@ -901,7 +955,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             )
         }
         
-        updateWidgets()
+        requestPlaybackSurfaceRefresh(item)
     }
 
     override fun onPlayerError(error: PlaybackException) {
@@ -922,7 +976,11 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
         if (!isNetworkAvailable.value || isConnectionError) {
             waitingForNetwork.value = true
-            Toaster.noInternet()
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastNoInternetToastMs >= 3_000L) {
+                lastNoInternetToastMs = now
+                Toaster.noInternet()
+            }
             return
         }
 
@@ -968,6 +1026,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
     override fun onEvents(player: Player, events: Player.Events) {
         if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
+            crossFadeMediaPlayer.onPrimaryPlayWhenReadyChanged(player.playWhenReady)
             val isBufferingOrReady = player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY
             if (isBufferingOrReady && player.playWhenReady) {
                 sendOpenEqualizerIntent()
@@ -991,15 +1050,77 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         }
     }
 
+    private fun onCrossfadePlayersSwapped(
+        newCurrentPlayer: ExoPlayer,
+        newNextPlayer: ExoPlayer,
+    ) {
+        if (player === newCurrentPlayer && crossfadeOverlayPlayer === newNextPlayer) return
+
+        player.removeListener(this@PlayerServiceModern)
+        player.removeAnalyticsListener(playbackStatsListener)
+
+        player = newCurrentPlayer
+        crossfadeOverlayPlayer = newNextPlayer
+
+        player.addListener(this@PlayerServiceModern)
+        player.addAnalyticsListener(playbackStatsListener)
+        stablePlayerBridge.updateDelegate(player)
+
+        currentMediaItem.value = player.currentMediaItem
+        player.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
+        crossfadeOverlayPlayer.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
+        maybeNormalizeVolume()
+        maybeBassBoost()
+        maybeReverb()
+        requestPlaybackSurfaceRefresh(player.currentMediaItem)
+        coroutineScope.launch(Dispatchers.Main) {
+            delay(150)
+            requestPlaybackSurfaceRefresh(player.currentMediaItem, minIntervalMs = 0L)
+        }
+    }
+
+    private fun observeCrossfadeNotificationState() {
+        coroutineScope.launch {
+            crossFadeMediaPlayer.uiState.collectLatest { state ->
+                if (!state.isEnabled || state.displayMediaItem == null) {
+                    lastReportedNotificationMediaId = null
+                    return@collectLatest
+                }
+
+                val displayMediaItem = state.displayMediaItem
+                val mediaId = displayMediaItem.mediaId
+                if (mediaId == lastReportedNotificationMediaId) {
+                    return@collectLatest
+                }
+
+                lastReportedNotificationMediaId = mediaId
+                currentMediaItem.value = displayMediaItem
+
+                if (!::mediaSession.isInitialized || !::bitmapProvider.isInitialized) {
+                    return@collectLatest
+                }
+
+                requestArtworkPlaybackSurfaceRefresh(displayMediaItem)
+            }
+        }
+    }
+
     private fun loadFromRadio( reason: Int ) {
         val isEnabled = preferences.getBoolean( autoLoadSongsInQueueKey, true )
         val isRepeatTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
+        val remainingQueueItems = (player.mediaItemCount - player.currentMediaItemIndex - 1).coerceAtLeast(0)
 
         // Don't fetch more item if:
         // - Feature is disabled
         // - When song is repeated
-        // - Start new queue
-        if( isEnabled && !isRepeatTransition && !binder.isLoadingRadio && player.mediaItemCount > 1 && preferences.getBoolean(autoLoadSongsInQueueKey, true) )
+        // - Radio fetch is already in progress
+        if(
+            isEnabled &&
+            !isRepeatTransition &&
+            !binder.isLoadingRadio &&
+            preferences.getBoolean(autoLoadSongsInQueueKey, true) &&
+            remainingQueueItems <= 1
+        )
             player.currentMediaItem?.let {
                 binder.startRadio( it, true )
             }
@@ -1183,7 +1304,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         }
     )
 
-
+    @Suppress("DEPRECATION")
     private fun buildCustomCommandButtons(): MutableList<CommandButton> {
         val notificationPlayerFirstIcon = preferences.getEnum(notificationPlayerFirstIconKey, NotificationButtons.Download)
         val notificationPlayerSecondIcon = preferences.getEnum(notificationPlayerSecondIconKey, NotificationButtons.Favorites)
@@ -1260,6 +1381,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         return commandButtonsList
     }
 
+    @Suppress("DEPRECATION")
     private fun updateCustomNotification(session: MediaSession): MediaNotification {
 
         val playIntent = Action.play.pendingIntent
@@ -1267,7 +1389,23 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         val nextIntent = Action.next.pendingIntent
         val prevIntent = Action.previous.pendingIntent
 
-        val mediaMetadata = player.mediaMetadata
+        val displayMediaItem = displayedMediaItem()
+        if (displayMediaItem == null) {
+            val fallbackNotification = NotificationCompat.Builder(this, NotificationChannelId)
+                .setContentTitle("Cubic Music")
+                .setContentText("Loading...")
+                .setSmallIcon(R.drawable.ic_launcher_monochrome)
+                .setAutoCancel(false)
+                .setOnlyAlertOnce(true)
+                .setShowWhen(false)
+                .setOngoing(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
+                .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
+                .build()
+            return MediaNotification(NotificationId, fallbackNotification)
+        }
+        val mediaMetadata = displayMediaItem.mediaMetadata
 
         // Load bitmap with proper fallback handling
         bitmapProvider.load(mediaMetadata.artworkUri) {
@@ -1279,16 +1417,16 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         } else {
             NotificationCompat.Builder(this)
         }
-            .setContentTitle(cleanPrefix(player.mediaMetadata.title.toString()))
+            .setContentTitle(cleanPrefix(cleanPrefix(mediaMetadata.title?.toString() ?: "")))
             .setContentText(
                 if (mediaMetadata.albumTitle != null && mediaMetadata.artist != "")
-                    "${mediaMetadata.artist} | ${mediaMetadata.albumTitle}"
-                else mediaMetadata.artist
+                    "${cleanPrefix(cleanPrefix(mediaMetadata.artist?.toString() ?: ""))} | ${cleanPrefix(cleanPrefix(mediaMetadata.albumTitle?.toString() ?: ""))}"
+                else cleanPrefix(cleanPrefix(mediaMetadata.artist?.toString() ?: ""))
             )
             .setSubText(
                 if (mediaMetadata.albumTitle != null && mediaMetadata.artist != "")
-                    "${mediaMetadata.artist} | ${mediaMetadata.albumTitle}"
-                else mediaMetadata.artist
+                    "${cleanPrefix(cleanPrefix(mediaMetadata.artist?.toString() ?: ""))} | ${cleanPrefix(cleanPrefix(mediaMetadata.albumTitle?.toString() ?: ""))}"
+                else cleanPrefix(cleanPrefix(mediaMetadata.artist?.toString() ?: ""))
             )
             .setLargeIcon(bitmapProvider.bitmap)
             .setAutoCancel(false)
@@ -1296,21 +1434,24 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             .setShowWhen(false)
             .setSmallIcon(player.playerError?.let { R.drawable.alert_circle }
                 ?: R.drawable.ic_launcher_monochrome)
-            .setOngoing(false)
+            .setOngoing(
+                sessionPlayer.playWhenReady ||
+                    sessionPlayer.isPlaying ||
+                    crossFadeMediaPlayer.uiState.value.isEnabled
+            )
             .setContentIntent(activityPendingIntent<MainActivity>(
                 flags = PendingIntent.FLAG_UPDATE_CURRENT
             ) {
                 putExtra("expandPlayerBottomSheet", true)
             })
-            .setDeleteIntent(broadCastPendingIntent<NotificationDismissReceiver>())
             .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
             .setCategory(NotificationCompat.CATEGORY_TRANSPORT)
             .setStyle(MediaStyleNotificationHelper.MediaStyle(session))
             .addAction(R.drawable.play_skip_back, "Skip back", prevIntent)
             .addAction(
-                if (player.isPlaying) R.drawable.pause else R.drawable.play,
-                if (player.isPlaying) "Pause" else "Play",
-                if (player.isPlaying) pauseIntent else playIntent
+                if (sessionPlayer.isPlaying) R.drawable.pause else R.drawable.play,
+                if (sessionPlayer.isPlaying) "Pause" else "Play",
+                if (sessionPlayer.isPlaying) pauseIntent else playIntent
             )
             .addAction(R.drawable.play_skip_forward, "Skip forward", nextIntent)
 
@@ -1402,6 +1543,47 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
     }
 
+    private fun requestPlaybackSurfaceRefresh(
+        mediaItem: MediaItem? = displayedMediaItem(),
+        includeWidgets: Boolean = true,
+        minIntervalMs: Long = 250L,
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPlaybackSurfaceRefreshMs < minIntervalMs) return
+        lastPlaybackSurfaceRefreshMs = now
+
+        currentMediaItem.value = mediaItem ?: currentMediaItem.value
+        updateDefaultNotification()
+        if (includeWidgets) {
+            updateWidgets()
+        }
+    }
+
+    private fun requestArtworkPlaybackSurfaceRefresh(
+        mediaItem: MediaItem? = displayedMediaItem(),
+        includeWidgets: Boolean = true,
+        minIntervalMs: Long = 250L,
+    ) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastPlaybackSurfaceRefreshMs < minIntervalMs) return
+        lastPlaybackSurfaceRefreshMs = now
+
+        if (::bitmapProvider.isInitialized) {
+            bitmapProvider.load(mediaItem?.mediaMetadata?.artworkUri) {
+                updateDefaultNotification()
+                if (includeWidgets) {
+                    updateWidgets()
+                }
+            }
+            return
+        }
+
+        updateDefaultNotification()
+        if (includeWidgets) {
+            updateWidgets()
+        }
+    }
+
     fun toggleLike() {
         binder.toggleLike()
     }
@@ -1422,14 +1604,20 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         player.currentMediaItem?.let( binder::startRadio )
     }
 
-    private fun showSmartMessage( message: String ) = Toaster.i(message)
+    private fun showSmartMessage( message: String ) {
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastSmartMessageMs < 1_500L) return
+        lastSmartMessageMs = now
+        Toaster.i(message)
+    }
 
     @MainThread
     fun updateWidgets() {
+        val displayMediaMetadata = displayedMediaItem()?.mediaMetadata ?: binder.player.mediaMetadata
         val status = Triple(
-            binder.player.mediaMetadata.title.toString(),
-            binder.player.mediaMetadata.artist.toString(),
-            binder.player.isPlaying
+            cleanPrefix(cleanPrefix(displayMediaMetadata.title.toString())),
+            cleanPrefix(cleanPrefix(displayMediaMetadata.artist.toString())),
+            binder.player.isPlaying || crossFadeMediaPlayer.uiState.value.isActive
         )
 
         val actions = Triple(
@@ -1478,11 +1666,21 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         binder.actionSearch()
     }
 
+    private fun displayedMediaItem(): MediaItem? {
+        val crossfadeState = if (::crossFadeMediaPlayer.isInitialized) crossFadeMediaPlayer.uiState.value else null
+        return if (crossfadeState?.isEnabled == true) {
+            crossfadeState.displayMediaItem ?: player.currentMediaItem
+        } else {
+            player.currentMediaItem
+        }
+    }
+
     override fun onPositionDiscontinuity(
         oldPosition: Player.PositionInfo,
         newPosition: Player.PositionInfo,
         reason: Int
     ) {
+        crossFadeMediaPlayer.onPrimaryPositionDiscontinuity(reason)
        Timber.d("PlayerServiceModern onPositionDiscontinuity oldPosition ${oldPosition.mediaItemIndex} newPosition ${newPosition.mediaItemIndex} reason $reason")
         // Discord presence: update on seek/skip
         if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SKIP) {
@@ -1810,6 +2008,9 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         val player: ExoPlayer
             get() = this@PlayerServiceModern.player
 
+        val sessionPlayer: ExoPlayer
+            get() = this@PlayerServiceModern.sessionPlayer
+
         val cache: Cache
             get() = this@PlayerServiceModern.cache
 
@@ -1818,6 +2019,26 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
         val sleepTimerMillisLeft: StateFlow<Long?>?
             get() = timerJob?.millisLeft
+
+        val crossfadeUiState: StateFlow<CrossfadeUiState>
+            get() = crossFadeMediaPlayer.uiState
+
+        val displayedMediaItem: MediaItem?
+            get() = this@PlayerServiceModern.displayedMediaItem()
+
+        val displayedPositionAndDuration: Pair<Long, Long>
+            get() {
+                val crossfadeState = crossFadeMediaPlayer.uiState.value
+                return if (crossfadeState.isEnabled && crossfadeState.displayDuration > 0L) {
+                    val duration = crossfadeState.displayDuration.coerceAtLeast(1L)
+                    val position = crossfadeState.displayPosition.coerceIn(0L, duration)
+                    position to duration
+                } else {
+                    val duration = player.duration.coerceAtLeast(1L)
+                    val position = player.currentPosition.coerceIn(0L, duration)
+                    position to duration
+                }
+            }
 
         fun startSleepTimer(delayMillis: Long) {
             timerJob?.cancel()
@@ -1956,6 +2177,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
          */
         @MainThread
         fun gracefulPause() {
+            crossFadeMediaPlayer.pauseForUiInteraction()
             val duration = preferences.getEnum( playbackFadeAudioDurationKey, DurationInMilliseconds.Disabled )
             player.fadeOutEffect( duration.asMillis )
         }
@@ -1965,6 +2187,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
          */
         @MainThread
         fun gracefulPlay() {
+            crossFadeMediaPlayer.playForUiInteraction()
             val duration = preferences.getEnum( playbackFadeAudioDurationKey, DurationInMilliseconds.Disabled )
             player.fadeInEffect( duration.asMillis )
         }

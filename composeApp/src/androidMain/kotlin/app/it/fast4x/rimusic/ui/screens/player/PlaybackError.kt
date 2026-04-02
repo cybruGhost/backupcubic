@@ -15,13 +15,12 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
@@ -45,60 +44,61 @@ import app.it.fast4x.rimusic.utils.currentWindow
 import app.it.fast4x.rimusic.utils.medium
 import app.kreate.android.me.knighthat.utils.Toaster
 import timber.log.Timber
-import java.net.UnknownHostException
-import java.nio.channels.UnresolvedAddressException
+import android.content.Context
+fun playbackExceptionMessage(
+    context: Context,
+    error: PlaybackException,
+    isLocal: Boolean,
+): String {
+    val localMusicFileNotFoundError = context.getString(R.string.error_local_music_not_found)
+    val playableFormatNotFoundError =
+        context.getString(R.string.error_couldn_t_find_a_playable_audio_format)
+    val unplayableError = context.getString(R.string.error_media_cannot_be_played)
+    val loginRequiredError = context.getString(R.string.login_required_to_play_this_media)
+    val videoIdMismatchError =
+        context.getString(R.string.error_the_returned_video_id_doesn_t_match_the_requested_one)
+    val noInternetError = context.getString(R.string.error_no_internet)
+    val timeoutError = context.getString(R.string.error_timeout)
+    val formatUnsupported = context.getString(R.string.error_file_unsupported_format)
+
+    fun deepestCause(throwable: Throwable?): Throwable? {
+        var current = throwable
+        while (current?.cause != null && current.cause !== current) {
+            current = current.cause
+        }
+        return current
+    }
+
+    if (isLocal) return localMusicFileNotFoundError
+
+    return when (deepestCause(error) ?: deepestCause(error.cause) ?: error.cause ?: error) {
+        is PlayableFormatNotFoundException -> playableFormatNotFoundError
+        is UnplayableException -> unplayableError
+        is LoginRequiredException -> loginRequiredError
+        is VideoIdMismatchException -> videoIdMismatchError
+        is PlayableFormatNonSupported -> formatUnsupported
+        is NoInternetException -> noInternetError
+        is TimeoutException -> timeoutError
+        is UnknownException -> unplayableError
+        is FakeException -> unplayableError
+        else -> unplayableError
+    }
+}
 
 @OptIn(UnstableApi::class)
 @Composable
 fun PlayerError(error: PlaybackException) {
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
-    //val player = binder?.player ?: return
+    val message = playbackExceptionMessage(
+        context = context,
+        error = error,
+        isLocal = binder?.player?.currentWindow?.mediaItem?.isLocal == true,
+    )
 
-    val localMusicFileNotFoundError = stringResource(R.string.error_local_music_not_found)
-    val networkerror = stringResource(R.string.error_a_network_error_has_occurred)
-    val notfindplayableaudioformaterror =
-        stringResource(R.string.error_couldn_t_find_a_playable_audio_format)
-    //val originalvideodeletederror =
-    //    stringResource(R.string.error_the_original_video_source_of_this_song_has_been_deleted)
-    val unplayableerror = stringResource(R.string.error_media_cannot_be_played)
-    //val songnotplayabledueserverrestrictionerror =
-    //    stringResource(R.string.error_this_song_cannot_be_played_due_to_server_restrictions)
-    val loginrequirederror = stringResource(R.string.login_required_to_play_this_media)
-    val videoidmismatcherror =
-        stringResource(R.string.error_the_returned_video_id_doesn_t_match_the_requested_one)
-    //val unknownplaybackerror =
-    //    stringResource(R.string.error_an_unknown_playback_error_has_occurred)
-
-    //val unknownerror = stringResource(R.string.error_unknown)
-    val unknownerror = stringResource(R.string.error_media_cannot_be_played)
-    val nointerneterror = stringResource(R.string.error_no_internet)
-    val timeouterror = stringResource(R.string.error_timeout)
-
-    val formatUnsupported = stringResource(R.string.error_file_unsupported_format)
-
-    var errorCounter = 0
-    errorCounter = errorCounter.plus(1)
-
-    if (errorCounter < 2) {
+    LaunchedEffect(error, message) {
         Timber.e("Playback error: ${error.cause?.cause}")
-        Toaster.w(
-            if (binder?.player?.currentWindow?.mediaItem?.isLocal == true)
-                localMusicFileNotFoundError
-            else when (error.cause?.cause) {
-                is UnresolvedAddressException, is UnknownHostException -> networkerror
-                is PlayableFormatNotFoundException -> notfindplayableaudioformaterror
-                is UnplayableException -> unplayableerror
-                is LoginRequiredException -> loginrequirederror
-                is VideoIdMismatchException -> videoidmismatcherror
-                is PlayableFormatNonSupported -> formatUnsupported
-                is NoInternetException -> nointerneterror
-                is TimeoutException -> timeouterror
-                is UnknownException -> unknownerror
-                is FakeException -> unknownerror
-                else -> unknownerror
-            }
-        )
+        Toaster.w(message)
     }
 
 }
@@ -138,7 +138,7 @@ fun PlaybackError(
                 .align(Alignment.TopCenter)
         ) {
             BasicText(
-                text = remember { messageProvider() },
+                text = messageProvider(),
                 style = typography().xs.center.medium.color(PureBlackColorPalette.text),
                 modifier = Modifier
                     .background(Color.Black.copy(0.4f))
@@ -148,4 +148,3 @@ fun PlaybackError(
         }
     }
 }
-
