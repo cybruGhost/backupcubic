@@ -8,6 +8,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import it.fast4x.innertube.Innertube
@@ -25,8 +26,10 @@ import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeSyncEnabled
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import app.kreate.android.me.knighthat.utils.Toaster
@@ -34,6 +37,27 @@ import app.it.fast4x.rimusic.cleanPrefix
 import timber.log.Timber
 
 private val ytmAlbumThumbnailCache = mutableMapOf<String, String?>()
+
+private data class SessionLibraryScope(
+    val cookie: String,
+    val authUser: String?,
+    val pageId: String?
+)
+
+private data class RemotePlaylistSyncPayload(
+    val playlist: Playlist,
+    val songs: List<app.it.fast4x.rimusic.models.Song>
+)
+
+private fun currentSessionLibraryScope(): SessionLibraryScope? {
+    val session = YouTubeSessionStore.applyCurrentSession() ?: return null
+    val cookie = session.cookie.takeIf { it.isNotBlank() } ?: return null
+    return SessionLibraryScope(
+        cookie = cookie,
+        authUser = session.authUser.ifBlank { null },
+        pageId = session.pageId.ifBlank { null }
+    )
+}
 
 private suspend fun Innertube.SongItem.asNormalizedSong(): app.it.fast4x.rimusic.models.Song {
     val cleanedFallbackThumbnail = asSong.thumbnailUrl?.trim()?.takeIf { it.isNotBlank() }
@@ -75,8 +99,8 @@ private suspend fun Innertube.SongItem.asNormalizedSong(): app.it.fast4x.rimusic
 
 private suspend fun <T> safeYtmCall(
     label: String,
-    timeoutMs: Long = 15_000L,
-    maxRetries: Int = 2,
+    timeoutMs: Long = 10_000L,
+    maxRetries: Int = 1,
     block: suspend () -> Result<T>
 ): T? {
     repeat(maxRetries) { attempt ->
@@ -92,6 +116,102 @@ private suspend fun <T> safeYtmCall(
     }
     return null
 }
+
+private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
+    withTimeoutOrNull(60_000L) {
+        val remotePlaylists = safeYtmCall("sessionPlaylists") {
+            YtmSessionApi.fetchPlaylists(scope.cookie, scope.authUser, scope.pageId)
+        } ?: return@withTimeoutOrNull false
+
+        if (remotePlaylists.isEmpty()) return@withTimeoutOrNull false
+
+        val payloads = mutableListOf<RemotePlaylistSyncPayload>()
+        remotePlaylists.forEachIndexed { index, remotePlaylist ->
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+
+            if (remotePlaylist.playlistId.isBlank() || remotePlaylist.title.isBlank()) {
+                return@forEachIndexed
+            }
+
+            val browseId = remotePlaylist.playlistId.removePrefix("VL")
+            val localPlaylist = Database.playlistTable.findByBrowseId(browseId).first()
+            val playlist = (localPlaylist ?: Playlist(
+                name = remotePlaylist.title,
+                browseId = browseId,
+                isYoutubePlaylist = true
+            )).copy(
+                name = remotePlaylist.title,
+                browseId = browseId,
+                isYoutubePlaylist = true
+            )
+
+            Toaster.i("Syncing playlist ${index + 1}/${remotePlaylists.size}: ${remotePlaylist.title}")
+
+            if (index > 0) {
+                delay(1_000L)
+            }
+
+            val remoteSongs = safeYtmCall(
+                label = "sessionPlaylistSongs:$browseId",
+                timeoutMs = 12_000L
+            ) {
+                YtMusic.getPlaylist(browseId).completed()
+            }?.songs
+                ?.map { it.asNormalizedSong() }
+                ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
+                ?.distinctBy { song -> song.id }
+                .orEmpty()
+
+            payloads += RemotePlaylistSyncPayload(
+                playlist = playlist,
+                songs = remoteSongs
+            )
+        }
+
+        Database.asyncTransaction {
+            payloads.forEach { payload ->
+                val playlistId = if (payload.playlist.id > 0) {
+                    playlistTable.update(payload.playlist)
+                    payload.playlist.id
+                } else {
+                    playlistTable.insert(payload.playlist)
+                }
+
+                if (payload.songs.isNotEmpty()) {
+                    payload.songs.forEach(songTable::insertIgnore)
+                    songPlaylistMapTable.clear(playlistId)
+                    songPlaylistMapTable.updateReplace(
+                        payload.songs.mapIndexed { index, song ->
+                            app.it.fast4x.rimusic.models.SongPlaylistMap(
+                                songId = song.id,
+                                playlistId = playlistId,
+                                position = index
+                            )
+                        }
+                    )
+                }
+            }
+        }
+
+        val syncedBrowseIds = payloads.mapNotNull { it.playlist.browseId }.toSet()
+        Database.playlistTable
+            .allAsPreview()
+            .first()
+            .map { it.playlist }
+            .filter { playlist ->
+                playlist.isYoutubePlaylist && playlist.browseId !in syncedBrowseIds
+            }
+            .forEach { playlist ->
+                Database.playlistTable.update(
+                    playlist.copy(
+                        isYoutubePlaylist = false,
+                        browseId = null
+                    )
+                )
+            }
+
+        true
+    } ?: false
 
 @OptIn(UnstableApi::class)
 fun ytmPrivatePlaylistSync(playlist: Playlist, playlistId: Long) {
@@ -147,9 +267,43 @@ fun ytmPrivatePlaylistSync(playlist: Playlist, playlistId: Long) {
 suspend fun importYTMSubscribedChannels(): Boolean {
     println("importYTMSubscribedChannels isYouTubeSyncEnabled() = ${isYouTubeSyncEnabled()} and isAutoSyncEnabled() = ${isAutoSyncEnabled()}")
     if (isYouTubeSyncEnabled()) {
-        YouTubeSessionStore.applyCurrentSession()
+        val sessionScope = currentSessionLibraryScope()
 
         Toaster.n( R.string.syncing, Toast.LENGTH_LONG )
+
+        val sessionArtists = sessionScope?.let { scope ->
+            safeYtmCall("sessionArtists") {
+                YtmSessionApi.fetchArtists(scope.cookie, scope.authUser, scope.pageId)
+            }
+        }
+        if (!sessionArtists.isNullOrEmpty()) {
+            runCatching {
+                sessionArtists.forEach { remoteArtist ->
+                    if (remoteArtist.browseId.isBlank() || remoteArtist.name.isBlank()) return@forEach
+                    val localArtist = Database.artistTable.findById(remoteArtist.browseId).first()
+                    if (localArtist == null) {
+                        Database.artistTable.upsert(
+                            Artist(
+                                id = remoteArtist.browseId,
+                                name = remoteArtist.name,
+                                thumbnailUrl = remoteArtist.thumbnail,
+                                bookmarkedAt = System.currentTimeMillis(),
+                                isYoutubeArtist = true
+                            )
+                        )
+                    } else {
+                        Database.artistTable.update(
+                            localArtist.copy(
+                                name = remoteArtist.name,
+                                thumbnailUrl = remoteArtist.thumbnail,
+                                bookmarkedAt = localArtist.bookmarkedAt ?: System.currentTimeMillis(),
+                                isYoutubeArtist = true
+                            )
+                        )
+                    }
+                }
+            }.onSuccess { return true }
+        }
 
         val page = safeYtmCall("importYTMSubscribedChannels") {
             YouTubeRequestThrottler.run {
@@ -207,9 +361,40 @@ suspend fun importYTMSubscribedChannels(): Boolean {
 suspend fun importYTMLikedAlbums(): Boolean {
     println("importYTMLikedAlbums isYouTubeSyncEnabled() = ${isYouTubeSyncEnabled()} and isAutoSyncEnabled() = ${isAutoSyncEnabled()}")
     if (isYouTubeSyncEnabled()) {
-        YouTubeSessionStore.applyCurrentSession()
+        val sessionScope = currentSessionLibraryScope()
 
         Toaster.n( R.string.syncing, Toast.LENGTH_LONG )
+
+        val sessionAlbums = sessionScope?.let { scope ->
+            safeYtmCall("sessionAlbums") {
+                YtmSessionApi.fetchAlbums(scope.cookie, scope.authUser, scope.pageId)
+            }
+        }
+        if (!sessionAlbums.isNullOrEmpty()) {
+            runCatching {
+                sessionAlbums.forEach { remoteAlbum ->
+                    if (remoteAlbum.browseId.isBlank() || remoteAlbum.title.isBlank()) return@forEach
+                    val localAlbum = Database.albumTable.findById(remoteAlbum.browseId).first()
+                    val album = (localAlbum ?: Album(
+                        id = remoteAlbum.browseId,
+                        title = remoteAlbum.title,
+                        authorsText = remoteAlbum.artist,
+                        thumbnailUrl = remoteAlbum.thumbnail,
+                        year = remoteAlbum.year,
+                        bookmarkedAt = System.currentTimeMillis(),
+                        isYoutubeAlbum = true
+                    )).copy(
+                        title = remoteAlbum.title,
+                        authorsText = remoteAlbum.artist,
+                        thumbnailUrl = remoteAlbum.thumbnail,
+                        year = remoteAlbum.year,
+                        bookmarkedAt = localAlbum?.bookmarkedAt ?: System.currentTimeMillis(),
+                        isYoutubeAlbum = true
+                    )
+                    if (localAlbum == null) Database.albumTable.upsert(album) else Database.albumTable.updateReplace(album)
+                }
+            }.onSuccess { return true }
+        }
 
         val page = safeYtmCall("importYTMLikedAlbums") {
             YouTubeRequestThrottler.run {
@@ -269,9 +454,13 @@ suspend fun importYTMLikedAlbums(): Boolean {
 suspend fun importYTMLikedPlaylists(): Boolean {
     println("importYTMLikedPlaylists isYouTubeSyncEnabled() = ${isYouTubeSyncEnabled()} and isAutoSyncEnabled() = ${isAutoSyncEnabled()}")
     if (!isYouTubeSyncEnabled()) return false
-    YouTubeSessionStore.applyCurrentSession()
+    val sessionScope = currentSessionLibraryScope()
 
     Toaster.n(R.string.syncing, Toast.LENGTH_LONG)
+
+    if (sessionScope != null && syncSessionPlaylists(sessionScope)) {
+        return true
+    }
 
     val firstPage = safeYtmCall("importYTMLikedPlaylists:first_page") {
         YouTubeRequestThrottler.run {
@@ -381,6 +570,72 @@ suspend fun importYTMLikedPlaylists(): Boolean {
         }
 
     return true
+}
+
+suspend fun importYTMLikedSongs(): Boolean {
+    if (!isYouTubeSyncEnabled()) return false
+
+    val sessionScope = currentSessionLibraryScope() ?: return false
+    Toaster.n(R.string.syncing, Toast.LENGTH_LONG)
+
+    val sessionSongs = safeYtmCall("sessionLikedSongs") {
+        YtmSessionApi.fetchLikedSongs(sessionScope.cookie, sessionScope.authUser, sessionScope.pageId)
+    } ?: return false
+
+    if (sessionSongs.isEmpty()) return false
+
+    runCatching {
+        sessionSongs.forEach { remoteSong ->
+            if (remoteSong.videoId.isBlank() || remoteSong.title.isBlank()) return@forEach
+
+            val localSong = Database.songTable.findById(remoteSong.videoId).first()
+            val normalizedSong = (localSong ?: app.it.fast4x.rimusic.models.Song(
+                id = remoteSong.videoId,
+                title = cleanPrefix(remoteSong.title),
+                artistsText = remoteSong.artist.ifBlank { null },
+                durationText = remoteSong.duration.ifBlank { null },
+                thumbnailUrl = remoteSong.thumbnail.ifBlank { null }
+            )).copy(
+                title = cleanPrefix(remoteSong.title),
+                artistsText = remoteSong.artist.ifBlank { localSong?.artistsText },
+                durationText = remoteSong.duration.ifBlank { localSong?.durationText },
+                thumbnailUrl = remoteSong.thumbnail.ifBlank { localSong?.thumbnailUrl },
+                likedAt = localSong?.likedAt?.takeIf { it > 0 } ?: System.currentTimeMillis()
+            )
+
+            Database.songTable.upsert(normalizedSong)
+        }
+    }.onFailure {
+        Timber.e(it, "importYTMLikedSongs failed")
+        return false
+    }
+
+    return true
+}
+
+suspend fun syncSelectedYtmAccountData(): Boolean {
+    if (!isYouTubeSyncEnabled()) return false
+
+    val syncSteps = listOf(
+        "liked songs" to ::importYTMLikedSongs,
+        "playlists" to ::importYTMLikedPlaylists,
+        "artists" to ::importYTMSubscribedChannels,
+        "albums" to ::importYTMLikedAlbums
+    )
+
+    var syncedAny = false
+    syncSteps.forEach { (label, syncStep) ->
+        runCatching {
+            Toaster.i("Syncing $label")
+            syncStep()
+        }.onSuccess { stepSucceeded ->
+            syncedAny = syncedAny || stepSucceeded
+        }.onFailure { error ->
+            Timber.e(error, "syncSelectedYtmAccountData failed while syncing %s", label)
+        }
+    }
+
+    return syncedAny
 }
 
 suspend fun removeYTSongFromPlaylist(

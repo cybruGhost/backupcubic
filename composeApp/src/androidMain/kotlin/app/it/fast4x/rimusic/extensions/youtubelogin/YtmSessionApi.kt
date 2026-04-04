@@ -103,8 +103,14 @@ object YtmSessionApi {
                     if (!pageId.isNullOrBlank()) put("pageId", pageId)
                 }
 
+            val url = buildString {
+                append(SESSION_ENDPOINT)
+                append("?action=switch_account&authuser=").append(authUser)
+                if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
+            }
+
             val request = Request.Builder()
-                .url("$SESSION_ENDPOINT?action=switch_account")
+                .url(url)
                 .post(body.toString().toRequestBody(jsonMediaType))
                 .header("Content-Type", "application/json")
                 .build()
@@ -117,6 +123,73 @@ object YtmSessionApi {
 
                 parseApiSession(JSONObject(responseBody), fallbackCookie = normalizedCookies)
             }
+        }
+    }
+
+    suspend fun fetchPlaylists(
+        cookies: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmPlaylist>> = postLibrary("playlists", cookies, authUser, pageId) { json ->
+        val arr = json.optJSONArray("playlists") ?: JSONArray()
+        List(arr.length()) { index ->
+            val item = arr.optJSONObject(index) ?: JSONObject()
+            YtmPlaylist(
+                playlistId = item.optString("playlistId"),
+                title = item.optString("title"),
+                thumbnail = item.optString("thumbnail"),
+                songCount = item.optString("songCount"),
+                subtitle = item.optString("subtitle")
+            )
+        }
+    }
+
+    suspend fun fetchLikedSongs(
+        cookies: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmSong>> = postLibrary("liked_songs", cookies, authUser, pageId, ::parseSongs)
+
+    suspend fun fetchHistory(
+        cookies: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmSong>> = postLibrary("history", cookies, authUser, pageId, ::parseSongs)
+
+    suspend fun fetchArtists(
+        cookies: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmArtist>> = postLibrary("artists", cookies, authUser, pageId) { json ->
+        val arr = json.optJSONArray("artists") ?: JSONArray()
+        List(arr.length()) { index ->
+            val item = arr.optJSONObject(index) ?: JSONObject()
+            YtmArtist(
+                browseId = item.optString("browseId"),
+                name = item.optString("name"),
+                thumbnail = item.optString("thumbnail"),
+                subscribers = item.optString("subscribers")
+            )
+        }
+    }
+
+    suspend fun fetchAlbums(
+        cookies: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmAlbum>> = postLibrary("albums", cookies, authUser, pageId) { json ->
+        val arr = json.optJSONArray("albums") ?: JSONArray()
+        List(arr.length()) { index ->
+            val item = arr.optJSONObject(index) ?: JSONObject()
+            YtmAlbum(
+                browseId = item.optString("browseId"),
+                playlistId = item.optString("playlistId"),
+                title = item.optString("title"),
+                artist = item.optString("artist"),
+                thumbnail = item.optString("thumbnail"),
+                year = item.optString("year"),
+                type = item.optString("type")
+            )
         }
     }
 
@@ -145,11 +218,62 @@ object YtmSessionApi {
             },
             visitorData = json.optString("visitorData"),
             dataSyncId = json.optString("dataSyncId"),
+            authUser = json.optString("authUser"),
+            pageId = json.optString("pageId"),
             accountName = json.optString("accountName"),
             accountEmail = json.optString("accountEmail"),
             accountChannelHandle = json.optString("accountChannelHandle"),
             accountThumbnail = json.optString("accountThumbnail")
         )
+
+    private fun parseSongs(json: JSONObject): List<YtmSong> {
+        val songs = json.optJSONArray("songs") ?: JSONArray()
+        return List(songs.length()) { index ->
+            val item = songs.optJSONObject(index) ?: JSONObject()
+            YtmSong(
+                videoId = item.optString("videoId"),
+                title = item.optString("title"),
+                artist = item.optString("artist"),
+                album = item.optString("album"),
+                thumbnail = item.optString("thumbnail"),
+                duration = item.optString("duration")
+            )
+        }
+    }
+
+    private suspend fun <T> postLibrary(
+        action: String,
+        cookies: String,
+        authUser: String?,
+        pageId: String?,
+        parse: (JSONObject) -> T
+    ): Result<T> = withContext(Dispatchers.IO) {
+        runCatching {
+            val normalizedCookies = YouTubeSessionStore.normalizeCookieString(cookies)
+            require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
+
+            val url = buildString {
+                append(SESSION_ENDPOINT)
+                append("?action=").append(action)
+                if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
+                if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
+                .header("Content-Type", "application/json")
+                .build()
+
+            execute(request).use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IOException(parseError(body, response.code))
+                }
+                parse(JSONObject(body))
+            }
+        }
+    }
 
     private fun parseError(body: String, statusCode: Int): String =
         runCatching {

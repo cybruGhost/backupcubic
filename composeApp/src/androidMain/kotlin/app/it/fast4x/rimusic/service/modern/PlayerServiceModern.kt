@@ -57,6 +57,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.analytics.PlaybackStats
 import androidx.media3.exoplayer.analytics.PlaybackStatsListener
@@ -424,6 +425,7 @@ class PlayerServiceModern : MediaLibraryService(),
         player = ExoPlayer.Builder(this)
             .setMediaSourceFactory(createMediaSourceFactory())
             .setRenderersFactory(createRendersFactory())
+            .setTrackSelector(createTrackSelector())
             .setHandleAudioBecomingNoisy(true)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(
@@ -441,6 +443,7 @@ class PlayerServiceModern : MediaLibraryService(),
         crossfadeOverlayPlayer = ExoPlayer.Builder(this)
             .setMediaSourceFactory(createMediaSourceFactory())
             .setRenderersFactory(createRendersFactory())
+            .setTrackSelector(createTrackSelector())
             .setHandleAudioBecomingNoisy(false)
             .setWakeMode(C.WAKE_MODE_NETWORK)
             .setAudioAttributes(
@@ -677,6 +680,8 @@ QuickPicksRepository.refreshIfNeeded()
         val songId = mediaItem.mediaId.substringAfterLast("/", mediaItem.mediaId).ifBlank { return }
 
         val totalPlayTimeMs = playbackStats.totalPlayTimeMs
+
+        if (songId.isBlank()) return
 
         if ( totalPlayTimeMs > 5000 )
             Database.asyncTransaction {
@@ -981,6 +986,10 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         val controllerPackage = PlaybackSourceHints.currentControllerPackageName()
         val isAndroidAutoStart = PlaybackSourceHints.shouldPreferSearchFallback(currentMediaId)
         val deepestCause = generateSequence(error as Throwable?) { it.cause }.lastOrNull()
+        val isDecoderIssue =
+            error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
+                error.errorCodeName.contains("DECOD", ignoreCase = true) ||
+                deepestCause?.javaClass?.simpleName?.contains("Codec", ignoreCase = true) == true
 
         Timber.e(
             error,
@@ -996,6 +1005,28 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         println(
             "PlayerServiceModern onPlayerError mediaId=$currentMediaId controller=$controllerPackage androidAuto=$isAndroidAutoStart errorCode=${error.errorCode} errorName=${error.errorCodeName} message=${error.message} rootCause=${deepestCause?.javaClass?.simpleName}"
         )
+
+        if (isDecoderIssue) {
+            Timber.w(
+                error,
+                "Decoder failure while playing %s. Preferring audio-only recovery path.",
+                currentMediaId
+            )
+            if (player.hasNextMediaItem()) {
+                val prev = player.currentMediaItem
+                player.playNext()
+                showSmartMessage(
+                    message = getString(
+                        R.string.skip_media_on_error_message,
+                        prev?.mediaMetadata?.title ?: prev?.mediaId.orEmpty()
+                    )
+                )
+            } else {
+                player.stop()
+                Toaster.e("Playback codec failed. Try retrying with another source.")
+            }
+            return
+        }
 
         val playbackConnectionExeptionList = listOf(
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, //primary error code to manage
@@ -1198,7 +1229,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             !isRepeatTransition &&
             !binder.isLoadingRadio &&
             preferences.getBoolean(autoLoadSongsInQueueKey, true) &&
-            remainingQueueItems <= 1
+            remainingQueueItems <= 5
         )
             player.currentMediaItem?.let {
                 binder.startRadio( it, true )
@@ -1338,6 +1369,13 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         }
     }
 
+    private fun createTrackSelector() = DefaultTrackSelector(this).apply {
+        setParameters(
+            buildUponParameters()
+                .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+        )
+    }
+
     private fun createRendersFactory() = object : DefaultRenderersFactory(this) {
         override fun buildAudioSink(
             context: Context,
@@ -1372,6 +1410,8 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                     if (isAtLeastAndroid10) setOffloadMode(AudioSink.OFFLOAD_MODE_DISABLED)
                 }
         }
+    }.apply {
+        setEnableDecoderFallback(true)
     }
 
     private fun createMediaSourceFactory() = DefaultMediaSourceFactory(

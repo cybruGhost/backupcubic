@@ -13,16 +13,12 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -32,8 +28,11 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -44,6 +43,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
 import androidx.compose.ui.util.fastMap
+import androidx.compose.ui.zIndex
 import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.cleanPrefix
@@ -59,6 +59,7 @@ import app.kreate.android.me.knighthat.component.ImportFromFile
 import app.kreate.android.me.knighthat.utils.DurationUtils
 import app.kreate.android.me.knighthat.utils.csv.CSVLocaleManager
 import app.kreate.android.me.knighthat.utils.csv.SongCSV
+import androidx.documentfile.provider.DocumentFile
 import com.github.doyaaaaaken.kotlincsv.dsl.csvReader
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.models.bodies.SearchBody
@@ -115,7 +116,7 @@ private object CsvImportConversionTracker {
     suspend fun start(fileName: String, total: Int, detectedLanguage: String) = mutex.withLock {
         _state.value = CsvImportConversionState(
             isVisible = true,
-            isMinimized = true,
+            isMinimized = false,
             isRunning = true,
             fileName = fileName,
             detectedLanguage = detectedLanguage,
@@ -186,6 +187,10 @@ private object CsvImportConversionTracker {
         _state.value = CsvImportConversionState()
     }
 
+    fun closePanel() {
+        _state.value = _state.value.copy(isMinimized = true, isVisible = true)
+    }
+
     private fun List<CsvImportConversionEntry>.upsert(entry: CsvImportConversionEntry): List<CsvImportConversionEntry> {
         val mutable = toMutableList()
         val existingIndex = mutable.indexOfFirst { it.index == entry.index }
@@ -217,42 +222,63 @@ class ImportSongsFromCSV(
 ) : ImportFromFile(launcher), MenuIcon, Descriptive {
 
     companion object {
-        private suspend fun searchOmadaVideoMatch(query: String): CsvYoutubeMatch? = runCatching {
-            val encoded = URLEncoder.encode(query, "UTF-8")
-            val connection = (URL("https://yt.omada.cafe/api/v1/search?q=$encoded&type=video").openConnection() as HttpURLConnection).apply {
-                requestMethod = "GET"
-                connectTimeout = 5_000
-                readTimeout = 5_000
+        private fun sanitizeCsvFileName(fileName: String): String =
+            fileName.substringAfterLast('/')
+                .substringAfterLast(':')
+                .removeSuffix(".csv")
+                .replace('_', ' ')
+                .trim()
+                .ifBlank { "Imported playlist" }
+
+        private fun hasInternetConnection(): Boolean = try {
+            val connection = URL("https://www.google.com").openConnection() as HttpURLConnection
+            connection.connectTimeout = 5_000
+            connection.readTimeout = 5_000
+            connection.requestMethod = "HEAD"
+            connection.connect()
+            connection.responseCode == HttpURLConnection.HTTP_OK
+        } catch (_: Exception) {
+            false
+        }
+
+        private suspend fun fetchYoutubeVideoId(query: String, maxRetries: Int = 3): String? {
+            if (!hasInternetConnection()) {
+                throw IllegalStateException("No internet connection")
             }
 
-            if (connection.responseCode != HttpURLConnection.HTTP_OK) {
-                return@runCatching null
+            var lastException: Exception? = null
+            repeat(maxRetries) { attempt ->
+                try {
+                    val encoded = URLEncoder.encode(query, "UTF-8")
+                    val connection = (URL("https://yt.omada.cafe/api/v1/search?q=$encoded&type=video").openConnection() as HttpURLConnection).apply {
+                        requestMethod = "GET"
+                        connectTimeout = 15_000
+                        readTimeout = 15_000
+                    }
+
+                    if (connection.responseCode != HttpURLConnection.HTTP_OK) {
+                        throw IllegalStateException("HTTP ${connection.responseCode}")
+                    }
+
+                    val responseText = connection.inputStream.bufferedReader().use { it.readText() }
+                    val results = org.json.JSONArray(responseText)
+                    if (results.length() == 0) {
+                        throw IllegalStateException("No video found for: $query")
+                    }
+
+                    return results.getJSONObject(0).optString("videoId").takeIf { it.isNotBlank() }
+                } catch (error: Exception) {
+                    lastException = error
+                    if (attempt < maxRetries - 1) {
+                        kotlinx.coroutines.delay(2_000L * (attempt + 1))
+                    }
+                }
             }
 
-            val responseText = connection.inputStream.bufferedReader().use { it.readText() }
-            val results = org.json.JSONArray(responseText)
-            val item = (0 until results.length())
-                .mapNotNull { index -> results.optJSONObject(index) }
-                .firstOrNull { it.optString("videoId").isNotBlank() }
-                ?: return@runCatching null
+            throw lastException ?: IllegalStateException("Failed to convert: $query")
+        }
 
-            val videoId = item.optString("videoId").trim()
-            if (videoId.isBlank()) return@runCatching null
-
-            CsvYoutubeMatch(
-                song = Song(
-                    id = videoId,
-                    title = cleanPrefix(item.optString("title").ifBlank { query }),
-                    artistsText = item.optString("author").takeIf { it.isNotBlank() },
-                    thumbnailUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                    durationText = item.optString("length").takeIf { it.isNotBlank() },
-                    totalPlayTimeMs = 1L
-                ),
-                source = CsvYoutubeMatchSource.Omada
-            )
-        }.getOrNull()
-
-        private suspend fun searchInnertubeVideoMatch(query: String, maxRetries: Int = 3): CsvYoutubeMatch {
+        private suspend fun searchInnertubeMatch(query: String, maxRetries: Int = 2): CsvYoutubeMatch? {
             var lastError: Exception? = null
 
             repeat(maxRetries) { attempt ->
@@ -288,18 +314,18 @@ class ImportSongsFromCSV(
                             source = CsvYoutubeMatchSource.Video
                         )
                     }
-
-                    searchOmadaVideoMatch(query)?.let { return it }
-                    throw IllegalStateException("No conversion match found")
                 } catch (error: Exception) {
                     lastError = error
                     if (attempt < maxRetries - 1) {
-                        kotlinx.coroutines.delay(750L * (attempt + 1))
+                        kotlinx.coroutines.delay(1_000L * (attempt + 1))
                     }
                 }
             }
 
-            throw lastError ?: IllegalStateException("Innertube search failed")
+            if (lastError != null) {
+                throw lastError
+            }
+            return null
         }
 
         private suspend fun parseFromCsvFile(inputStream: InputStream, fileName: String): CsvParseResult {
@@ -348,7 +374,7 @@ class ImportSongsFromCSV(
             val playlistName = if (csvPlaylistName.isNotBlank()) {
                 csvPlaylistName
             } else {
-                fileName.replace(".csv", "").replace("_", " ").trim()
+                sanitizeCsvFileName(fileName)
             }
 
             CsvImportConversionTracker.setPlaylistName(playlistName)
@@ -401,33 +427,59 @@ class ImportSongsFromCSV(
                         )
 
                         try {
-                            val match = searchInnertubeVideoMatch(query)
+                            val omadaVideoId = runCatching { fetchYoutubeVideoId(query) }.getOrNull()
                             val rawDurationMs = row["Track Duration (ms)"]?.toLongOrNull() ?: 0L
                             val convertedDuration = if (rawDurationMs > 0) formatAsDuration(rawDurationMs) else "0"
 
-                            converted += SongCSV(
-                                songId = match.song.id,
-                                playlistBrowseId = "",
-                                playlistName = playlistName,
-                                title = explicitPrefix + title,
-                                artists = cleanArtists,
-                                duration = convertedDuration,
-                                thumbnailUrl = match.song.thumbnailUrl ?: row["Album Image URL"].orEmpty()
-                            )
-                            successCount++
+                            when {
+                                !omadaVideoId.isNullOrBlank() -> {
+                                    converted += SongCSV(
+                                        songId = omadaVideoId,
+                                        playlistBrowseId = "",
+                                        playlistName = playlistName,
+                                        title = explicitPrefix + title,
+                                        artists = cleanArtists,
+                                        duration = convertedDuration,
+                                        thumbnailUrl = "https://yt.omada.cafe/vi/$omadaVideoId/hqdefault.jpg"
+                                    )
+                                    successCount++
+                                    CsvImportConversionTracker.markFinished(
+                                        index = index,
+                                        title = title,
+                                        artists = cleanArtists,
+                                        status = CsvImportEntryStatus.Success,
+                                        message = appContext().getString(R.string.csv_import_status_success_omada)
+                                    )
+                                }
 
-                            val messageRes = when (match.source) {
-                                CsvYoutubeMatchSource.Song -> R.string.csv_import_status_success_song
-                                CsvYoutubeMatchSource.Video -> R.string.csv_import_status_success_video
-                                CsvYoutubeMatchSource.Omada -> R.string.csv_import_status_success_omada
+                                else -> {
+                                    val innertubeMatch = searchInnertubeMatch(query)
+                                        ?: throw IllegalStateException("No conversion match found")
+
+                                    converted += SongCSV(
+                                        songId = innertubeMatch.song.id,
+                                        playlistBrowseId = "",
+                                        playlistName = playlistName,
+                                        title = explicitPrefix + title,
+                                        artists = cleanArtists,
+                                        duration = convertedDuration,
+                                        thumbnailUrl = innertubeMatch.song.thumbnailUrl.orEmpty()
+                                    )
+                                    successCount++
+                                    val messageRes = when (innertubeMatch.source) {
+                                        CsvYoutubeMatchSource.Song -> R.string.csv_import_status_success_song
+                                        CsvYoutubeMatchSource.Video -> R.string.csv_import_status_success_video
+                                        CsvYoutubeMatchSource.Omada -> R.string.csv_import_status_success_omada
+                                    }
+                                    CsvImportConversionTracker.markFinished(
+                                        index = index,
+                                        title = title,
+                                        artists = cleanArtists,
+                                        status = CsvImportEntryStatus.Success,
+                                        message = appContext().getString(messageRes)
+                                    )
+                                }
                             }
-                            CsvImportConversionTracker.markFinished(
-                                index = index,
-                                title = title,
-                                artists = cleanArtists,
-                                status = CsvImportEntryStatus.Success,
-                                message = appContext().getString(messageRes)
-                            )
                         } catch (_: Exception) {
                             val encodedSearch = URLEncoder.encode(query, "UTF-8")
                             val fallbackSongId = "search:$encodedSearch"
@@ -452,6 +504,8 @@ class ImportSongsFromCSV(
                                 message = appContext().getString(R.string.csv_import_status_fallback_search)
                             )
                         }
+
+                        kotlinx.coroutines.delay(1_000L)
                     } else if (isYourFormat || isCustomFormat) {
                         var browseId = row["PlaylistBrowseId"].orEmpty()
                         if (browseId.toLongOrNull() != null) browseId = ""
@@ -549,21 +603,32 @@ class ImportSongsFromCSV(
         @Composable
         operator fun invoke(): ImportSongsFromCSV {
             val scope = rememberCoroutineScope()
-            val conversionState by CsvImportConversionTracker.state.collectAsState()
-
-            CsvImportConversionOverlay(conversionState)
 
             val launcher = rememberLauncherForActivityResult(
                 ActivityResultContracts.OpenDocument()
             ) { uri ->
                 uri ?: return@rememberLauncherForActivityResult
 
+                val fileName = DocumentFile.fromSingleUri(appContext(), uri)?.name
+                    ?: uri.lastPathSegment
+                    ?: "imported_playlist.csv"
+
+                scope.launch {
+                    CsvImportConversionTracker.start(
+                        fileName = fileName,
+                        total = 1,
+                        detectedLanguage = ""
+                    )
+                    CsvImportConversionTracker.setBannerMessage(
+                        appContext().getString(R.string.csv_import_conversion_running)
+                    )
+                }
+
                 scope.launch(Dispatchers.IO) {
                     val straySongs = mutableListOf<Song>()
                     val combos = mutableMapOf<Playlist, List<Song>>()
 
                     try {
-                        val fileName = uri.lastPathSegment ?: "imported_playlist"
                         val parseResult = appContext().contentResolver
                             .openInputStream(uri)
                             ?.use { stream -> parseFromCsvFile(stream, fileName) }
@@ -604,7 +669,7 @@ class ImportSongsFromCSV(
 
                         val allSongs = straySongs + combos.values.flatten()
                         val playableSongs = allSongs.count { it.id.isNotBlank() && !it.id.startsWith("search:") }
-                        val playlistName = combos.keys.firstOrNull()?.name ?: fileName.replace(".csv", "")
+                        val playlistName = combos.keys.firstOrNull()?.name ?: sanitizeCsvFileName(fileName)
 
                         CsvImportConversionTracker.setBannerMessage(
                             appContext().getString(
@@ -614,6 +679,7 @@ class ImportSongsFromCSV(
                                 allSongs.size
                             )
                         )
+                        CsvImportConversionTracker.finish()
                     } catch (error: Exception) {
                         when (error) {
                             is InvalidHeaderException -> CsvImportConversionTracker.setBannerMessage(
@@ -644,6 +710,12 @@ class ImportSongsFromCSV(
 }
 
 @Composable
+fun CsvImportConversionHost() {
+    val conversionState by CsvImportConversionTracker.state.collectAsState()
+    CsvImportConversionOverlay(conversionState)
+}
+
+@Composable
 private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
     if (!state.isVisible) return
 
@@ -654,7 +726,8 @@ private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
         ) {
             Card(
                 modifier = Modifier
-                    .padding(16.dp)
+                    .padding(end = 16.dp, bottom = 96.dp)
+                    .zIndex(20f)
                     .clickable { CsvImportConversionTracker.expand() },
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
@@ -684,6 +757,11 @@ private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
                             style = MaterialTheme.typography.bodySmall
                         )
                     }
+                    if (!state.isRunning) {
+                        TextButton(onClick = { CsvImportConversionTracker.dismiss() }) {
+                            Text(stringResource(R.string.close))
+                        }
+                    }
                 }
             }
         }
@@ -693,7 +771,8 @@ private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(20.dp),
+            .padding(20.dp)
+            .zIndex(20f),
         contentAlignment = Alignment.BottomEnd
     ) {
         Surface(
@@ -702,7 +781,7 @@ private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
             color = MaterialTheme.colorScheme.surfaceContainerHigh,
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 32.dp)
+                .padding(start = 32.dp, bottom = 96.dp)
         ) {
             Column(
                 modifier = Modifier.padding(20.dp),
@@ -779,26 +858,14 @@ private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
                     )
                 }
 
-                HorizontalDivider()
-
-                if (state.entries.isEmpty()) {
-                    Text(
-                        text = stringResource(R.string.csv_import_no_entries_yet),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    LazyColumn(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(280.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(state.entries, key = { it.index }) { entry ->
-                            CsvImportConversionEntryRow(entry)
-                        }
-                    }
-                }
+                val latestEntry = state.entries.lastOrNull()
+                Text(
+                    text = latestEntry?.message ?: stringResource(R.string.csv_import_no_entries_yet),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
@@ -809,7 +876,7 @@ private fun CsvImportConversionOverlay(state: CsvImportConversionState) {
                     }
                     Spacer(modifier = Modifier.width(8.dp))
                     if (!state.isRunning) {
-                        TextButton(onClick = { CsvImportConversionTracker.dismiss() }) {
+                        TextButton(onClick = { CsvImportConversionTracker.closePanel() }) {
                             Text(stringResource(R.string.close))
                         }
                     }
@@ -834,70 +901,5 @@ private fun CsvImportSummaryChip(
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold
         )
-    }
-}
-
-@Composable
-private fun CsvImportConversionEntryRow(entry: CsvImportConversionEntry) {
-    val statusLabel = when (entry.status) {
-        CsvImportEntryStatus.Converting -> stringResource(R.string.csv_import_status_converting)
-        CsvImportEntryStatus.Success -> stringResource(R.string.csv_import_status_success)
-        CsvImportEntryStatus.Fallback -> stringResource(R.string.csv_import_status_fallback)
-        CsvImportEntryStatus.Failed -> stringResource(R.string.csv_import_status_failed)
-    }
-
-    val containerColor = when (entry.status) {
-        CsvImportEntryStatus.Converting -> MaterialTheme.colorScheme.surfaceVariant
-        CsvImportEntryStatus.Success -> MaterialTheme.colorScheme.primaryContainer
-        CsvImportEntryStatus.Fallback -> MaterialTheme.colorScheme.secondaryContainer
-        CsvImportEntryStatus.Failed -> MaterialTheme.colorScheme.errorContainer
-    }
-
-    Card(
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = containerColor)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = "${entry.index + 1}. ${entry.title.ifBlank { "-" }}",
-                    style = MaterialTheme.typography.bodyMedium,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.weight(1f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Text(
-                    text = statusLabel,
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold
-                )
-            }
-
-            if (entry.artists.isNotBlank()) {
-                Text(
-                    text = entry.artists,
-                    style = MaterialTheme.typography.bodySmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-            }
-
-            Text(
-                text = entry.message,
-                style = MaterialTheme.typography.bodySmall
-            )
-        }
     }
 }

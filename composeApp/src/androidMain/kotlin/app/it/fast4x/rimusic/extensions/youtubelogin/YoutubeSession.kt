@@ -5,6 +5,8 @@ data class YoutubeSession(
     val cookie: String = "",
     val visitorData: String = "",
     val dataSyncId: String = "",
+    val authUser: String = "",
+    val pageId: String = "",
     val accountName: String = "",
     val accountEmail: String = "",
     val accountChannelHandle: String = "",
@@ -41,6 +43,8 @@ data class YtmApiSession(
     val cookie: String = "",
     val visitorData: String = "",
     val dataSyncId: String = "",
+    val authUser: String = "",
+    val pageId: String = "",
     val accountName: String = "",
     val accountEmail: String = "",
     val accountChannelHandle: String = "",
@@ -56,4 +60,38 @@ data class YtmLinkedAccount(
     val isSelected: Boolean = false,
     val authUser: String = "",
     val pageId: String = ""
+)
+
+data class YtmPlaylist(
+    val playlistId: String = "",
+    val title: String = "",
+    val thumbnail: String = "",
+    val songCount: String = "",
+    val subtitle: String = ""
+)
+
+data class YtmSong(
+    val videoId: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val album: String = "",
+    val thumbnail: String = "",
+    val duration: String = ""
+)
+
+data class YtmArtist(
+    val browseId: String = "",
+    val name: String = "",
+    val thumbnail: String = "",
+    val subscribers: String = ""
+)
+
+data class YtmAlbum(
+    val browseId: String = "",
+    val playlistId: String = "",
+    val title: String = "",
+    val artist: String = "",
+    val thumbnail: String = "",
+    val year: String = "",
+    val type: String = ""
 )
