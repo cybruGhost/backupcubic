@@ -3,6 +3,7 @@ package app.kreate.android.me.knighthat.utils.csv
 import android.content.Context
 import androidx.compose.runtime.Composable
 import app.it.fast4x.rimusic.appContext
+import org.json.JSONObject
 
 object CSVLocaleManager {
 
@@ -84,8 +85,29 @@ object CSVLocaleManager {
     )
 
     private var initialized = false
+    private var localeMappings: Map<String, Map<String, String>> = emptyMap()
 
     fun initialize(context: Context = appContext()) {
+        if (initialized) return
+
+        val locales = listOf("de", "en", "es", "fr", "it", "nl", "pt", "sv", "ar", "ja", "tr")
+        val mappings = mutableMapOf<String, Map<String, String>>()
+
+        locales.forEach { locale ->
+            runCatching {
+                context.assets.open("csv_locales/$locale.json").use { inputStream ->
+                    val jsonString = inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(jsonString)
+                    val headers = mutableMapOf<String, String>()
+                    json.keys().forEach { key ->
+                        headers[key] = json.getString(key)
+                    }
+                    mappings[locale] = headers
+                }
+            }
+        }
+
+        localeMappings = mappings
         initialized = true
     }
 
@@ -93,11 +115,32 @@ object CSVLocaleManager {
         if (!initialized) initialize()
 
         val normalized = row.toMutableMap()
+
+        if (localeMappings.isNotEmpty()) {
+            val detectedLocale = detectLocale(row.keys)
+            val assetMapping = detectedLocale?.let(localeMappings::get)
+            if (assetMapping != null) {
+                assetMapping.forEach { (englishHeader, localizedHeader) ->
+                    row.keys.find { rowHeader ->
+                        val normalizedRowHeader = normalizeHeader(rowHeader)
+                        val normalizedLocalizedHeader = normalizeHeader(localizedHeader)
+                        normalizedRowHeader == normalizedLocalizedHeader ||
+                            normalizedRowHeader.contains(normalizedLocalizedHeader)
+                    }?.let { match ->
+                        normalized[englishHeader] = row[match].orEmpty()
+                    }
+                }
+            }
+        }
+
         val lookup = row.entries.associateBy { normalizeHeader(it.key) }
 
         canonicalHeaders.forEach { (canonical, aliases) ->
             val matchedEntry = lookup[normalizeHeader(canonical)]
                 ?: aliases.firstNotNullOfOrNull { alias -> lookup[normalizeHeader(alias)] }
+                ?: lookup.entries.firstOrNull { (normalizedHeader, _) ->
+                    headerLooksLikeCanonical(normalizedHeader, canonical)
+                }?.value
 
             if (matchedEntry != null) {
                 normalized[canonical] = matchedEntry.value
@@ -109,6 +152,20 @@ object CSVLocaleManager {
 
     fun detectLocale(headers: Set<String>): String? {
         if (!initialized) initialize()
+
+        if (localeMappings.isNotEmpty()) {
+            localeMappings.forEach { (locale, mapping) ->
+                val matched = mapping.values.any { localizedHeader ->
+                    val normalizedLocalizedHeader = normalizeHeader(localizedHeader)
+                    headers.any { header ->
+                        val normalizedHeader = normalizeHeader(header)
+                        normalizedHeader == normalizedLocalizedHeader ||
+                            normalizedHeader.contains(normalizedLocalizedHeader)
+                    }
+                }
+                if (matched) return locale
+            }
+        }
 
         val normalizedHeaders = headers.map(::normalizeHeader)
         val bestMatch = localeHints.entries.maxByOrNull { (_, hints) ->
@@ -162,4 +219,36 @@ object CSVLocaleManager {
             .replace(Regex("[^\\p{L}\\p{Nd}]+"), " ")
             .trim()
             .replace(Regex("\\s+"), " ")
+
+    private fun headerLooksLikeCanonical(normalizedHeader: String, canonical: String): Boolean =
+        when (canonical) {
+            "PlaylistBrowseId" -> normalizedHeader.contains("playlist") && normalizedHeader.contains("id")
+            "PlaylistName" -> normalizedHeader.contains("playlist") &&
+                (normalizedHeader.contains("name") ||
+                    normalizedHeader.contains("title") ||
+                    normalizedHeader.contains("list"))
+            "MediaId" -> (normalizedHeader.contains("video") || normalizedHeader.contains("media") || normalizedHeader.contains("track")) &&
+                normalizedHeader.contains("id")
+            "Title", "Track Name" -> normalizedHeader.contains("title") ||
+                (normalizedHeader.contains("track") && normalizedHeader.contains("name")) ||
+                (normalizedHeader.contains("song") && normalizedHeader.contains("name"))
+            "Artists", "Artist Name(s)" -> normalizedHeader.contains("artist") ||
+                normalizedHeader.contains("artists") ||
+                normalizedHeader.contains("author")
+            "Duration" -> normalizedHeader.contains("duration") ||
+                normalizedHeader.contains("length") ||
+                normalizedHeader.contains("runtime") ||
+                normalizedHeader.contains("time")
+            "ThumbnailUrl" -> normalizedHeader.contains("thumbnail") ||
+                normalizedHeader.contains("cover") ||
+                normalizedHeader.contains("image") ||
+                normalizedHeader.contains("artwork")
+            "AlbumId" -> normalizedHeader.contains("album") && normalizedHeader.contains("id")
+            "AlbumTitle" -> normalizedHeader.contains("album") &&
+                (normalizedHeader.contains("title") || normalizedHeader.contains("name"))
+            "ArtistIds" -> normalizedHeader.contains("artist") && normalizedHeader.contains("id")
+            "Track URI" -> normalizedHeader.contains("track") && normalizedHeader.contains("uri")
+            "Explicit" -> normalizedHeader.contains("explicit")
+            else -> false
+        }
 }

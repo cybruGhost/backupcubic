@@ -45,6 +45,8 @@ object YouTubeSessionStore {
                             cookie = item.optString("cookie"),
                             visitorData = item.optString("visitorData"),
                             dataSyncId = item.optString("dataSyncId"),
+                            authUser = item.optString("authUser"),
+                            pageId = item.optString("pageId"),
                             accountName = item.optString("accountName"),
                             accountEmail = item.optString("accountEmail"),
                             accountChannelHandle = item.optString("accountChannelHandle"),
@@ -236,6 +238,8 @@ object YouTubeSessionStore {
                         put("cookie", session.cookie)
                         put("visitorData", session.visitorData)
                         put("dataSyncId", session.dataSyncId)
+                        put("authUser", session.authUser)
+                        put("pageId", session.pageId)
                         put("accountName", session.accountName)
                         put("accountEmail", session.accountEmail)
                         put("accountChannelHandle", session.accountChannelHandle)

@@ -88,7 +88,6 @@ import app.it.fast4x.rimusic.ui.components.themed.MenuEntry
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.utils.discordPersonalAccessTokenKey
 import app.it.fast4x.rimusic.utils.enableYouTubeLoginKey
-import app.it.fast4x.rimusic.utils.enableYouTubeSyncKey
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid7
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid81
 import app.it.fast4x.rimusic.utils.isDiscordPresenceEnabledKey
@@ -104,6 +103,7 @@ import app.it.fast4x.rimusic.utils.rememberEncryptedPreference
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.restartActivityKey
 import app.it.fast4x.rimusic.utils.thumbnailRoundnessKey
+import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
 import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
 import app.it.fast4x.rimusic.utils.ytAccountEmailKey
 import app.it.fast4x.rimusic.utils.ytAccountNameKey
@@ -111,10 +111,12 @@ import app.it.fast4x.rimusic.utils.ytAccountThumbnailKey
 import app.it.fast4x.rimusic.utils.ytCookieKey
 import app.it.fast4x.rimusic.utils.ytDataSyncIdKey
 import app.it.fast4x.rimusic.utils.ytVisitorDataKey
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import app.kreate.android.R
 import androidx.compose.material3.Card
 import androidx.compose.ui.graphics.Color
+import androidx.core.content.edit
 
 import androidx.compose.material3.ElevatedButton
 import androidx.compose.material3.IconButton
@@ -196,7 +198,6 @@ AnimatedVisibility(
         )
 
             var isYouTubeLoginEnabled by rememberPreference(enableYouTubeLoginKey, false)
-            var isYouTubeSyncEnabled by rememberPreference(enableYouTubeSyncKey, false)
             var loginYouTube by remember { mutableStateOf(false) }
             var cookie by rememberPreference(key = ytCookieKey, defaultValue = "")
             var visitorData by rememberPreference(key = ytVisitorDataKey, defaultValue = "")
@@ -237,6 +238,14 @@ AnimatedVisibility(
                 savedSessions = YouTubeSessionStore.getSessions(context)
             }
 
+            fun clearAccountScopedUiCaches() {
+                appContext().preferences.edit()
+                    .putString("quickPicsHomePageSessionId", "")
+                    .putString("quickPicsHomePageChipTitle", "")
+                    .putString("quickPicsHomePageChipParams", "")
+                    .apply()
+            }
+
             suspend fun refreshSessionFromApi(showToast: Boolean = false): Boolean {
                 if (!YouTubeSessionStore.hasAuthCookies(cookie)) {
                     linkedAccounts = emptyList()
@@ -247,6 +256,7 @@ AnimatedVisibility(
                 return try {
                     val accountInfo = YtmSessionApi.fetchAccountInfo(cookie).getOrThrow()
                     val accounts = YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList())
+                    val selectedAccount = accounts.firstOrNull { it.isSelected }
 
                     applySession(
                         YouTubeSessionStore.saveSession(
@@ -255,6 +265,8 @@ AnimatedVisibility(
                                 cookie = cookie,
                                 visitorData = visitorData,
                                 dataSyncId = dataSyncId,
+                                authUser = selectedAccount?.authUser.orEmpty(),
+                                pageId = selectedAccount?.pageId.orEmpty(),
                                 accountName = accountInfo.accountName,
                                 accountEmail = accountInfo.accountEmail,
                                 accountChannelHandle = accountInfo.accountChannelHandle,
@@ -283,7 +295,6 @@ AnimatedVisibility(
             suspend fun switchLinkedAccount(linkedAccount: YtmLinkedAccount) {
                 if (!YouTubeSessionStore.hasAuthCookies(cookie)) {
                     Toaster.i("Connect YouTube Music first")
-                    loginYouTube = true
                     return
                 }
 
@@ -301,6 +312,8 @@ AnimatedVisibility(
                             cookie = switched.cookie.ifBlank { cookie },
                             visitorData = switched.visitorData.ifBlank { visitorData },
                             dataSyncId = switched.dataSyncId.ifBlank { dataSyncId },
+                            authUser = switched.authUser.ifBlank { linkedAccount.authUser },
+                            pageId = switched.pageId.ifBlank { linkedAccount.pageId },
                             accountName = switched.accountName.ifBlank { linkedAccount.accountName },
                             accountEmail = switched.accountEmail.ifBlank { linkedAccount.accountEmail },
                             accountChannelHandle = switched.accountChannelHandle.ifBlank { linkedAccount.channelHandle },
@@ -311,13 +324,16 @@ AnimatedVisibility(
                     )
 
                     applySession(nextSession)
+                    clearAccountScopedUiCaches()
                     linkedAccounts = YtmSessionApi.listAccounts(nextSession.cookie).getOrDefault(emptyList())
                     Toaster.i("${linkedAccount.accountName.ifBlank { "YouTube account" }} is now active")
+                    scope.launch(Dispatchers.IO) {
+                        syncSelectedYtmAccountData()
+                    }
                     restartService = true
                 }.onFailure {
-                    Timber.w(it, "AccountsSettings: switch_account is not available yet")
-                    loginYouTube = true
-                    Toaster.i("Switch account API is not live yet. Opened YouTube Music login instead.")
+                    Timber.w(it, "AccountsSettings: switch_account failed")
+                    Toaster.e(it.message ?: "Failed to switch YouTube Music account")
                 }
                 isRefreshingAccountInfo = false
             }
@@ -715,16 +731,6 @@ AnimatedVisibility(
                                     }
                                 }
                             }
-
-                            OtherSwitchSettingEntry(
-                                title = "Sync data with YTM account",
-                                text = "Playlists, albums, artists, history, like, etc.",
-                                isChecked = isYouTubeSyncEnabled,
-                                onCheckedChange = {
-                                    isYouTubeSyncEnabled = it
-                                },
-                                icon = R.drawable.sync
-                            )
                         }
                     }
                 }
@@ -1181,8 +1187,7 @@ fun isYouTubeLoginEnabled(): Boolean {
 }
 
 fun isYouTubeSyncEnabled(): Boolean {
-    val isYouTubeSyncEnabled = appContext().preferences.getBoolean(enableYouTubeSyncKey, false)
-    return isYouTubeSyncEnabled && isYouTubeLoggedIn() && isYouTubeLoginEnabled()
+    return isYouTubeLoggedIn() && isYouTubeLoginEnabled()
 }
 
 fun isYouTubeLoggedIn(): Boolean {

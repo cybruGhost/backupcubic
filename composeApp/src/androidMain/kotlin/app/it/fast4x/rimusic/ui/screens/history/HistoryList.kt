@@ -58,6 +58,7 @@ import app.it.fast4x.rimusic.ui.components.themed.HeaderWithIcon
 import app.it.fast4x.rimusic.ui.components.themed.Loader
 import app.it.fast4x.rimusic.ui.components.themed.NonQueuedMediaItemMenuLibrary
 import app.it.fast4x.rimusic.ui.components.themed.Title
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.favoritesIcon
@@ -136,6 +137,7 @@ fun HistoryList(
     var isLocalLoading by remember { mutableStateOf(true) }
     var isYTMLoading by remember { mutableStateOf(false) }
     var ytmHistoryLoadError by remember { mutableStateOf<String?>(null) }
+    var ytmHistorySongs by remember { mutableStateOf<List<androidx.media3.common.MediaItem>>(emptyList()) }
 
     LaunchedEffect(events) {
         if (events.isNotEmpty()) {
@@ -154,15 +156,46 @@ fun HistoryList(
             isYTMLoading = true
             ytmHistoryLoadError = null
             YouTubeSessionStore.applyCurrentSession()
-            historyPage = runCatching {
-                withTimeout(20_000L) {
-                    YouTubeRequestThrottler.run {
-                        YtMusic.getHistory()
-                    }.getOrThrow()
+            val currentSession = YouTubeSessionStore.getCurrentSession(context)
+
+            val sessionHistory = currentSession?.cookie
+                ?.takeIf { it.isNotBlank() }
+                ?.let { cookie ->
+                    runCatching {
+                        withTimeout(20_000L) {
+                            YtmSessionApi.fetchHistory(cookie).getOrThrow()
+                        }
+                    }.getOrNull()
                 }
-            }.onFailure {
-                Timber.e(it, "HistoryList failed to fetch YTM history")
-                ytmHistoryLoadError = it.message
+
+            if (!sessionHistory.isNullOrEmpty()) {
+                ytmHistorySongs = sessionHistory
+                    .filter { it.videoId.isNotBlank() && it.title.isNotBlank() }
+                    .map { remoteSong ->
+                        app.it.fast4x.rimusic.models.Song(
+                            id = remoteSong.videoId,
+                            title = remoteSong.title,
+                            artistsText = remoteSong.artist,
+                            thumbnailUrl = remoteSong.thumbnail,
+                            durationText = remoteSong.duration
+                        ).asMediaItem
+                    }
+                    .filter { it.mediaId.isNotBlank() }
+                    .distinctBy { it.mediaId }
+            } else {
+                historyPage = runCatching {
+                    withTimeout(20_000L) {
+                        YouTubeRequestThrottler.run {
+                            YtMusic.getHistory()
+                        }.getOrThrow()
+                    }
+                }.onFailure {
+                    Timber.e(it, "HistoryList failed to fetch YTM history")
+                    ytmHistoryLoadError = it.message
+                }
+                if (historyPage?.isFailure == true) {
+                    ytmHistorySongs = emptyList()
+                }
             }
             isYTMLoading = false
         }
@@ -221,7 +254,7 @@ fun HistoryList(
 
         val isLoading = when (historyType) {
             HistoryType.History -> isLocalLoading && events.isEmpty()
-            HistoryType.YTMHistory -> isYTMLoading || (historyPage == null && isYouTubeLoggedIn())
+            HistoryType.YTMHistory -> isYTMLoading || (historyPage == null && ytmHistorySongs.isEmpty() && isYouTubeLoggedIn())
         }
 
         if (isLoading) {
@@ -284,7 +317,50 @@ fun HistoryList(
                 }
 
                 if (historyType == HistoryType.YTMHistory) {
-                    historyPage?.getOrNull()?.sections?.forEach { section ->
+                    if (ytmHistorySongs.isNotEmpty()) {
+                        stickyHeader {
+                            Title(
+                                title = stringResource(R.string.history),
+                                modifier = Modifier.background(
+                                    color = colorPalette().background3,
+                                    shape = thumbnailShape()
+                                )
+                            )
+                        }
+
+                        items(
+                            items = ytmHistorySongs.filter { mediaItem ->
+                                (mediaItem.mediaMetadata.title ?: "").contains(search.inputValue, ignoreCase = true) ||
+                                    (mediaItem.mediaMetadata.artist ?: "").contains(search.inputValue, ignoreCase = true)
+                            },
+                            key = { it.mediaId }
+                        ) { mediaItem ->
+                            SwipeablePlaylistItem(
+                                mediaItem = mediaItem,
+                                onPlayNext = { binder?.player?.addNext(mediaItem) },
+                                onEnqueue = { binder?.player?.enqueue(mediaItem) }
+                            ) {
+                                app.kreate.android.me.knighthat.component.SongItem(
+                                    song = mediaItem.asSong,
+                                    navController = navController,
+                                    modifier = Modifier,
+                                    onClick = { binder?.player?.forcePlay(mediaItem) },
+                                    onLongClick = {
+                                        menuState.display {
+                                            NonQueuedMediaItemMenuLibrary(
+                                                navController = navController,
+                                                mediaItem = mediaItem,
+                                                onDismiss = menuState::hide,
+                                                disableScrollingText = disableScrollingText
+                                            )
+                                        }
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (ytmHistorySongs.isEmpty()) historyPage?.getOrNull()?.sections?.forEach { section ->
                         val historyItems = section.songs
                             .map { it.asMediaItem }
                             .filter { it.mediaId.isNotBlank() }

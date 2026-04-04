@@ -46,6 +46,19 @@ class ApkInstallWorker {
 
         private fun displayPath(file: File): String = file.absolutePath
 
+        fun getDownloadFolderPath(): String = displayPath(getDownloadsDir())
+
+        fun hasDownloadedArtifacts(): Boolean =
+            getDownloadsDir()
+                .takeIf(File::exists)
+                ?.listFiles()
+                ?.any { file ->
+                    file.isFile && (
+                        file.name.endsWith(".apk", ignoreCase = true) ||
+                            file.name.endsWith(".apk.bak", ignoreCase = true)
+                        )
+                } == true
+
         private fun isValidApkFile(file: File?): Boolean =
             file?.exists() == true && file.length() >= MIN_VALID_APK_SIZE_BYTES
 
@@ -57,11 +70,12 @@ class ApkInstallWorker {
                 if (!file.isFile) return@forEach
                 val isTarget = file.name == fileName
                 val isStaleApk = file.name.endsWith(".apk", ignoreCase = true) && !isTarget
+                val isBackupApk = file.name.endsWith(".apk.bak", ignoreCase = true)
                 val isPartial = file.name.endsWith(".part", ignoreCase = true)
                     || file.name.endsWith(".partial", ignoreCase = true)
                     || file.name.endsWith(".tmp", ignoreCase = true)
                 val isBrokenTarget = isTarget && file.length() < MIN_VALID_APK_SIZE_BYTES
-                if (isStaleApk || isPartial || isBrokenTarget) {
+                if (isStaleApk || isBackupApk || isPartial || isBrokenTarget) {
                     file.delete()
                 }
             }
@@ -95,9 +109,9 @@ fun deleteDownloadedApk(fileName: String): Boolean {
         if (!downloadsDir.exists()) return false
 
         val apkFile = getTargetFile(fileName)
-
-        // Check if file exists before trying to delete
-        val deleted = if (apkFile.exists()) apkFile.delete() else false
+        val backupFile = File(downloadsDir, "$fileName.bak")
+        val deletedMain = if (apkFile.exists()) apkFile.delete() else false
+        val deletedBackup = if (backupFile.exists()) backupFile.delete() else false
 
         cleanupStaleApkFiles(fileName)
 
@@ -112,7 +126,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
             currentTargetFile = null
         }
 
-        deleted
+        deletedMain || deletedBackup || !hasDownloadedArtifacts()
     } catch (e: Exception) {
         e.printStackTrace()
         false
@@ -517,6 +531,16 @@ fun deleteDownloadedApk(fileName: String): Boolean {
         }
         
         private fun showInstallationCompleteNotification(context: Context, fileUri: Uri, file: File?) {
+            val safeUri = when {
+                file != null && file.exists() && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N ->
+                    FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        file
+                    )
+                file != null && file.exists() -> Uri.fromFile(file)
+                else -> fileUri
+            }
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(context.getString(R.string.download_complete))
                 .setContentText(
@@ -531,7 +555,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
             
             // Create intent to install APK
             val installIntent = Intent(Intent.ACTION_VIEW).apply {
-                setDataAndType(fileUri, "application/vnd.android.package-archive")
+                setDataAndType(safeUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or 
                         Intent.FLAG_ACTIVITY_NEW_TASK or
                         Intent.FLAG_ACTIVITY_CLEAR_TOP

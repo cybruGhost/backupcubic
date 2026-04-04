@@ -472,6 +472,9 @@
     <string name="upload_cover">Upload cover</string>
     <string name="cover_saved">Cover saved</string>
     <string name="cover_save_failed">Couldn\'t save cover</string>
+    <string name="tap_anywhere_to_dismiss">Tap anywhere to dismiss</string>
+<string name="retry_with_other_sources">Retry with other sources</string>
+<string name="retry_with_other_sources_hint">Try alternate playback sources such as YouTube match search and fallback stream providers.</string>
 <string name="menu_style">Menu style</string>
 <string name="style_grid">Grid</string>
 <string name="style_list">List</string>
@@ -1159,6 +1162,15 @@
 <string name="update_failed_message">Could not fetch update information. Please try downloading manually.</string>
 <string name="apk_download_channel_description">Notifications for app update downloads</string>
 <string name="tap_to_install">Tap to install the update</string>
+<string name="apk_install_now">Install Now</string>
+<string name="apk_install_now_hint">Start installation immediately</string>
+<string name="apk_redownload">Re-download</string>
+<string name="apk_delete_download">Delete</string>
+<string name="apk_cancel_download">Cancel Download</string>
+<string name="apk_auto_download_install_hint">Auto-downloads, then installs with confirmation</string>
+<string name="apk_folder_location">Save folder: %1$s</string>
+<string name="apk_folder_has_files">Folder status: not empty</string>
+<string name="apk_folder_empty">Folder status: empty</string>
 <string name="album_not_found">Album not found</string>
 <string name="content_type_all">All</string>
 <string name="content_type_official">Official</string>
@@ -1267,6 +1279,16 @@
 <!-- username String -->
 <string name="change_username_title">Change Your Name</string>
 <string name="change_username_prompt">Enter your new name (max %1$d characters):</string>
+<string name="change_username_subtitle">Pick the name source you want the app to greet you with.</string>
+<string name="change_username_source_title">Name source</string>
+<string name="change_username_source_connected">Your YouTube Music account is ready</string>
+<string name="change_username_source_disconnected">Use a custom name or connect YouTube Music</string>
+<string name="change_username_try_ytm_login">YTMusic login is fixed, try it out.</string>
+<string name="name_source_custom">Custom name</string>
+<string name="name_source_custom_description">Use your own local display name</string>
+<string name="name_source_yt_account">YT account</string>
+<string name="using_youtube_name">Using YouTube name: %1$s</string>
+<string name="using_custom_name">Using custom name</string>
 <string name="username_label">Your name</string>
 <string name="character_count">%1$d / %2$d</string>
 <string name="save">Save</string>

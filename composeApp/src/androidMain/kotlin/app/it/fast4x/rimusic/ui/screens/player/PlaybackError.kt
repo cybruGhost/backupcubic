@@ -9,8 +9,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +20,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -25,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.util.UnstableApi
@@ -113,6 +117,9 @@ fun PlaybackError(
     isDisplayed: Boolean,
     messageProvider: () -> String,
     onDismiss: () -> Unit,
+    actionLabel: String? = null,
+    actionHint: String? = null,
+    onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     Box {
@@ -162,11 +169,36 @@ fun PlaybackError(
                     text = messageProvider(),
                     style = typography().xs.medium.color(PureBlackColorPalette.text)
                 )
-                BasicText(
-                    text = "Tap anywhere to dismiss",
-                    style = typography().xxs.secondary.color(PureBlackColorPalette.text.copy(alpha = 0.82f)),
-                    modifier = Modifier.padding(top = 6.dp)
-                )
+                Row(
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 6.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.fillMaxWidth(0.72f)
+                    ) {
+                        BasicText(
+                            text = stringResource(R.string.tap_anywhere_to_dismiss),
+                            style = typography().xxs.secondary.color(PureBlackColorPalette.text.copy(alpha = 0.82f))
+                        )
+                        if (!actionHint.isNullOrBlank() && onAction != null) {
+                            BasicText(
+                                text = actionHint,
+                                style = typography().xxs.secondary.color(PureBlackColorPalette.text.copy(alpha = 0.72f)),
+                                modifier = Modifier.padding(top = 2.dp)
+                            )
+                        }
+                    }
+                    if (!actionLabel.isNullOrBlank() && onAction != null) {
+                        TextButton(onClick = onAction) {
+                            BasicText(
+                                text = actionLabel,
+                                style = typography().xxs.medium.color(PureBlackColorPalette.text)
+                            )
+                        }
+                    }
+                }
             }
         }
     }

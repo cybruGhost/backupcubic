@@ -802,7 +802,7 @@ fun LocalPlaylistSongs(
 
             itemsIndexed(
                 items = itemsOnDisplay,
-                key = { _, song -> song.id },
+                key = { index, song -> song.id.ifBlank { "playlist_song_$index" } },
                 contentType = { _, song -> song },
             ) { index, song ->
 

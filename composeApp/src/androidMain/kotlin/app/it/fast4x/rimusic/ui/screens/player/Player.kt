@@ -496,6 +496,7 @@ private fun PlayerContent(
     var playerError by remember {
         mutableStateOf<PlaybackException?>(binder.player.playerError)
     }
+    var retryWithAlternateSourcesNonce by remember { mutableIntStateOf(0) }
     var lastSearchFallbackMediaId by remember {
         mutableStateOf<String?>(null)
     }
@@ -566,7 +567,7 @@ binder.player.DisposableListener {
 }
 
 // LaunchedEffect outside the Player.Listener to handle search-based fallback
-LaunchedEffect(playerError, alternateSourceRetryEnabled) {
+LaunchedEffect(playerError, alternateSourceRetryEnabled, retryWithAlternateSourcesNonce) {
     if (alternateSourceRetryEnabled && playerError != null) {
         try {
             val currentItem = binder.player.currentMediaItem ?: return@LaunchedEffect
@@ -2806,6 +2807,15 @@ Column(
             isDisplayed = playbackErrorMessage != null,
             messageProvider = { playbackErrorMessage.orEmpty() },
             onDismiss = { playbackErrorMessage = null },
+            actionLabel = if (playerError != null) stringResource(R.string.retry_with_other_sources) else null,
+            actionHint = if (playerError != null) stringResource(R.string.retry_with_other_sources_hint) else null,
+            onAction = if (playerError != null) {
+                {
+                    playbackErrorMessage = null
+                    lastSearchFallbackMediaId = null
+                    retryWithAlternateSourcesNonce++
+                }
+            } else null,
         )
 
     }
