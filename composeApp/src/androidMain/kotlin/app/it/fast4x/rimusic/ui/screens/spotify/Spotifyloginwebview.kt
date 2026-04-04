@@ -194,7 +194,6 @@ fun SpotifyLoginWebView(
             settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                databaseEnabled = true
                 loadWithOverviewMode = true
                 useWideViewPort = true
                 userAgentString =

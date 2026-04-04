@@ -10,11 +10,13 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.Player
+import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.kreate.android.R
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -708,8 +710,13 @@ fun SpotifyCanvasWorker() {
 
         val mediaItem = displayedMediaItem
         val mediaId = mediaItem?.mediaId ?: return@LaunchedEffect
-        val title = mediaItem.mediaMetadata.title?.toString().orEmpty()
-        val artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
+        val metadata = resolveCanvasMetadata(
+            mediaId = mediaId,
+            title = mediaItem.mediaMetadata.title?.toString().orEmpty(),
+            artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
+        )
+        val title = metadata.first
+        val artist = metadata.second
         if (title.isBlank() || artist.isBlank()) return@LaunchedEffect
 
         if (SpotifyCanvasState.currentMediaItemId != mediaId ||
@@ -735,13 +742,17 @@ fun SpotifyCanvasWorker() {
                 displayedMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
             )
         }.collect { (mediaId, title, artist) ->
-            if (mediaId == null || title.isBlank() || artist.isBlank()) return@collect
+            if (mediaId == null) return@collect
+            val metadata = resolveCanvasMetadata(mediaId, title, artist)
+            val resolvedTitle = metadata.first
+            val resolvedArtist = metadata.second
+            if (resolvedTitle.isBlank() || resolvedArtist.isBlank()) return@collect
 
             val songChanged = mediaId != SpotifyCanvasState.lastProcessedMediaId
             val canvasCleared = SpotifyCanvasState.currentCanvasUrl == null
 
             if (songChanged) {
-                SpotifyCanvasState.clearForNewSong(mediaId, title, artist)
+                SpotifyCanvasState.clearForNewSong(mediaId, resolvedTitle, resolvedArtist)
                 CanvasPlayerManager.stopAndClearForNewSong()
             }
 
@@ -752,10 +763,10 @@ fun SpotifyCanvasWorker() {
             if (shouldFetch) {
                 SpotifyCanvasState.markFetchAttempted()
                 if (showLogs) {
-                    SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_fetching_for, title, artist), LogType.LOADING)
+                    SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_fetching_for, resolvedTitle, resolvedArtist), LogType.LOADING)
                 }
                 launch(Dispatchers.IO) {
-                    fetchCanvasForSong(context, title, artist, showLogs, mediaId)
+                    fetchCanvasForSong(context, resolvedTitle, resolvedArtist, showLogs, mediaId)
                 }
             }
         }
@@ -795,6 +806,20 @@ fun SpotifyCanvasWorker() {
             CanvasPlayerManager.stopAndClear()
         }
     }
+}
+
+private suspend fun resolveCanvasMetadata(
+    mediaId: String,
+    title: String,
+    artist: String
+): Pair<String, String> {
+    val normalizedMediaId = mediaId.substringAfterLast("/")
+    val dbSong = Database.songTable.findById(normalizedMediaId).first()
+
+    val resolvedTitle = dbSong?.title?.takeIf { it.isNotBlank() } ?: title
+    val resolvedArtist = dbSong?.artistsText?.takeIf { it.isNotBlank() } ?: artist
+
+    return resolvedTitle.trim() to resolvedArtist.trim()
 }
 
 private suspend fun fetchCanvasForSong(

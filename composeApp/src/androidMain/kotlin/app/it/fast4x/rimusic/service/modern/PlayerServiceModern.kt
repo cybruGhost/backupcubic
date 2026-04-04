@@ -48,10 +48,13 @@ import androidx.media3.common.audio.SonicAudioProcessor
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
+import androidx.media3.datasource.cache.CacheWriter
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
@@ -258,6 +261,12 @@ class PlayerServiceModern : MediaLibraryService(),
     private var lastPlaybackSurfaceRefreshMs = 0L
     private var lastNoInternetToastMs = 0L
     private var lastSmartMessageMs = 0L
+    private var lastAutoSourceRecoveryMediaId: String? = null
+    private var lastAutoSourceRecoveryMs = 0L
+    private var lastEndedRecoveryMediaId: String? = null
+    private var lastEndedRecoveryMs = 0L
+    private var cacheCompletionJob: Job? = null
+    private var cacheCompletionMediaId: String? = null
 
     var loudnessEnhancer: LoudnessEnhancer? = null
     private var binder = Binder()
@@ -664,12 +673,15 @@ QuickPicksRepository.refreshIfNeeded()
 
         val mediaItem =
             eventTime.timeline.getWindow(eventTime.windowIndex, Timeline.Window()).mediaItem
+        if (mediaItem.mediaId.isBlank()) return
+        val songId = mediaItem.mediaId.substringAfterLast("/", mediaItem.mediaId).ifBlank { return }
 
         val totalPlayTimeMs = playbackStats.totalPlayTimeMs
 
         if ( totalPlayTimeMs > 5000 )
             Database.asyncTransaction {
-                songTable.updateTotalPlayTime( mediaItem.mediaId, totalPlayTimeMs, true )
+                songTable.insertIgnore(Song.makePlaceholder(songId))
+                songTable.updateTotalPlayTime( songId, totalPlayTimeMs, true )
             }
 
 
@@ -678,13 +690,23 @@ QuickPicksRepository.refreshIfNeeded()
 
         if ( totalPlayTimeMs > minTimeForEvent.asMillis ) {
             Database.asyncTransaction {
-                eventTable.insertIgnore(
-                    Event(
-                        songId = mediaItem.mediaId,
-                        timestamp = System.currentTimeMillis(),
-                        playTime = totalPlayTimeMs
+                runCatching {
+                    songTable.insertIgnore(Song.makePlaceholder(songId))
+                    eventTable.insertIgnore(
+                        Event(
+                            songId = songId,
+                            timestamp = System.currentTimeMillis(),
+                            playTime = totalPlayTimeMs
+                        )
                     )
-                )
+                }.onFailure {
+                    Timber.e(
+                        it,
+                        "PlayerServiceModern failed to insert playback event for mediaId=%s songId=%s",
+                        mediaItem.mediaId,
+                        songId
+                    )
+                }
             }
 
         }
@@ -722,6 +744,7 @@ QuickPicksRepository.refreshIfNeeded()
             if (::crossFadeMediaPlayer.isInitialized) {
                 crossFadeMediaPlayer.release()
             }
+            cacheCompletionJob?.cancel()
             player.stop()
             player.release()
             try{
@@ -778,6 +801,11 @@ QuickPicksRepository.refreshIfNeeded()
                     enabled = preferences.getBoolean(crossfadeEnabledKey, false),
                     crossfadeDurationMs = preferences.getInt(crossfadeDurationSecondsKey, 21) * 1000L
                 )
+                crossFadeMediaPlayer.onPrimaryTimelineChanged()
+                crossFadeMediaPlayer.onPrimaryMediaItemTransition(player.currentMediaItem)
+                crossFadeMediaPlayer.onPrimaryIsPlayingChanged(player.isPlaying)
+                crossFadeMediaPlayer.onPrimaryPlayWhenReadyChanged(player.playWhenReady)
+                requestArtworkPlaybackSurfaceRefresh(displayedMediaItem() ?: player.currentMediaItem)
             }
 
             bassboostLevelKey, bassboostEnabledKey -> maybeBassBoost()
@@ -814,31 +842,27 @@ QuickPicksRepository.refreshIfNeeded()
 
         val displayMediaItem = displayedMediaItem() ?: mediaItem
         currentMediaItem.update { displayMediaItem }
-        maybeRecoverPlaybackError()
         maybeNormalizeVolume()
         loadFromRadio(reason)
         requestArtworkPlaybackSurfaceRefresh(displayMediaItem, minIntervalMs = 0L)
+        warmCurrentSongCache(displayMediaItem)
 
         /**
          * Discord presence
          */
-        val title = mediaItem?.mediaMetadata?.title ?: "<none>"
         val now = System.currentTimeMillis()
+        val presenceSnapshot = currentPresenceSnapshot()
         if (preferences.getBoolean(isDiscordPresenceEnabledKey, false)) {
             val token = encryptedPreferences.getString(discordPersonalAccessTokenKey, "")
             if (token?.isNotEmpty() == true) {
-                // Capture current values to avoid thread safety issues
-                val currentPosition = player.currentPosition
-                val isPlaying = player.isPlaying
-                val duration = player.duration
                 discordPresenceManager?.onPlayingStateChanged(
-                    mediaItem,
-                    isPlaying,
-                    currentPosition,
-                    duration,
+                    presenceSnapshot.mediaItem ?: mediaItem,
+                    presenceSnapshot.isPlaying,
+                    presenceSnapshot.position,
+                    presenceSnapshot.duration,
                     now,
-                    getCurrentPosition = { currentPosition },
-                    isPlayingProvider = { isPlaying }
+                    getCurrentPosition = { currentPresenceSnapshot().position },
+                    isPlayingProvider = { currentPresenceSnapshot().isPlaying }
                 )
             }
         }
@@ -860,18 +884,14 @@ QuickPicksRepository.refreshIfNeeded()
                 )
             }
             
-            val currentPosition = player.currentPosition
-            val isPlaying = player.isPlaying
-            val duration = player.duration
-            
             cubicJamManager?.onPlayingStateChanged(
-                mediaItem = mediaItem,
-                isPlaying = isPlaying,
-                position = currentPosition,
-                duration = duration,
+                mediaItem = presenceSnapshot.mediaItem ?: mediaItem,
+                isPlaying = presenceSnapshot.isPlaying,
+                position = presenceSnapshot.position,
+                duration = presenceSnapshot.duration,
                 now = now,
-                getCurrentPosition = { currentPosition },
-                isPlayingProvider = { isPlaying }
+                getCurrentPosition = { currentPresenceSnapshot().position },
+                isPlayingProvider = { currentPresenceSnapshot().isPlaying }
             )
         }
     }
@@ -905,25 +925,22 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         @UnstableApi
     override fun onIsPlayingChanged(isPlaying: Boolean) {
         crossFadeMediaPlayer.onPrimaryIsPlayingChanged(isPlaying)
-        val item = displayedMediaItem() ?: player.currentMediaItem
-        val title = item?.mediaMetadata?.title ?: "<none>"
-        val duration = player.duration
+        val presenceSnapshot = currentPresenceSnapshot()
+        val item = presenceSnapshot.mediaItem
         val now = System.currentTimeMillis()
         
         // Discord presence
         if (preferences.getBoolean(isDiscordPresenceEnabledKey, false)) {
             val token = encryptedPreferences.getString(discordPersonalAccessTokenKey, "")
             if (token?.isNotEmpty() == true) {
-                // Capture current values to avoid thread safety issues
-                val currentPosition = player.currentPosition
                 discordPresenceManager?.onPlayingStateChanged(
                     item,
-                    isPlaying,
-                    currentPosition,
-                    duration,
+                    presenceSnapshot.isPlaying,
+                    presenceSnapshot.position,
+                    presenceSnapshot.duration,
                     now,
-                    getCurrentPosition = { currentPosition },
-                    isPlayingProvider = { isPlaying }
+                    getCurrentPosition = { currentPresenceSnapshot().position },
+                    isPlayingProvider = { currentPresenceSnapshot().isPlaying }
                 )
             }
         }
@@ -943,15 +960,14 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 )
             }
             
-            val currentPosition = player.currentPosition
             cubicJamManager?.onPlayingStateChanged(
                 mediaItem = item,
-                isPlaying = isPlaying,
-                position = currentPosition,
-                duration = duration,
+                isPlaying = presenceSnapshot.isPlaying,
+                position = presenceSnapshot.position,
+                duration = presenceSnapshot.duration,
                 now = now,
-                getCurrentPosition = { currentPosition },
-                isPlayingProvider = { isPlaying }
+                getCurrentPosition = { currentPresenceSnapshot().position },
+                isPlayingProvider = { currentPresenceSnapshot().isPlaying }
             )
         }
         
@@ -961,8 +977,25 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
     override fun onPlayerError(error: PlaybackException) {
         super.onPlayerError(error)
 
-        Timber.e("PlayerServiceModern onPlayerError error code ${error.errorCode} message ${error.message} cause ${error.cause?.cause}")
-        println("PlayerServiceModern onPlayerError error code ${error.errorCode} message ${error.message} cause ${error.cause?.cause}")
+        val currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
+        val controllerPackage = PlaybackSourceHints.currentControllerPackageName()
+        val isAndroidAutoStart = PlaybackSourceHints.shouldPreferSearchFallback(currentMediaId)
+        val deepestCause = generateSequence(error as Throwable?) { it.cause }.lastOrNull()
+
+        Timber.e(
+            error,
+            "PlayerServiceModern onPlayerError mediaId=%s controller=%s androidAuto=%s errorCode=%s errorName=%s message=%s rootCause=%s",
+            currentMediaId,
+            controllerPackage,
+            isAndroidAutoStart,
+            error.errorCode,
+            error.errorCodeName,
+            error.message,
+            deepestCause?.javaClass?.simpleName
+        )
+        println(
+            "PlayerServiceModern onPlayerError mediaId=$currentMediaId controller=$controllerPackage androidAuto=$isAndroidAutoStart errorCode=${error.errorCode} errorName=${error.errorCodeName} message=${error.message} rootCause=${deepestCause?.javaClass?.simpleName}"
+        )
 
         val playbackConnectionExeptionList = listOf(
             PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED, //primary error code to manage
@@ -1001,6 +1034,33 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             return
         }
 
+        val now = SystemClock.elapsedRealtime()
+        if (
+            isAndroidAutoStart &&
+            currentMediaId.isNotBlank() &&
+            lastAutoSourceRecoveryMediaId != currentMediaId &&
+            now - lastAutoSourceRecoveryMs > 5_000L
+        ) {
+            lastAutoSourceRecoveryMediaId = currentMediaId
+            lastAutoSourceRecoveryMs = now
+            Timber.w(
+                "PlayerServiceModern onPlayerError forcing one Android Auto recovery attempt for mediaId=%s controller=%s",
+                currentMediaId,
+                controllerPackage
+            )
+            player.pause()
+            player.prepare()
+            handler.postDelayed(
+                {
+                    if (player.currentMediaItem?.mediaId == currentMediaId) {
+                        player.play()
+                    }
+                },
+                350L
+            )
+            return
+        }
+
         if (!preferences.getBoolean(skipMediaOnErrorKey, false) || !player.hasNextMediaItem())
             return
 
@@ -1036,6 +1096,31 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                     waitingForNetwork.value = false
                 }
             }
+
+            val crossfadeEnabled = ::crossFadeMediaPlayer.isInitialized && crossFadeMediaPlayer.uiState.value.isEnabled
+            val currentMediaId = player.currentMediaItem?.mediaId
+            val now = SystemClock.elapsedRealtime()
+            if (
+                !crossfadeEnabled &&
+                player.playbackState == Player.STATE_ENDED &&
+                player.mediaItemCount > 1 &&
+                player.currentMediaItemIndex in 0 until (player.mediaItemCount - 1) &&
+                currentMediaId != null &&
+                (lastEndedRecoveryMediaId != currentMediaId || now - lastEndedRecoveryMs > 2_500L)
+            ) {
+                lastEndedRecoveryMediaId = currentMediaId
+                lastEndedRecoveryMs = now
+                handler.post {
+                    if (
+                        !crossFadeMediaPlayer.uiState.value.isEnabled &&
+                        player.playbackState == Player.STATE_ENDED &&
+                        player.currentMediaItem?.mediaId == currentMediaId &&
+                        player.currentMediaItemIndex in 0 until (player.mediaItemCount - 1)
+                    ) {
+                        player.playNext()
+                    }
+                }
+            }
         }
 
 //        if (events.containsAny(EVENT_TIMELINE_CHANGED, EVENT_POSITION_DISCONTINUITY)) {
@@ -1043,12 +1128,6 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 //        }
     }
 
-
-    private fun maybeRecoverPlaybackError() {
-        if (player.playerError != null) {
-            player.prepare()
-        }
-    }
 
     private fun onCrossfadePlayersSwapped(
         newCurrentPlayer: ExoPlayer,
@@ -1304,6 +1383,40 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         }
     )
 
+    private fun warmCurrentSongCache(mediaItem: MediaItem?) {
+        val mediaId = mediaItem?.mediaId
+            ?.substringAfterLast("/")
+            ?.takeIf { it.isNotBlank() && !it.startsWith(LOCAL_KEY_PREFIX) }
+            ?: run {
+                cacheCompletionJob?.cancel()
+                cacheCompletionJob = null
+                cacheCompletionMediaId = null
+                return
+            }
+
+        if (cacheCompletionMediaId == mediaId && cacheCompletionJob?.isActive == true) return
+
+        cacheCompletionJob?.cancel()
+        cacheCompletionMediaId = mediaId
+        cacheCompletionJob = coroutineScope.launch {
+            runCatching {
+                val dataSource = createDataSourceFactory().createDataSource() as? CacheDataSource
+                    ?: error("Failed to create cache data source")
+                val dataSpec = DataSpec.Builder()
+                    .setUri("https://music.youtube.com/watch?v=$mediaId")
+                    .setKey(mediaId)
+                    .build()
+
+                CacheWriter(dataSource, dataSpec, null, null).cache()
+                Timber.d("PlayerServiceModern completed cache warmup for %s", mediaId)
+            }.onFailure { error ->
+                if (cacheCompletionMediaId == mediaId) {
+                    Timber.w(error, "PlayerServiceModern cache warmup failed for %s", mediaId)
+                }
+            }
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun buildCustomCommandButtons(): MutableList<CommandButton> {
         val notificationPlayerFirstIcon = preferences.getEnum(notificationPlayerFirstIconKey, NotificationButtons.Download)
@@ -1472,7 +1585,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                             player.shuffleModeEnabled
                         ),
                         appContext().resources.getString( it.textId ),
-                        it.pendingIntent
+                        it.pendingIntent()
                     )
                 }
         }
@@ -1490,7 +1603,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                             player.shuffleModeEnabled
                         ),
                         appContext().resources.getString( it.textId ),
-                        it.pendingIntent
+                        it.pendingIntent()
                     )
                 }
         }
@@ -1508,7 +1621,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                             player.shuffleModeEnabled
                         ),
                         appContext().resources.getString( it.textId ),
-                        it.pendingIntent
+                        it.pendingIntent()
                     )
                 }
         }
@@ -1675,6 +1788,37 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         }
     }
 
+    private data class PresenceSnapshot(
+        val mediaItem: MediaItem?,
+        val isPlaying: Boolean,
+        val position: Long,
+        val duration: Long,
+    )
+
+    private fun currentPresenceSnapshot(): PresenceSnapshot {
+        val crossfadeState = if (::crossFadeMediaPlayer.isInitialized) crossFadeMediaPlayer.uiState.value else null
+        val displayMediaItem = displayedMediaItem()
+        val duration = when {
+            crossfadeState?.isEnabled == true && crossfadeState.displayDuration > 0L -> crossfadeState.displayDuration
+            sessionPlayer.duration > 0L -> sessionPlayer.duration
+            player.duration > 0L -> player.duration
+            else -> 0L
+        }
+        val position = when {
+            crossfadeState?.isEnabled == true -> crossfadeState.displayPosition.coerceAtLeast(0L)
+            sessionPlayer.currentPosition >= 0L -> sessionPlayer.currentPosition
+            else -> player.currentPosition.coerceAtLeast(0L)
+        }.coerceIn(0L, duration.coerceAtLeast(1L))
+        val isPlaying = crossfadeState?.isActive == true || sessionPlayer.isPlaying || player.isPlaying
+
+        return PresenceSnapshot(
+            mediaItem = displayMediaItem,
+            isPlaying = isPlaying,
+            position = position,
+            duration = duration
+        )
+    }
+
     override fun onPositionDiscontinuity(
         oldPosition: Player.PositionInfo,
         newPosition: Player.PositionInfo,
@@ -1687,20 +1831,16 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             if (preferences.getBoolean(isDiscordPresenceEnabledKey, false)) {
                 val token = encryptedPreferences.getString(discordPersonalAccessTokenKey, "")
                 if (token?.isNotEmpty() == true) {
-                    // Capture current values to avoid thread safety issues
-                    val currentMediaItem = player.currentMediaItem
-                    val isPlaying = player.isPlaying
-                    val currentPosition = player.currentPosition
-                    val duration = player.duration
+                    val presenceSnapshot = currentPresenceSnapshot()
                     val now = System.currentTimeMillis()
                     discordPresenceManager?.onPlayingStateChanged(
-                        currentMediaItem,
-                        isPlaying,
-                        currentPosition,
-                        duration,
+                        presenceSnapshot.mediaItem,
+                        presenceSnapshot.isPlaying,
+                        presenceSnapshot.position,
+                        presenceSnapshot.duration,
                         now,
-                        getCurrentPosition = { currentPosition },
-                        isPlayingProvider = { isPlaying }
+                        getCurrentPosition = { currentPresenceSnapshot().position },
+                        isPlayingProvider = { currentPresenceSnapshot().isPlaying }
                     )
                 }
             }
@@ -1720,20 +1860,16 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                     )
                 }
                 
-                val currentMediaItem = player.currentMediaItem
-                val isPlaying = player.isPlaying
-                val currentPosition = player.currentPosition
-                val duration = player.duration
+                val presenceSnapshot = currentPresenceSnapshot()
                 val now = System.currentTimeMillis()
-                
                 cubicJamManager?.onPlayingStateChanged(
-                    mediaItem = currentMediaItem,
-                    isPlaying = isPlaying,
-                    position = currentPosition,
-                    duration = duration,
+                    mediaItem = presenceSnapshot.mediaItem,
+                    isPlaying = presenceSnapshot.isPlaying,
+                    position = presenceSnapshot.position,
+                    duration = presenceSnapshot.duration,
                     now = now,
-                    getCurrentPosition = { currentPosition },
-                    isPlayingProvider = { isPlaying }
+                    getCurrentPosition = { currentPresenceSnapshot().position },
+                    isPlayingProvider = { currentPresenceSnapshot().isPlaying }
                 )
             }
         }
@@ -2202,16 +2338,15 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
         @kotlin.OptIn(FlowPreview::class)
         fun toggleLike() {
-            Database.asyncTransaction {
-                currentSong.value?.let {
-                    songTable.rotateLikeState( it.id )
-                }.also {
-                    currentSong.debounce(1000).collect(coroutineScope) { updateDefaultNotification() }
+            coroutineScope.launch(Dispatchers.IO) {
+                currentMediaItem.value?.let { mediaItem ->
+                    app.kreate.android.me.knighthat.sync.YouTubeSync.toggleSongLike(
+                        this@PlayerServiceModern,
+                        mediaItem
+                    )
+                    updateDefaultNotification()
                 }
             }
-
-            currentSong.value
-                ?.let { MyDownloadHelper.autoDownloadWhenLiked(this@PlayerServiceModern, it.asMediaItem) }
         }
 
         fun toggleDownload() {

@@ -193,7 +193,7 @@ suspend fun fetchCommentsPage(videoId: String, continuation: String? = null): Co
 
             // Grab continuation token for the next page
             nextContinuation = if (jsonResponse.has("continuation")) {
-                jsonResponse.optString("continuation", null)
+                jsonResponse.optString("continuation").takeIf { it.isNotBlank() }
             } else null
 
         } else {
@@ -1008,7 +1008,6 @@ fun Thumbnail(
     }
 }
 
-@OptIn(UnstableApi::class)
 fun Modifier.thumbnailpause(
     shouldBePlaying: Boolean
 ) = composed {

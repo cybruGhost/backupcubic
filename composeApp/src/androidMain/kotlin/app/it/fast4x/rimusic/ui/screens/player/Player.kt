@@ -110,7 +110,9 @@ import androidx.compose.ui.util.fastZip
 import androidx.compose.ui.util.lerp
 import androidx.compose.ui.zIndex
 import androidx.core.graphics.ColorUtils.colorToHSL
+import androidx.core.net.toUri
 import androidx.media3.common.MediaItem
+import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -168,6 +170,10 @@ import app.it.fast4x.rimusic.ui.components.themed.NowPlayingSongIndicator
 import app.it.fast4x.rimusic.ui.components.themed.PlayerMenu
 import app.it.fast4x.rimusic.ui.components.themed.RotateThumbnailCoverAnimationModern
 import app.it.fast4x.rimusic.ui.components.themed.SecondaryTextButton
+import org.json.JSONArray
+import java.net.HttpURLConnection
+import java.net.URL
+import java.net.URLEncoder
 import app.it.fast4x.rimusic.ui.components.themed.ThumbnailOffsetDialog
 import app.it.fast4x.rimusic.ui.components.themed.animateBrushRotation
 import app.it.fast4x.rimusic.ui.styling.Dimensions
@@ -180,6 +186,7 @@ import app.it.fast4x.rimusic.utils.VerticalfadingEdge2
 import app.it.fast4x.rimusic.utils.VinylSizeKey
 import app.it.fast4x.rimusic.utils.albumCoverRotationKey
 import app.it.fast4x.rimusic.utils.animatedGradientKey
+import app.it.fast4x.rimusic.utils.asMediaItem
 import app.it.fast4x.rimusic.utils.backgroundProgressKey
 import app.it.fast4x.rimusic.utils.blackgradientKey
 import app.it.fast4x.rimusic.utils.bottomgradientKey
@@ -251,6 +258,10 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
 import app.kreate.android.me.knighthat.component.player.BlurAdjuster
 import app.kreate.android.me.knighthat.utils.Toaster
+import it.fast4x.innertube.Innertube
+import it.fast4x.innertube.models.bodies.SearchBody
+import it.fast4x.innertube.requests.searchPage
+import it.fast4x.innertube.utils.from
 import kotlin.Float.Companion.POSITIVE_INFINITY
 import kotlin.math.absoluteValue
 import kotlin.math.sqrt
@@ -258,9 +269,6 @@ import kotlin.math.sqrt
 import app.it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasWorker
 import app.it.fast4x.rimusic.ui.screens.spotify.SpotifyCanvasState
 import androidx.compose.ui.viewinterop.AndroidView
-// Waigwe fallback api
-import app.it.fast4x.rimusic.utils.WaigweApi
-import app.it.fast4x.rimusic.utils.WaigweSearchResponse
 import app.it.fast4x.rimusic.utils.FadeAdjuster
 import app.it.fast4x.rimusic.enums.DurationInMilliseconds
 import androidx.media3.ui.AspectRatioFrameLayout
@@ -389,8 +397,8 @@ private fun PlayerContent(
     val spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
     val showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
     
-    // Waigwe FALLBACK
-    val WaigweFallbackEnabled by rememberPreference("WaigweFallbackKey", true)
+    // Alternate source retry
+    val alternateSourceRetryEnabled by rememberPreference("alternateSourceRetryKey", true)
 
     // AUDIO FADE 
     val playbackFadeAudioDuration by rememberPreference("playbackFadeAudioDurationKey", DurationInMilliseconds.Disabled)
@@ -488,6 +496,9 @@ private fun PlayerContent(
     var playerError by remember {
         mutableStateOf<PlaybackException?>(binder.player.playerError)
     }
+    var lastSearchFallbackMediaId by remember {
+        mutableStateOf<String?>(null)
+    }
     var playbackErrorMessage by remember {
         mutableStateOf<String?>(null)
     }
@@ -554,91 +565,177 @@ binder.player.DisposableListener {
     }
 }
 
-//LaunchedEffect outside the Player.Listener to handle Waigwe fallback
-LaunchedEffect(playerError, WaigweFallbackEnabled) {
-    if (WaigweFallbackEnabled && playerError != null) {
+// LaunchedEffect outside the Player.Listener to handle search-based fallback
+LaunchedEffect(playerError, alternateSourceRetryEnabled) {
+    if (alternateSourceRetryEnabled && playerError != null) {
         try {
             val currentItem = binder.player.currentMediaItem ?: return@LaunchedEffect
             val currentMediaId = currentItem.mediaId
-            
-            // Check if already using Waigwe (prevents infinite loops)
-            if (WaigweApi.isWaigweMedia(currentMediaId)) {
+
+            if (currentMediaId == lastSearchFallbackMediaId) {
                 return@LaunchedEffect
             }
             
-            // Check if current URL is already from Waigwe
-            val currentUri = currentItem.localConfiguration?.uri?.toString()
-            if (WaigweApi.isWaigweUrl(currentUri)) {
-                return@LaunchedEffect
-            }
-            
-            // Get song info
-            val title = currentItem.mediaMetadata.title?.toString() ?: ""
-            val artist = currentItem.mediaMetadata.artist?.toString() ?: ""
-            
+            val title = cleanPrefix(currentItem.mediaMetadata.title?.toString().orEmpty()).trim()
+            val artist = cleanPrefix(currentItem.mediaMetadata.artist?.toString().orEmpty()).trim()
+
             if (title.isBlank()) {
-                Toaster.n("Cannot fallback: No title")
                 return@LaunchedEffect
             }
-            
-            val query = if (artist.isNotBlank()) "$artist - $title" else title
-            
-            try {
-                // Call Waigwe API with retry mechanism
-                var result: Result<WaigweSearchResponse>? = null
-                
-                for (attempt in 0..2) { // Try up to 3 times
-                    result = WaigweApi.search(query)
-                    
-                    if (result.isSuccess) {
-                        break
-                    }
-                    
-                    if (attempt < 2) {
-                        // Exponential backoff: 1s, then 3s
-                        delay(if (attempt == 0) 1000L else 3000L)
+
+            fun normalizeMatchText(value: String): String =
+                cleanPrefix(value)
+                    .lowercase()
+                    .replace(Regex("\\b(official|music video|video|audio|lyrics|visualizer|topic|vevo|hd|4k)\\b"), " ")
+                    .replace(Regex("[^a-z0-9]+"), " ")
+                    .trim()
+                    .replace(Regex("\\s+"), " ")
+
+            fun scoreCandidate(candidateTitle: String, candidateArtist: String): Int {
+                val expectedTitle = normalizeMatchText(title)
+                val expectedArtist = normalizeMatchText(artist)
+                val normalizedCandidateTitle = normalizeMatchText(candidateTitle)
+                val normalizedCandidateArtist = normalizeMatchText(candidateArtist)
+
+                if (normalizedCandidateTitle.isBlank()) return Int.MIN_VALUE
+                if (
+                    normalizedCandidateTitle.contains("mix") ||
+                    normalizedCandidateTitle.contains("playlist") ||
+                    normalizedCandidateTitle.contains("full album")
+                ) return Int.MIN_VALUE
+
+                var score = 0
+                if (normalizedCandidateTitle == expectedTitle) score += 120
+                else if (
+                    normalizedCandidateTitle.contains(expectedTitle) ||
+                    expectedTitle.contains(normalizedCandidateTitle)
+                ) score += 80
+                else {
+                    val expectedTokens = expectedTitle.split(" ").filter { it.length > 1 }.toSet()
+                    val candidateTokens = normalizedCandidateTitle.split(" ").filter { it.length > 1 }.toSet()
+                    score += expectedTokens.intersect(candidateTokens).size * 18
+                }
+
+                if (expectedArtist.isNotBlank()) {
+                    if (normalizedCandidateArtist == expectedArtist) score += 70
+                    else if (
+                        normalizedCandidateArtist.contains(expectedArtist) ||
+                        expectedArtist.contains(normalizedCandidateArtist)
+                    ) score += 45
+                    else {
+                        val expectedArtistTokens = expectedArtist.split(" ").filter { it.length > 1 }.toSet()
+                        val candidateArtistTokens = normalizedCandidateArtist.split(" ").filter { it.length > 1 }.toSet()
+                        score += expectedArtistTokens.intersect(candidateArtistTokens).size * 14
                     }
                 }
-                
-                if (result != null && result.isSuccess) {
-                    val response = result.getOrThrow()
-                    if (response.videos.isNotEmpty()) {
-                        val firstVideo = response.videos.first()
-                        val streamUrl = WaigweApi.getStreamUrl(firstVideo.videoId)
-                        
-                        // Save current playback state
-                        val wasPlaying = binder.player.isPlaying
-                        val currentPosition = binder.player.currentPosition
-                        
-                        // Create new MediaItem with Waigwe stream
-                        val newMediaItem = currentItem.buildUpon()
-                            .setUri(streamUrl)
-                            .setMimeType(MimeTypes.AUDIO_MP4)
-                            .setMediaId("Waigwe_${currentMediaId}") // Mark as Waigwe
-                            .build()
-                        
-                        // Mark this media ID as using Waigwe
-                        WaigweApi.markAsWaigweMedia("Waigwe_${currentMediaId}")
-                        
-                        // Replace and play, preserving position
-                        binder.player.setMediaItem(newMediaItem)
-                        binder.player.prepare()
-                        binder.player.seekTo(currentPosition)
-                        
-                        if (wasPlaying) {
-                            binder.player.play()
-                        }
-                        
-                        Toaster.n("Playing via Waigwe API")
-                    } else {
-                        Toaster.n("No results from Waigwe")
-                    }
-                } else {
-                    Toaster.n("Waigwe API failed")
-                }
-            } catch (e: Exception) {
-                Toaster.n("Waigwe fallback failed")
+
+                return score
             }
+
+            val queries = buildList {
+                add(title)
+                if (artist.isNotBlank()) add("$title $artist")
+                if (artist.isNotBlank()) add("$artist - $title")
+            }.distinct()
+
+            suspend fun findReplacement(): MediaItem? {
+                var bestCandidate: Pair<MediaItem, Int>? = null
+
+                for (query in queries) {
+                    val songPage = Innertube.searchPage(
+                        body = SearchBody(query = query, params = Innertube.SearchFilter.Song.value),
+                        fromMusicShelfRendererContent = { content -> Innertube.SongItem.from(content) }
+                    )?.getOrNull()
+
+                    songPage?.items
+                        ?.filterIsInstance<Innertube.SongItem>()
+                        ?.forEach { item ->
+                            if (item.key.isBlank() || item.key == currentMediaId) return@forEach
+                            val score = scoreCandidate(
+                                candidateTitle = item.info?.name.orEmpty(),
+                                candidateArtist = item.authors?.joinToString(", ") { it.name.orEmpty() }.orEmpty()
+                            )
+                            if (score > (bestCandidate?.second ?: Int.MIN_VALUE)) {
+                                bestCandidate = item.asMediaItem to score
+                            }
+                        }
+
+                    val videoPage = Innertube.searchPage(
+                        body = SearchBody(query = query, params = Innertube.SearchFilter.Video.value),
+                        fromMusicShelfRendererContent = { content -> Innertube.VideoItem.from(content) }
+                    )?.getOrNull()
+
+                    videoPage?.items
+                        ?.filterIsInstance<Innertube.VideoItem>()
+                        ?.forEach { item ->
+                            if (item.key.isBlank() || item.key == currentMediaId) return@forEach
+                            val score = scoreCandidate(
+                                candidateTitle = item.info?.name.orEmpty(),
+                                candidateArtist = item.authors?.joinToString(", ") { it.name.orEmpty() }.orEmpty()
+                            )
+                            if (score > (bestCandidate?.second ?: Int.MIN_VALUE)) {
+                                bestCandidate = item.asMediaItem to score
+                            }
+                        }
+                }
+
+                bestCandidate?.takeIf { it.second >= 70 }?.let { return it.first }
+
+                for (query in queries) {
+                    val encodedQuery = URLEncoder.encode(query, "UTF-8")
+                    val connection = URL("https://yt.omada.cafe/api/v1/search?q=$encodedQuery")
+                        .openConnection() as HttpURLConnection
+                    connection.requestMethod = "GET"
+                    connection.connectTimeout = 8000
+                    connection.readTimeout = 8000
+
+                    if (connection.responseCode != HttpURLConnection.HTTP_OK) continue
+
+                    val response = connection.inputStream.bufferedReader().use { it.readText() }
+                    val results = JSONArray(response)
+                    for (index in 0 until results.length()) {
+                        val item = results.optJSONObject(index) ?: continue
+                        if (item.optString("type") != "video") continue
+
+                        val candidateVideoId = item.optString("videoId").trim()
+                        if (candidateVideoId.isBlank() || candidateVideoId == currentMediaId) continue
+
+                        val score = scoreCandidate(
+                            candidateTitle = item.optString("title"),
+                            candidateArtist = item.optString("author")
+                        )
+                        if (score < 60) continue
+
+                        val metadata = MediaMetadata.Builder()
+                            .setTitle(currentItem.mediaMetadata.title)
+                            .setArtist(currentItem.mediaMetadata.artist)
+                            .setAlbumTitle(currentItem.mediaMetadata.albumTitle)
+                            .setArtworkUri(currentItem.mediaMetadata.artworkUri?.toString()?.toUri())
+                            .setExtras(currentItem.mediaMetadata.extras)
+                            .build()
+
+                        return MediaItem.Builder()
+                            .setMediaId(candidateVideoId)
+                            .setUri(candidateVideoId)
+                            .setCustomCacheKey(candidateVideoId)
+                            .setMediaMetadata(metadata)
+                            .build()
+                    }
+                }
+
+                return null
+            }
+
+            val replacementItem = findReplacement() ?: return@LaunchedEffect
+            lastSearchFallbackMediaId = currentMediaId
+
+            val wasPlaying = binder.player.isPlaying
+            binder.player.setMediaItem(replacementItem)
+            binder.player.prepare()
+            if (wasPlaying) {
+                binder.player.play()
+            }
+            Toaster.n("Retrying with alternate YouTube source")
         } catch (e: Exception) {
             e.printStackTrace()
         }
