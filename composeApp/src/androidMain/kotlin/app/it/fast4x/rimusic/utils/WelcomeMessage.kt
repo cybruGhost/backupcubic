@@ -76,8 +76,11 @@ import app.it.fast4x.rimusic.utils.getWeatherEmoji
 // Key constants
 private const val KEY_USERNAME = "username"
 private const val KEY_CITY = "weather_city"
+private const val KEY_NAME_SOURCE = "welcome_name_source"
 private const val PREF_TEMP_UNIT = "temperature_unit"
 private const val DEFAULT_TEMP_UNIT = "celsius"
+private const val NAME_SOURCE_CUSTOM = "custom"
+private const val NAME_SOURCE_YT = "yt"
 
 // Temperature unit management
 private fun getSavedTemperatureUnit(context: Context): String {
@@ -98,10 +101,23 @@ private fun formatTemperature(temp: Double, isCelsius: Boolean): String {
     return "${displayTemp.roundToInt()}$unit"
 }
 
+private fun sanitizedYouTubeAccountName(): String? {
+    val value = ytAccountName()?.trim().orEmpty()
+    if (value.isBlank()) return null
+    if (value.length > 80) return null
+    if (value.contains(';')) return null
+    if (value.contains("SAPISID=", ignoreCase = true)) return null
+    if (value.contains("SID=", ignoreCase = true)) return null
+    if (value.contains("__Secure-", ignoreCase = true)) return null
+    if (value.contains("LOGIN_INFO", ignoreCase = true)) return null
+    return value
+}
+
 @Composable
 fun WelcomeMessage() {
     val context = LocalContext.current
     var username by remember { mutableStateOf("") }
+    var nameSource by remember { mutableStateOf(NAME_SOURCE_CUSTOM) }
     var city by remember { mutableStateOf("") }
     var showInputPage by remember { mutableStateOf(true) }
     var showChangeDialog by remember { mutableStateOf(false) }
@@ -116,6 +132,7 @@ fun WelcomeMessage() {
     // Load username and city on composition
     LaunchedEffect(Unit) {
         username = DataStoreUtils.getStringBlocking(context, KEY_USERNAME)
+        nameSource = DataStoreUtils.getStringBlocking(context, KEY_NAME_SOURCE).ifBlank { NAME_SOURCE_CUSTOM }
         city = DataStoreUtils.getStringBlocking(context, KEY_CITY)
         showInputPage = username.isBlank()
         
@@ -124,6 +141,13 @@ fun WelcomeMessage() {
             city = getLocationFromIP() ?: "Nairobi"
             DataStoreUtils.saveStringBlocking(context, KEY_CITY, city)
         }
+    }
+
+    val youtubeAccountName = sanitizedYouTubeAccountName()
+    val displayName = if (nameSource == NAME_SOURCE_YT && !youtubeAccountName.isNullOrBlank()) {
+        youtubeAccountName
+    } else {
+        username.ifBlank { youtubeAccountName.orEmpty() }
     }
     
     // Fetch weather when city is available
@@ -148,7 +172,7 @@ fun WelcomeMessage() {
     } else {
         Column {
             GreetingMessage(
-                username = username,
+                username = displayName,
                 weatherData = weatherData,
                 isLoading = isLoading,
                 errorMessage = errorMessage,
@@ -162,10 +186,14 @@ fun WelcomeMessage() {
         if (showChangeDialog) {
             ChangeUsernameDialog(
                 currentUsername = username,
+                currentNameSource = nameSource,
+                youtubeAccountName = youtubeAccountName,
                 onDismiss = { showChangeDialog = false },
-                onUsernameChanged = { newUsername ->
+                onUsernameChanged = { newUsername, newSource ->
                     DataStoreUtils.saveStringBlocking(context, KEY_USERNAME, newUsername)
+                    DataStoreUtils.saveStringBlocking(context, KEY_NAME_SOURCE, newSource)
                     username = newUsername
+                    nameSource = newSource
                     showChangeDialog = false
                 }
             )
@@ -194,7 +222,7 @@ fun WelcomeMessage() {
         if (showWeatherPopup && weatherData != null) {
             WeatherForecastPopup(
                 weatherData = weatherData!!,
-                username = username,
+                username = displayName,
                 onDismiss = { showWeatherPopup = false },
                 onCityChange = { showCityDialog = true },
                 temperatureUnit = temperatureUnit
@@ -226,7 +254,7 @@ private fun GreetingMessage(
         in 17..20 -> stringResource(R.string.good_evening)
         else -> stringResource(R.string.good_night)
     }.let {
-        val baseMessage = if (isYouTubeLoggedIn()) "$it, ${ytAccountName()}" else it
+        val baseMessage = it
         "$baseMessage, "
     }
 
@@ -630,10 +658,13 @@ private fun UsernameInputPage(onUsernameSubmitted: (String) -> Unit) {
 @Composable
 private fun ChangeUsernameDialog(
     currentUsername: String,
+    currentNameSource: String,
+    youtubeAccountName: String?,
     onDismiss: () -> Unit,
-    onUsernameChanged: (String) -> Unit
+    onUsernameChanged: (String, String) -> Unit
 ) {
     var newUsername by remember { mutableStateOf(currentUsername) }
+    var selectedSource by remember { mutableStateOf(currentNameSource) }
     val maxChars = 14
 
     AlertDialog(
@@ -655,6 +686,39 @@ private fun ChangeUsernameDialog(
                     color = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
+
+                if (!youtubeAccountName.isNullOrBlank()) {
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 12.dp)
+                    ) {
+                        Button(
+                            onClick = { selectedSource = NAME_SOURCE_CUSTOM },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("Custom name")
+                        }
+                        Button(
+                            onClick = { selectedSource = NAME_SOURCE_YT },
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Text("YT account")
+                        }
+                    }
+
+                    Text(
+                        text = if (selectedSource == NAME_SOURCE_YT) {
+                            "Using YouTube name: $youtubeAccountName"
+                        } else {
+                            "Using custom name"
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                }
 
                 OutlinedTextField(
                     value = newUsername,
@@ -697,11 +761,13 @@ private fun ChangeUsernameDialog(
         confirmButton = {
             Button(
                 onClick = {
-                    if (newUsername.isNotBlank()) {
-                        onUsernameChanged(newUsername.trim())
+                    if (selectedSource == NAME_SOURCE_YT && !youtubeAccountName.isNullOrBlank()) {
+                        onUsernameChanged(newUsername.trim(), selectedSource)
+                    } else if (newUsername.isNotBlank()) {
+                        onUsernameChanged(newUsername.trim(), selectedSource)
                     }
                 },
-                enabled = newUsername.isNotBlank()
+                enabled = (selectedSource == NAME_SOURCE_YT && !youtubeAccountName.isNullOrBlank()) || newUsername.isNotBlank()
             ) {
                 Text(stringResource(R.string.save))
             }

@@ -1,5 +1,6 @@
 package app.it.fast4x.rimusic.service.modern
 
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -62,6 +63,9 @@ class DelegatingExoPlayer(
             "getContentPosition" -> reportedCurrentPosition()
             "getDuration" -> reportedDuration()
             "getBufferedPosition" -> reportedBufferedPosition()
+            "getContentBufferedPosition" -> reportedBufferedPosition()
+            "getBufferedPercentage" -> reportedBufferedPercentageValue()
+            "getTotalBufferedDuration" -> reportedTotalBufferedDuration()
             "addListener" -> {
                 val listener = args?.firstOrNull() as? Player.Listener
                 if (listener != null) {
@@ -109,7 +113,14 @@ class DelegatingExoPlayer(
         return try {
             method.invoke(delegate, *(args ?: emptyArray()))
         } catch (error: InvocationTargetException) {
-            throw error.targetException
+            val target = error.targetException
+            when (method.name) {
+                "getBufferedPercentage" -> 0
+                "getBufferedPosition", "getContentBufferedPosition", "getCurrentPosition", "getContentPosition" -> 0L
+                "getTotalBufferedDuration" -> 0L
+                "getDuration" -> C.TIME_UNSET
+                else -> throw target
+            }
         }
     }
 
@@ -156,28 +167,52 @@ class DelegatingExoPlayer(
 
     private fun reportedDuration(): Long {
         if (!shouldUseDisplayState()) {
-            return delegate.duration
+            val duration = runCatching { delegate.duration }.getOrDefault(C.TIME_UNSET)
+            return if (duration == C.TIME_UNSET || duration <= 0L) C.TIME_UNSET else duration
         }
-        return activeDisplayState()?.displayDuration ?: delegate.duration
+        val displayDuration = activeDisplayState()?.displayDuration
+        if (displayDuration != null && displayDuration > 0L) return displayDuration
+        val duration = runCatching { delegate.duration }.getOrDefault(C.TIME_UNSET)
+        return if (duration == C.TIME_UNSET || duration <= 0L) C.TIME_UNSET else duration
     }
 
     private fun reportedCurrentPosition(): Long {
         if (!shouldUseDisplayState()) {
-            return delegate.currentPosition
+            return runCatching { delegate.currentPosition }.getOrDefault(0L).coerceAtLeast(0L)
         }
         val state = activeDisplayState()
         return state?.displayPosition?.coerceIn(0L, state.displayDuration.coerceAtLeast(1L))
-            ?: delegate.currentPosition
+            ?: runCatching { delegate.currentPosition }.getOrDefault(0L).coerceAtLeast(0L)
     }
 
     private fun reportedBufferedPosition(): Long {
         if (!shouldUseDisplayState()) {
-            return delegate.bufferedPosition
+            val duration = reportedDuration()
+            val bufferedPosition = runCatching { delegate.bufferedPosition }.getOrDefault(0L).coerceAtLeast(0L)
+            return if (duration == C.TIME_UNSET) bufferedPosition else bufferedPosition.coerceAtMost(duration)
         }
         val state = activeDisplayState()
         return state?.displayPosition?.coerceIn(0L, state.displayDuration.coerceAtLeast(1L))
-            ?: delegate.bufferedPosition
+            ?: runCatching {
+                val duration = reportedDuration()
+                val bufferedPosition = delegate.bufferedPosition.coerceAtLeast(0L)
+                if (duration == C.TIME_UNSET) bufferedPosition else bufferedPosition.coerceAtMost(duration)
+            }.getOrDefault(0L)
     }
+
+    private fun reportedBufferedPercentageValue(): Int {
+        val duration = reportedDuration()
+        if (duration == C.TIME_UNSET || duration <= 0L) return 0
+
+        val bufferedPosition = reportedBufferedPosition().coerceAtLeast(0L)
+        val safeDuration = duration.coerceAtLeast(1L)
+        val percent = ((bufferedPosition.coerceAtMost(safeDuration) * 100L) / safeDuration)
+        return percent.coerceIn(0L, 100L).toInt()
+    }
+
+    private fun reportedTotalBufferedDuration(): Long =
+        (reportedBufferedPosition().coerceAtLeast(0L) - reportedCurrentPosition().coerceAtLeast(0L))
+            .coerceAtLeast(0L)
 
     private fun notifyStateRefresh(activeDelegate: ExoPlayer) {
         val useDisplayState = shouldUseDisplayState()

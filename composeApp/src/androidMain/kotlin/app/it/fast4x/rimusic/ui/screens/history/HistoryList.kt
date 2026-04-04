@@ -27,6 +27,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -60,9 +61,12 @@ import app.it.fast4x.rimusic.ui.components.themed.Title
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.favoritesIcon
+import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
+import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import app.it.fast4x.rimusic.utils.addNext
 import app.it.fast4x.rimusic.utils.asMediaItem
 import app.it.fast4x.rimusic.utils.asSong
+import app.it.fast4x.rimusic.cleanPrefix
 import app.it.fast4x.rimusic.utils.disableScrollingTextKey
 import app.it.fast4x.rimusic.utils.enqueue
 import app.it.fast4x.rimusic.utils.forcePlay
@@ -71,12 +75,15 @@ import app.it.fast4x.rimusic.utils.parentalControlEnabledKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withTimeout
 import app.kreate.android.me.knighthat.component.tab.Search
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import timber.log.Timber
 
 @kotlin.OptIn(ExperimentalTextApi::class)
 @OptIn(UnstableApi::class)
@@ -90,6 +97,7 @@ fun HistoryList(
     val binder = LocalPlayerServiceBinder.current
     val menuState = LocalMenuState.current
     val lazyListState = rememberLazyListState()
+    val scope = rememberCoroutineScope()
 
     val parentalControlEnabled by rememberPreference(parentalControlEnabledKey, false)
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
@@ -127,6 +135,7 @@ fun HistoryList(
 
     var isLocalLoading by remember { mutableStateOf(true) }
     var isYTMLoading by remember { mutableStateOf(false) }
+    var ytmHistoryLoadError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(events) {
         if (events.isNotEmpty()) {
@@ -143,7 +152,18 @@ fun HistoryList(
     LaunchedEffect(historyType) {
         if (historyType == HistoryType.YTMHistory && isYouTubeLoggedIn()) {
             isYTMLoading = true
-            historyPage = YtMusic.getHistory()
+            ytmHistoryLoadError = null
+            YouTubeSessionStore.applyCurrentSession()
+            historyPage = runCatching {
+                withTimeout(20_000L) {
+                    YouTubeRequestThrottler.run {
+                        YtMusic.getHistory()
+                    }.getOrThrow()
+                }
+            }.onFailure {
+                Timber.e(it, "HistoryList failed to fetch YTM history")
+                ytmHistoryLoadError = it.message
+            }
             isYTMLoading = false
         }
     }
@@ -265,6 +285,19 @@ fun HistoryList(
 
                 if (historyType == HistoryType.YTMHistory) {
                     historyPage?.getOrNull()?.sections?.forEach { section ->
+                        val historyItems = section.songs
+                            .map { it.asMediaItem }
+                            .filter { it.mediaId.isNotBlank() }
+                            .distinctBy { it.mediaId }
+                            .filter { mediaItem ->
+                                cleanPrefix(mediaItem.mediaMetadata.title?.toString().orEmpty())
+                                    .contains(search.inputValue, ignoreCase = true) ||
+                                    cleanPrefix(mediaItem.mediaMetadata.artist?.toString().orEmpty())
+                                        .contains(search.inputValue, ignoreCase = true)
+                            }
+
+                        if (historyItems.isEmpty()) return@forEach
+
                         stickyHeader {
                             Title(
                                 title = section.title,
@@ -276,13 +309,7 @@ fun HistoryList(
                         }
 
                         items(
-                            items = section.songs
-                                .map { it.asMediaItem }
-                                .filter { it.mediaId.isNotEmpty() }
-                                .filter { mediaItem ->
-                                    (mediaItem.mediaMetadata.title ?: "").contains(search.inputValue, ignoreCase = true) ||
-                                            (mediaItem.mediaMetadata.artist ?: "").contains(search.inputValue, ignoreCase = true)
-                                },
+                            items = historyItems,
                             key = { it.mediaId }
                         ) { mediaItem ->
                             SwipeablePlaylistItem(
@@ -316,6 +343,14 @@ fun HistoryList(
                             }
                         }
                     }
+                }
+            }
+        }
+
+        LaunchedEffect(ytmHistoryLoadError) {
+            ytmHistoryLoadError?.let { message ->
+                scope.launch {
+                    app.kreate.android.me.knighthat.utils.Toaster.e(message.ifBlank { "Failed to load YouTube Music history" })
                 }
             }
         }

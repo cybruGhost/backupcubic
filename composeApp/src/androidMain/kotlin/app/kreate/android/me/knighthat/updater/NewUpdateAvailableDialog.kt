@@ -1,3 +1,5 @@
+@file:Suppress("DELICATE_COROUTINES_API")
+
 package app.kreate.android.me.knighthat.updater
 
 import androidx.compose.animation.AnimatedVisibility

@@ -159,6 +159,7 @@ fun MiniPlayer(
 
     val displayedPositionAndDuration = displayedPlayerState.position to displayedPlayerState.duration
 
+    @Suppress("DEPRECATION")
     val dismissState = rememberSwipeToDismissBoxState(
         confirmValueChange = { value ->
             if (value == SwipeToDismissBoxValue.StartToEnd)

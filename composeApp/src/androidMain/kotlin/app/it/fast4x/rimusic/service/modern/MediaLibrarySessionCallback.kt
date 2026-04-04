@@ -110,6 +110,55 @@ class MediaLibrarySessionCallback(
         }.getOrDefault(false)
     }
 
+    private suspend fun resolvePlaylistSongs(playlistId: String): List<Song> {
+        if (playlistId.isBlank()) return emptyList()
+
+        val songs = when (playlistId) {
+            MediaSessionConstants.ID_FAVORITES -> database.songTable.allFavorites().map { it.reversed() }.first()
+            MediaSessionConstants.ID_CACHED -> database.formatTable.allWithSongs().map { fl ->
+                fl.fastFilter { itf ->
+                    itf.song.totalPlayTimeMs > 0 && isCached(itf.song.id, itf.format.contentLength)
+                }.reversed().fastMap { itf -> itf.song }
+            }.first()
+            MediaSessionConstants.ID_TOP -> database.eventTable.findSongsMostPlayedBetween(
+                from = 0,
+                limit = context.preferences.getEnum(MaxTopPlaylistItemsKey, MaxTopPlaylistItems.`10`).toInt()
+            ).first()
+            MediaSessionConstants.ID_ONDEVICE -> database.songTable.allOnDevice().first()
+            MediaSessionConstants.ID_DOWNLOADED -> {
+                downloadHelper.getDownloadManager(context)
+                val downloads = downloadHelper.downloads.value
+                database.songTable.all(excludeHidden = false).map { fl ->
+                    fl.fastFilter { s -> downloads[s.id]?.state == Download.STATE_COMPLETED }
+                        .sortedByDescending { s -> downloads[s.id]?.updateTimeMs ?: 0L }
+                }.first()
+            }
+            else -> {
+                playlistId.toLongOrNull()?.let { localPlaylistId ->
+                    database.songPlaylistMapTable.allSongsOf(localPlaylistId).first()
+                } ?: run {
+                    val playlistPage = Innertube.playlistPage(BrowseBody(browseId = playlistId))?.getOrNull()
+                    val remoteSongs = playlistPage?.songsPage?.items?.toList()?.map { item -> item.asSong } ?: emptyList()
+                    if (remoteSongs.isNotEmpty()) {
+                        searchedSongs = (searchedSongs + remoteSongs).distinctBy { it.id }
+                    }
+                    remoteSongs
+                }
+            }
+        }
+
+        Timber.d(
+            "MediaLibrarySessionCallback.resolvePlaylistSongs playlistId=%s local=%s size=%s",
+            playlistId,
+            playlistId.toLongOrNull() != null,
+            songs.size
+        )
+        return songs
+    }
+
+    private fun playlistMediaItemsForParent(parentId: String, songs: List<Song>): List<MediaItem> =
+        songs.map { song -> MediaItemMapper.mapSongToMediaItem(song, parentId) }
+
     private suspend fun fallbackSetMediaItems(
         mediaItems: MutableList<MediaItem>,
         startPositionMs: Long,
@@ -168,6 +217,11 @@ class MediaLibrarySessionCallback(
         session: MediaSession,
         controller: MediaSession.ControllerInfo
     ): MediaSession.ConnectionResult {
+        Timber.d(
+            "MediaLibrarySessionCallback.onConnect package=%s maxCommands=%s",
+            controller.packageName,
+            controller.maxCommandsForMediaItems
+        )
         val connectionResult = super.onConnect(session, controller)
         return MediaSession.ConnectionResult.accept(
             connectionResult.availableSessionCommands.buildUpon()
@@ -606,22 +660,8 @@ class MediaLibrarySessionCallback(
                         PlayerServiceModern.PLAYLIST -> {
                             val playlistId = parts[1]
                             val shuffleItem = MediaSessionConstants.shuffleItem(context, MediaSessionConstants.ID_PLAYLIST_SHUFFLE)
-                            val listFlow = when (playlistId) {
-                                MediaSessionConstants.ID_FAVORITES -> database.songTable.allFavorites().map { fl -> fl.reversed() }
-                                MediaSessionConstants.ID_CACHED -> database.formatTable.allWithSongs().map { flist -> flist.fastFilter { itf -> val contentLength = itf.format.contentLength; contentLength != null && (if (::binder.isInitialized) binder.cache.isCached(itf.song.id, 0L, contentLength) else false) }.reversed().fastMap { itf -> itf.song } }
-                                MediaSessionConstants.ID_TOP -> database.eventTable.findSongsMostPlayedBetween(from = 0, limit = context.preferences.getEnum(MaxTopPlaylistItemsKey, MaxTopPlaylistItems.`10`).toInt())
-                                MediaSessionConstants.ID_ONDEVICE -> database.songTable.allOnDevice()
-                                MediaSessionConstants.ID_DOWNLOADED -> { val downloads = downloadHelper.downloads.value; database.songTable.all(excludeHidden = false).map { songs -> songs.fastFilter { song -> downloads[song.id]?.state == Download.STATE_COMPLETED }.sortedByDescending { song -> downloads[song.id]?.updateTimeMs ?: 0L } } }
-                                else -> {
-                                    if (playlistId.toLongOrNull() != null) { database.songPlaylistMapTable.allSongsOf(playlistId.toLong()) } else {
-                                        val playlistPage = Innertube.playlistPage(BrowseBody(browseId = playlistId))?.getOrNull()
-                                        val songs = playlistPage?.songsPage?.items?.toList()?.map { item -> item.asSong } ?: emptyList()
-                                        searchedSongs = (searchedSongs + songs).distinctBy { s -> s.id }
-                                        kotlinx.coroutines.flow.flowOf(songs)
-                                    }
-                                }
-                            }
-                            listOf(shuffleItem) + listFlow.first().map { song -> MediaItemMapper.mapSongToMediaItem(song, parentId) }
+                            val songs = resolvePlaylistSongs(playlistId)
+                            listOf(shuffleItem) + playlistMediaItemsForParent(parentId, songs)
                         }
                         else -> emptyList()
                     }
@@ -665,6 +705,17 @@ class MediaLibrarySessionCallback(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future(Dispatchers.IO) {
+        PlaybackSourceHints.markControllerPlaybackRequest(
+            packageName = controller.packageName,
+            mediaIds = mediaItems.map { it.mediaId }
+        )
+        Timber.d(
+            "MediaLibrarySessionCallback.onSetMediaItems controller=%s items=%s startIndex=%s startPositionMs=%s",
+            controller.packageName,
+            mediaItems.joinToString(limit = 3) { it.mediaId },
+            startIndex,
+            startPositionMs
+        )
         if (mediaItems.isEmpty()) {
             return@future MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0)
         }
@@ -741,11 +792,7 @@ class MediaLibrarySessionCallback(
                 val paths = mediaItems.first().mediaId.split("/")
                 val playlistId = paths.getOrNull(1)
                     ?: return@future fallbackSetMediaItems(mediaItems, startPositionMs)
-                val allSongs = if (playlistId.toLongOrNull() != null) {
-                    database.songPlaylistMapTable.allSongsOf(playlistId.toLong()).first()
-                } else {
-                    searchedSongs
-                }.shuffled()
+                val allSongs = resolvePlaylistSongs(playlistId).shuffled()
                 if (allSongs.isNotEmpty()) return@future MediaSession.MediaItemsWithStartPosition(allSongs.map { song -> MediaItemMapper.mapSongToMediaItem(song) }, 0, 0)
             }
 
@@ -796,22 +843,7 @@ class MediaLibrarySessionCallback(
                     PlayerServiceModern.PLAYLIST -> {
                         val playlistId = paths.getOrNull(1).orEmpty()
                         songId = paths.getOrNull(2).orEmpty()
-                        queryList = when (playlistId) {
-                            MediaSessionConstants.ID_FAVORITES -> database.songTable.allFavorites().map { it.reversed() }.first()
-                            MediaSessionConstants.ID_CACHED -> database.formatTable.allWithSongs().map { fl ->
-                                fl.fastFilter { itf ->
-                                    itf.song.totalPlayTimeMs > 0 && isCached(itf.song.id, itf.format.contentLength)
-                                }.reversed().fastMap { itf -> itf.song }
-                            }.first()
-                            MediaSessionConstants.ID_TOP -> database.eventTable.findSongsMostPlayedBetween(from = 0, limit = context.preferences.getEnum(MaxTopPlaylistItemsKey, MaxTopPlaylistItems.`10`).toInt()).first()
-                            MediaSessionConstants.ID_ONDEVICE -> database.songTable.allOnDevice().first()
-                            MediaSessionConstants.ID_DOWNLOADED -> {
-                                downloadHelper.getDownloadManager(context)
-                                val downloads = downloadHelper.downloads.value
-                                database.songTable.all(excludeHidden = false).map { fl -> fl.fastFilter { s -> downloads[s.id]?.state == Download.STATE_COMPLETED }.sortedByDescending { s -> downloads[s.id]?.updateTimeMs ?: 0L } }.first()
-                            }
-                            else -> { if (playlistId.toLongOrNull() != null) database.songPlaylistMapTable.allSongsOf(playlistId.toLong()).first() else searchedSongs }
-                        }
+                        queryList = resolvePlaylistSongs(playlistId)
                     }
                 }
                 startIdx = queryList.indexOfFirst { song -> song.id == songId }.coerceAtLeast(0)
@@ -838,6 +870,10 @@ class MediaLibrarySessionCallback(
         controller: MediaSession.ControllerInfo,
         mediaItems: MutableList<MediaItem>
     ): ListenableFuture<MutableList<MediaItem>> = scope.future(Dispatchers.IO) {
+        PlaybackSourceHints.markControllerPlaybackRequest(
+            packageName = controller.packageName,
+            mediaIds = mediaItems.map { it.mediaId }
+        )
         mediaItems.fastMap { item ->
             val songId = item.mediaId.split("/").lastOrNull() ?: item.mediaId
             database.songTable.findById(songId).first()?.asMediaItem ?: item.buildUpon().setMediaId(songId).build()

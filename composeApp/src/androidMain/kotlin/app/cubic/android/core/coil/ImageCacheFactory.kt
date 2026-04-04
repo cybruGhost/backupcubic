@@ -256,6 +256,8 @@ object ImageCacheFactory {
         val candidates = linkedSetOf<Pair<String, NetworkQuality>>()
         val qualityOrder = qualitySearchOrder(preferred)
 
+        candidates += url to preferred
+
         for (quality in qualityOrder) {
             url.thumbnail(quality.size)?.let { candidates += it to quality }
         }
@@ -293,9 +295,19 @@ object ImageCacheFactory {
         if (validUrl == null) {
             return ResolvedImageSource(null, NetworkQuality.LOW, false)
         }
+        if (validUrl.isLocalArtSource()) {
+            return ResolvedImageSource(validUrl, NetworkQuality.HIGH, false)
+        }
 
         val decision = getDownloadDecision(validUrl)
         val networkAvailable = appContext().isNetworkAvailable
+        if (!decision.useNetwork && hasCachedImage(validUrl, decision.quality)) {
+            return ResolvedImageSource(
+                url = validUrl,
+                quality = decision.quality,
+                useNetwork = false,
+            )
+        }
         if (networkAvailable) {
             return ResolvedImageSource(
                 url = validUrl.thumbnail(decision.quality.size),
@@ -763,6 +775,11 @@ object ImageCacheFactory {
     fun getCacheSize(): Long = try { DISK_CACHE.size } catch (e: Exception) { 0L }
 }
 
+private fun String.isLocalArtSource(): Boolean =
+    startsWith("content://") ||
+        startsWith("file://") ||
+        startsWith("/")
+
 fun String.resize(width: Int? = null, height: Int? = null): String {
     if (width == null && height == null) return this
     
@@ -905,4 +922,3 @@ private fun String.getYouTubeQualityScore(): Int {
 }
 
 private fun String.isYouTubeHighRes(): Boolean = getYouTubeQualityScore() >= 5
-

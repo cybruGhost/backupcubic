@@ -64,6 +64,7 @@ import app.it.fast4x.rimusic.utils.autoSyncToolbutton
 import app.it.fast4x.rimusic.utils.autosyncKey
 import app.it.fast4x.rimusic.utils.disableScrollingTextKey
 import app.it.fast4x.rimusic.utils.enableCreateMonthlyPlaylistsKey
+import app.it.fast4x.rimusic.utils.importYTMLikedPlaylists
 import app.it.fast4x.rimusic.utils.playlistTypeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.showFloatingIconKey
@@ -199,6 +200,12 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
         }
     }
 
+    LaunchedEffect(justSynced, doAutoSync) {
+        if (!justSynced && importYTMLikedPlaylists()) {
+            justSynced = true
+        }
+    }
+
     PullToRefreshBox(
         isRefreshing = refreshing,
         onRefresh = ::refresh
@@ -222,7 +229,7 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
                 }
 
                 // Sticky tab's tool bar
-                TabToolBar.Buttons( sort, search, shuffle, newPlaylistDialog, randomizer, importPlaylistDialog, itemSize )
+                TabToolBar.Buttons( sort, search, sync, shuffle, newPlaylistDialog, randomizer, importPlaylistDialog, itemSize )
 
                 // Sticky search bar
                 search.SearchBar( this )

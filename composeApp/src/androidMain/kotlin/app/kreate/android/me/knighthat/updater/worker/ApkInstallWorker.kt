@@ -28,31 +28,46 @@ class ApkInstallWorker {
     companion object {
         private const val CHANNEL_ID = "apk_download_channel"
         private const val NOTIFICATION_ID = 1001
+        private const val MIN_VALID_APK_SIZE_BYTES = 32 * 1024L
         private var progressUpdateJob: Job? = null
         private var currentDownloadId: Long = -1
         private var currentContext: Context? = null
         private var currentDownloadManager: DownloadManager? = null
         private var currentReceiver: BroadcastReceiver? = null
+        private var currentTargetFile: File? = null
         private var pollingActive = false
-        
-        // Check if APK is already downloaded
-// Check if APK is already downloaded
-fun isApkDownloaded(fileName: String): Boolean {
-    val downloadsDir = File(
-        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-        "CubicMusic"
-    )
-    
-    // If directory doesn't exist
-    if (!downloadsDir.exists()) {
-        return false
-    }
-    
-    val apkFile = File(downloadsDir, fileName)
-    
-    // Check if file exists AND has reasonable size (not empty/corrupt)
-    return apkFile.exists() && apkFile.length() > 1000 // At least 1KB
-}
+
+        private fun getDownloadsDir(): File = File(
+            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
+            "CubicMusic"
+        )
+
+        private fun getTargetFile(fileName: String): File = File(getDownloadsDir(), fileName)
+
+        private fun displayPath(file: File): String = file.absolutePath
+
+        private fun isValidApkFile(file: File?): Boolean =
+            file?.exists() == true && file.length() >= MIN_VALID_APK_SIZE_BYTES
+
+        private fun cleanupStaleApkFiles(fileName: String) {
+            val downloadsDir = getDownloadsDir()
+            if (!downloadsDir.exists()) return
+
+            downloadsDir.listFiles()?.forEach { file ->
+                if (!file.isFile) return@forEach
+                val isTarget = file.name == fileName
+                val isStaleApk = file.name.endsWith(".apk", ignoreCase = true) && !isTarget
+                val isPartial = file.name.endsWith(".part", ignoreCase = true)
+                    || file.name.endsWith(".partial", ignoreCase = true)
+                    || file.name.endsWith(".tmp", ignoreCase = true)
+                val isBrokenTarget = isTarget && file.length() < MIN_VALID_APK_SIZE_BYTES
+                if (isStaleApk || isPartial || isBrokenTarget) {
+                    file.delete()
+                }
+            }
+        }
+
+        fun isApkDownloaded(fileName: String): Boolean = isValidApkFile(getDownloadedApkFile(fileName))
         // Add this function to ApkInstallWorker companion object
         fun reDownloadApk(
             context: Context,
@@ -74,35 +89,27 @@ fun isApkDownloaded(fileName: String): Boolean {
    // Delete downloaded APK manually (NOT cancel)
 fun deleteDownloadedApk(fileName: String): Boolean {
     return try {
-        val downloadsDir = File(
-            Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-            "CubicMusic"
-        )
+        val downloadsDir = getDownloadsDir()
 
         // If directory doesn't exist, nothing to delete
         if (!downloadsDir.exists()) return false
 
-        val apkFile = File(downloadsDir, fileName)
+        val apkFile = getTargetFile(fileName)
 
         // Check if file exists before trying to delete
-        if (!apkFile.exists()) return false
+        val deleted = if (apkFile.exists()) apkFile.delete() else false
 
-        val deleted = apkFile.delete()
-
-        // Also clean up any other APK files in the directory
-        downloadsDir.listFiles()?.forEach { file ->
-            if (file.isFile && (file.name.endsWith(".apk") || file.name.contains("Cubic-Music"))) {
-                if (file.name != fileName) { // Don't delete the one we just tried
-                    file.delete()
-                }
-            }
-        }
+        cleanupStaleApkFiles(fileName)
 
         // Remove notification if present
         currentContext?.let { context ->
             val nm = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             nm.cancel(NOTIFICATION_ID)
             nm.cancel(NOTIFICATION_ID + 1)
+        }
+
+        if (currentTargetFile?.name == fileName) {
+            currentTargetFile = null
         }
 
         deleted
@@ -113,17 +120,14 @@ fun deleteDownloadedApk(fileName: String): Boolean {
 }
         // Get downloaded APK file
         fun getDownloadedApkFile(fileName: String): File? {
-            val downloadsDir = File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                "CubicMusic"
-            )
+            val downloadsDir = getDownloadsDir()
             
             if (!downloadsDir.exists()) {
                 return null
             }
             
-            val apkFile = File(downloadsDir, fileName)
-            return if (apkFile.exists() && apkFile.length() > 0) apkFile else null
+            val apkFile = getTargetFile(fileName)
+            return apkFile.takeIf(::isValidApkFile)
         }
         
         // Install already downloaded APK
@@ -165,28 +169,29 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 currentDownloadManager = downloadManager
                 
                 // Create downloads directory path
-                val downloadsDir = File(
-                    Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                    "CubicMusic"
-                )
+                val downloadsDir = getDownloadsDir()
                 if (!downloadsDir.exists()) {
                     downloadsDir.mkdirs()
                 }
-                
-                // Delete existing file if it exists
-                val existingFile = File(downloadsDir, fileName)
-                if (existingFile.exists()) {
-                    existingFile.delete()
+                cleanupStaleApkFiles(fileName)
+
+                val targetFile = getTargetFile(fileName)
+                if (targetFile.exists()) {
+                    targetFile.delete()
                 }
+                currentTargetFile = targetFile
                 
                 // Create request
                 val request = DownloadManager.Request(Uri.parse(downloadUrl))
-                    .setTitle("Cubic Music Update")
-                    .setDescription("Downloading new version")
-                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
-                    .setDestinationUri(
-                        Uri.fromFile(File(downloadsDir, fileName))
+                    .setTitle(context.getString(R.string.apk_update_title))
+                    .setDescription(
+                        context.getString(
+                            R.string.apk_download_started_message,
+                            displayPath(targetFile)
+                        )
                     )
+                    .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                    .setDestinationUri(Uri.fromFile(targetFile))
                     .setAllowedOverMetered(true)
                     .setAllowedOverRoaming(true)
                 
@@ -225,12 +230,16 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 }
                 
                 // Show starting notification
-                showDownloadStartedNotification(context)
+                showDownloadStartedNotification(context, targetFile)
                 
             } catch (e: Exception) {
                 e.printStackTrace()
-                onError(e.message ?: "Unknown error")
-                Toast.makeText(context, "Download failed: ${e.message}", Toast.LENGTH_LONG).show()
+                val errorMessage = context.getString(
+                    R.string.apk_download_failed_with_reason,
+                    e.message ?: context.getString(R.string.apk_unknown_error)
+                )
+                onError(errorMessage)
+                Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
                 cleanup()
             }
         }
@@ -245,20 +254,9 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 // Remove download from DownloadManager
                 if (currentDownloadId != -1L && currentDownloadManager != null) {
                     currentDownloadManager?.remove(currentDownloadId)
-                    
-                    // Delete downloaded file if it exists
-                    val downloadsDir = File(
-                        Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
-                        "CubicMusic"
-                    )
-                    if (downloadsDir.exists()) {
-                        downloadsDir.listFiles()?.forEach { file ->
-                            if (file.isFile && (file.name.endsWith(".apk") || file.name.contains("Cubic-Music"))) {
-                                file.delete()
-                            }
-                        }
-                    }
                 }
+
+                currentTargetFile?.delete()
                 
                 // Cancel notification
                 currentContext?.let { context ->
@@ -304,9 +302,19 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                         @Suppress("DEPRECATION")
                         val uriString = cursor.getString(cursor.getColumnIndex(DownloadManager.COLUMN_LOCAL_URI))
                         val fileUri = Uri.parse(uriString)
-                        
+                        val downloadedFile = currentTargetFile
+
+                        if (!isValidApkFile(downloadedFile)) {
+                            downloadedFile?.delete()
+                            onError(context.getString(R.string.apk_download_invalid_file))
+                            Toast.makeText(context, context.getString(R.string.apk_download_invalid_file), Toast.LENGTH_LONG).show()
+                            cleanup()
+                            cursor.close()
+                            return
+                        }
+
                         // Show success notification
-                        showInstallationCompleteNotification(context, fileUri)
+                        showInstallationCompleteNotification(context, fileUri, downloadedFile)
                         
                         // Call completion callback - DON'T CLOSE APP!
                         onComplete()
@@ -314,7 +322,10 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                         // Show toast that app is downloaded
                         Toast.makeText(
                             context, 
-                            "Update downloaded! Click 'Install Now' to update.", 
+                            context.getString(
+                                R.string.apk_download_ready_message,
+                                displayPath(downloadedFile ?: currentTargetFile ?: getDownloadsDir())
+                            ),
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -322,16 +333,17 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                         @Suppress("DEPRECATION")
                         val reason = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_REASON))
                         val errorMsg = when (reason) {
-                            DownloadManager.ERROR_CANNOT_RESUME -> "Cannot resume download"
-                            DownloadManager.ERROR_DEVICE_NOT_FOUND -> "Device not found"
-                            DownloadManager.ERROR_FILE_ALREADY_EXISTS -> "File already exists"
-                            DownloadManager.ERROR_FILE_ERROR -> "File error"
-                            DownloadManager.ERROR_HTTP_DATA_ERROR -> "HTTP data error"
-                            DownloadManager.ERROR_INSUFFICIENT_SPACE -> "Insufficient space"
-                            DownloadManager.ERROR_TOO_MANY_REDIRECTS -> "Too many redirects"
-                            DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> "Unhandled HTTP code"
-                            else -> "Download failed"
+                            DownloadManager.ERROR_CANNOT_RESUME -> context.getString(R.string.apk_download_error_cannot_resume)
+                            DownloadManager.ERROR_DEVICE_NOT_FOUND -> context.getString(R.string.apk_download_error_device_not_found)
+                            DownloadManager.ERROR_FILE_ALREADY_EXISTS -> context.getString(R.string.apk_download_error_file_exists)
+                            DownloadManager.ERROR_FILE_ERROR -> context.getString(R.string.apk_download_error_file)
+                            DownloadManager.ERROR_HTTP_DATA_ERROR -> context.getString(R.string.apk_download_error_http_data)
+                            DownloadManager.ERROR_INSUFFICIENT_SPACE -> context.getString(R.string.apk_download_error_insufficient_space)
+                            DownloadManager.ERROR_TOO_MANY_REDIRECTS -> context.getString(R.string.apk_download_error_too_many_redirects)
+                            DownloadManager.ERROR_UNHANDLED_HTTP_CODE -> context.getString(R.string.apk_download_error_unhandled_http_code)
+                            else -> context.getString(R.string.apk_download_failed)
                         }
+                        currentTargetFile?.delete()
                         onError(errorMsg)
                         Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
                     }
@@ -392,9 +404,15 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                             // Check if download is complete or failed
                             @Suppress("DEPRECATION")
                             val status = cursor.getInt(cursor.getColumnIndex(DownloadManager.COLUMN_STATUS))
-                            if (status == DownloadManager.STATUS_SUCCESSFUL || 
-                                status == DownloadManager.STATUS_FAILED || 
-                                status == DownloadManager.STATUS_PAUSED) {
+                            if (status == DownloadManager.STATUS_SUCCESSFUL ||
+                                status == DownloadManager.STATUS_FAILED) {
+                                cursor.close()
+                                break
+                            } else if (status == DownloadManager.STATUS_PAUSED) {
+                                currentTargetFile?.delete()
+                                launch(Dispatchers.Main) {
+                                    onError(context.getString(R.string.apk_download_error_paused))
+                                }
                                 cursor.close()
                                 break
                             }
@@ -427,6 +445,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
             progressUpdateJob = null
             pollingActive = false
             currentDownloadId = -1
+            currentTargetFile = null
             currentContext = null
             currentDownloadManager = null
             currentReceiver = null
@@ -453,10 +472,16 @@ fun deleteDownloadedApk(fileName: String): Boolean {
             }
         }
         
-        private fun showDownloadStartedNotification(context: Context) {
+        private fun showDownloadStartedNotification(context: Context, targetFile: File) {
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(context.getString(R.string.downloading_update))
-                .setContentText("0%")
+                .setContentText(
+                    context.getString(
+                        R.string.apk_download_progress_message,
+                        0,
+                        displayPath(targetFile)
+                    )
+                )
                 .setSmallIcon(R.drawable.download)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
@@ -472,7 +497,13 @@ fun deleteDownloadedApk(fileName: String): Boolean {
         private fun updateDownloadNotification(context: Context, progress: Int) {
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(context.getString(R.string.downloading_update))
-                .setContentText("$progress%")
+                .setContentText(
+                    context.getString(
+                        R.string.apk_download_progress_message,
+                        progress,
+                        displayPath(currentTargetFile ?: getDownloadsDir())
+                    )
+                )
                 .setSmallIcon(R.drawable.download)
                 .setPriority(NotificationCompat.PRIORITY_LOW)
                 .setOngoing(true)
@@ -485,16 +516,21 @@ fun deleteDownloadedApk(fileName: String): Boolean {
             notificationManager.notify(NOTIFICATION_ID, builder.build())
         }
         
-        private fun showInstallationCompleteNotification(context: Context, fileUri: Uri) {
+        private fun showInstallationCompleteNotification(context: Context, fileUri: Uri, file: File?) {
             val builder = NotificationCompat.Builder(context, CHANNEL_ID)
                 .setContentTitle(context.getString(R.string.download_complete))
-                .setContentText(context.getString(R.string.tap_to_install))
+                .setContentText(
+                    context.getString(
+                        R.string.apk_download_ready_message,
+                        displayPath(file ?: getDownloadsDir())
+                    )
+                )
                 .setSmallIcon(R.drawable.install)
                 .setPriority(NotificationCompat.PRIORITY_HIGH)
                 .setAutoCancel(true)
             
             // Create intent to install APK
-            val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
                 setDataAndType(fileUri, "application/vnd.android.package-archive")
                 flags = Intent.FLAG_GRANT_READ_URI_PERMISSION or 
                         Intent.FLAG_ACTIVITY_NEW_TASK or
@@ -543,7 +579,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                     Uri.fromFile(apkFile)
                 }
                 
-                val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(fileUri, "application/vnd.android.package-archive")
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                             Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -564,7 +600,14 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 true
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Failed to install: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        R.string.apk_install_failed_with_reason,
+                        e.message ?: context.getString(R.string.apk_download_failed)
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
                 false
             }
         }
@@ -574,7 +617,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 // Convert content:// URI to file:// URI if needed
                 val finalUri = if (fileUri.scheme == "content") {
                     // For Android 10+, we need to use FileProvider
-                    val file = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "CubicMusic")
+                    val file = getDownloadsDir()
                     val apkFile = file.listFiles()?.find { it.name.endsWith(".apk") }
                     apkFile?.let {
                         FileProvider.getUriForFile(
@@ -587,7 +630,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                     fileUri
                 }
                 
-                val installIntent = Intent(Intent.ACTION_INSTALL_PACKAGE).apply {
+                val installIntent = Intent(Intent.ACTION_VIEW).apply {
                     setDataAndType(finalUri, "application/vnd.android.package-archive")
                     flags = Intent.FLAG_ACTIVITY_NEW_TASK or 
                             Intent.FLAG_GRANT_READ_URI_PERMISSION or
@@ -608,10 +651,17 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(context, "Failed to install: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(
+                    context,
+                    context.getString(
+                        R.string.apk_install_failed_with_reason,
+                        e.message ?: context.getString(R.string.apk_download_failed)
+                    ),
+                    Toast.LENGTH_LONG
+                ).show()
                 
                 // Fallback: Show notification that user can tap
-                showInstallationCompleteNotification(context, fileUri)
+                showInstallationCompleteNotification(context, fileUri, currentTargetFile)
             }
         }
     }

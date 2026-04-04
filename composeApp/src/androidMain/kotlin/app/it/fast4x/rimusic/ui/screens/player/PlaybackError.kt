@@ -7,12 +7,16 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +46,7 @@ import app.it.fast4x.rimusic.utils.center
 import app.it.fast4x.rimusic.utils.color
 import app.it.fast4x.rimusic.utils.currentWindow
 import app.it.fast4x.rimusic.utils.medium
+import app.it.fast4x.rimusic.utils.secondary
 import app.kreate.android.me.knighthat.utils.Toaster
 import timber.log.Timber
 import android.content.Context
@@ -137,14 +142,32 @@ fun PlaybackError(
             modifier = Modifier
                 .align(Alignment.TopCenter)
         ) {
-            BasicText(
-                text = messageProvider(),
-                style = typography().xs.center.medium.color(PureBlackColorPalette.text),
+            Column(
                 modifier = Modifier
-                    .background(Color.Black.copy(0.4f))
-                    .padding(all = 8.dp)
+                    .statusBarsPadding()
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
+                    .background(
+                        color = Color(0xE61A1D27),
+                        shape = RoundedCornerShape(18.dp)
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = Color(0x33FFFFFF),
+                        shape = RoundedCornerShape(18.dp)
+                    )
+                    .padding(horizontal = 16.dp, vertical = 14.dp)
                     .fillMaxWidth()
-            )
+            ) {
+                BasicText(
+                    text = messageProvider(),
+                    style = typography().xs.medium.color(PureBlackColorPalette.text)
+                )
+                BasicText(
+                    text = "Tap anywhere to dismiss",
+                    style = typography().xxs.secondary.color(PureBlackColorPalette.text.copy(alpha = 0.82f)),
+                    modifier = Modifier.padding(top = 6.dp)
+                )
+            }
         }
     }
 }

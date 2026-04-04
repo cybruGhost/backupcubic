@@ -137,6 +137,7 @@ import app.it.fast4x.rimusic.utils.colorPaletteNameKey
 import app.it.fast4x.rimusic.utils.conditional
 import app.it.fast4x.rimusic.utils.effectRotationKey
 import app.it.fast4x.rimusic.utils.expandedplayerKey
+import app.it.fast4x.rimusic.utils.fetchSimpMusicLyrics
 import app.cubic.android.core.network.NetworkClientFactory
 import app.it.fast4x.rimusic.utils.isShowingSynchronizedLyricsKey
 import app.it.fast4x.rimusic.utils.jumpPreviousKey
@@ -243,7 +244,7 @@ fun Lyrics(
             mutableStateOf(false)
         }
 
-        var lyrics by remember {
+        var lyrics by remember(mediaId) {
             mutableStateOf<Lyrics?>(null)
         }
 
@@ -345,24 +346,24 @@ fun Lyrics(
         )
         var expandedplayer by rememberPreference(expandedplayerKey, false)
 
-        var checkedLyricsLrc by remember {
+        var checkedLyricsLrc by remember(mediaId) {
             mutableStateOf(false)
         }
-        var checkedLyricsKugou by remember {
+        var checkedLyricsKugou by remember(mediaId) {
             mutableStateOf(false)
         }
-        var checkedLyricsInnertube by remember {
+        var checkedLyricsInnertube by remember(mediaId) {
             mutableStateOf(false)
         }
-        var checkLyrics by remember {
+        var checkLyrics by remember(mediaId) {
             mutableStateOf(false)
         }
         var lyricsHighlight by rememberPreference(lyricsHighlightKey, LyricsHighlight.None)
         var lyricsAlignment by rememberPreference(lyricsAlignmentKey, LyricsAlignment.Center)
         var lyricsSizeAnimate by rememberPreference(lyricsSizeAnimateKey, true)
         val mediaMetadata = mediaMetadataProvider()
-        var artistName by rememberSaveable { mutableStateOf(cleanPrefix(mediaMetadata.artist?.toString().orEmpty()))}
-        var title by rememberSaveable { mutableStateOf(cleanPrefix(mediaMetadata.title?.toString().orEmpty()))}
+        var artistName by rememberSaveable(mediaId) { mutableStateOf(cleanPrefix(mediaMetadata.artist?.toString().orEmpty()))}
+        var title by rememberSaveable(mediaId) { mutableStateOf(cleanPrefix(mediaMetadata.title?.toString().orEmpty()))}
         var lyricsSize by rememberPreference(lyricsSizeKey, 20f)
         var lyricsSizeL by rememberPreference(lyricsSizeLKey, 20f)
         var customSize = if (isLandscape) lyricsSizeL else lyricsSize
@@ -391,6 +392,17 @@ fun Lyrics(
         LaunchedEffect(mediaMetadata.title, mediaMetadata.artist) {
             artistName = mediaMetadata.artist?.toString().orEmpty()
             title = cleanPrefix(mediaMetadata.title?.toString().orEmpty())
+        }
+
+        LaunchedEffect(mediaId) {
+            lyrics = null
+            checkedLyricsLrc = false
+            checkedLyricsKugou = false
+            checkedLyricsInnertube = false
+            checkLyrics = false
+            invalidLrc = false
+            isError = false
+            isErrorSync = false
         }
 
         fun translateLyricsWithRomanization(output: MutableState<String>, textToTranslate: String, isSync: Boolean, destinationLanguage: Language = Language.AUTO) = @Composable{
@@ -563,16 +575,41 @@ fun Lyrics(
                                                 )
                                             }
                                         }?.onFailure {
-                                            if (playerEnableLyricsPopupMessage)
-                                                coroutineScope.launch {
-                                                    Toaster.e(
-                                                        R.string.info_lyrics_not_found_on_s,
-                                                        "KuGou.com",
-                                                        duration = Toast.LENGTH_LONG
-                                                    )
+                                            checkedLyricsKugou = true
+                                            val simpLyrics = fetchSimpMusicLyrics(mediaId)
+                                            if (!simpLyrics?.syncedLyrics.isNullOrBlank() || !simpLyrics?.plainLyrics.isNullOrBlank()) {
+                                                if (playerEnableLyricsPopupMessage) {
+                                                    coroutineScope.launch {
+                                                        Toaster.s(
+                                                            R.string.info_lyrics_found_on_s,
+                                                            "SimpMusic"
+                                                        )
+                                                    }
                                                 }
 
-                                            isError = true
+                                                Database.asyncTransaction {
+                                                    lyricsTable.upsert(
+                                                        Lyrics(
+                                                            songId = mediaId,
+                                                            fixed = simpLyrics?.plainLyrics ?: currentLyrics?.fixed,
+                                                            synced = simpLyrics?.syncedLyrics ?: currentLyrics?.synced
+                                                        )
+                                                    )
+                                                }
+                                                isError = false
+                                            } else {
+                                                if (playerEnableLyricsPopupMessage)
+                                                    coroutineScope.launch {
+                                                        Toaster.e(
+                                                            R.string.info_lyrics_not_found_on_s_try_on_s,
+                                                            "KuGou.com",
+                                                            "SimpMusic",
+                                                            duration = Toast.LENGTH_LONG
+                                                        )
+                                                    }
+
+                                                isError = true
+                                            }
                                         }
                                     }.onFailure {
                                         Timber.e("Lyrics Kugou get error ${it.stackTraceToString()}")
@@ -646,6 +683,39 @@ fun SelectLyricFromTrack(
                 icon = R.drawable.chevron_back,
                 text = stringResource(R.string.cancel),
                 onClick = { menuState.hide() }
+            )
+            MenuEntry(
+                icon = R.drawable.text,
+                text = stringResource(R.string.fetch_lyrics_from_simpmusic),
+                onClick = {
+                    menuState.hide()
+                    coroutineScope.launch {
+                        val simpLyrics = fetchSimpMusicLyrics(mediaId)
+                        if (!simpLyrics?.syncedLyrics.isNullOrBlank() || !simpLyrics?.plainLyrics.isNullOrBlank()) {
+                            Database.asyncTransaction {
+                                lyricsTable.upsert(
+                                    Lyrics(
+                                        songId = mediaId,
+                                        fixed = simpLyrics?.plainLyrics ?: lyrics?.fixed,
+                                        synced = simpLyrics?.syncedLyrics ?: lyrics?.synced
+                                    )
+                                )
+                            }
+                            if (playerEnableLyricsPopupMessage) {
+                                Toaster.s(
+                                    R.string.info_lyrics_found_on_s,
+                                    context.getString(R.string.lyrics_source_simpmusic)
+                                )
+                            }
+                        } else if (playerEnableLyricsPopupMessage) {
+                            Toaster.e(
+                                R.string.info_lyrics_not_found_on_s,
+                                context.getString(R.string.lyrics_source_simpmusic),
+                                duration = Toast.LENGTH_LONG
+                            )
+                        }
+                    }
+                }
             )
             Row(
                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp),

@@ -1049,27 +1049,27 @@ fun GeneralSettings(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // ── Waigwe Fallback ───────────────────────────────────────────────────
+        // Alternate Source Retry
         AnimatedVisibility(
             visible = true,
             enter   = androidx.compose.animation.fadeIn(animationSpec = tween(675)) +
                       androidx.compose.animation.scaleIn(animationSpec = tween(675), initialScale = 0.9f)
         ) {
             SettingsSectionCard(
-                title   = "Waigwe Fallback",
+                title   = "Alternate Source Retry",
                 icon    = R.drawable.refresh,
                 content = {
-                    var WaigweFallbackEnabled by rememberPreference("WaigweFallbackKey", true)
-                    if (search.inputValue.isBlank() || "Waigwe Fallback".contains(search.inputValue, true)) {
+                    var alternateSourceRetryEnabled by rememberPreference("alternateSourceRetryKey", true)
+                    if (search.inputValue.isBlank() || "Alternate Source Retry".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
-                            title           = "Waigwe Fallback",
-                            text            = "Use alternative source when YouTube fails",
-                            isChecked       = WaigweFallbackEnabled,
-                            onCheckedChange = { WaigweFallbackEnabled = it },
+                            title           = "Alternate Source Retry",
+                            text            = "After a playback error, retry with another YouTube result, then Invidious, then Piped if connected",
+                            isChecked       = alternateSourceRetryEnabled,
+                            onCheckedChange = { alternateSourceRetryEnabled = it },
                             icon            = R.drawable.refresh
                         )
                         SettingsDescription(
-                            text      = "When YouTube can't play a song, automatically try alternative source",
+                            text      = "Fallback order: normal YouTube resolver, alternate YouTube match, Invidious, then your connected Piped account. This only runs after playback errors.",
                             modifier  = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
                         )
