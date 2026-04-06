@@ -55,6 +55,7 @@ import app.it.fast4x.rimusic.ui.screens.album.AlbumScreen
 import app.it.fast4x.rimusic.ui.screens.artist.ArtistScreenModern
 import app.it.fast4x.rimusic.ui.screens.history.HistoryScreen
 import app.it.fast4x.rimusic.ui.screens.home.HomeScreen
+import app.it.fast4x.rimusic.ui.screens.home.HomePage
 import app.it.fast4x.rimusic.ui.screens.localplaylist.LocalPlaylistScreen
 import app.it.fast4x.rimusic.ui.screens.mood.MoodScreen
 import app.it.fast4x.rimusic.ui.screens.mood.MoodsPageScreen
@@ -323,7 +324,7 @@ fun AppNavigation(
             )
         }
 // Cubic Jam Main Screen
-composable(route = NavRoutes.cubicjam.name) {
+        composable(route = NavRoutes.cubicjam.name) {
     val context = LocalContext.current
     val cubicJamManager = remember {
         CubicJamManager(
@@ -341,7 +342,25 @@ composable(route = NavRoutes.cubicjam.name) {
         navController = navController,
         cubicJamManager = cubicJamManager
     )
-}
+        }
+
+        composable(route = NavRoutes.chipsPage.name) {
+            HomePage(
+                navController = navController,
+                miniPlayer = miniPlayer,
+                onSearchClick = { navController.navigate(NavRoutes.search.name) },
+                onSettingsClick = { navController.navigate(NavRoutes.settings.name) },
+                onAlbumClick = { navController.navigate("${NavRoutes.album.name}/$it") },
+                onArtistClick = { navController.navigate("${NavRoutes.artist.name}/$it") },
+                onPlaylistClick = { navController.navigate("${NavRoutes.playlist.name}/$it") },
+                onMoodClick = { mood ->
+                    navController.currentBackStackEntry
+                        ?.savedStateHandle
+                        ?.set("mood", mood)
+                    navController.navigate(NavRoutes.mood.name)
+                }
+            )
+        }
 
 // Cubic Jam WebView Screen with URL parameter
 composable(

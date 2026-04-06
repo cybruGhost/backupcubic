@@ -79,6 +79,25 @@ data class NowPlayingState(
     val lastUpdateTime: Long = 0
 )
 
+private fun shouldCommitFriendNowPlayingUpdate(
+    currentFriend: FriendNowPlaying?,
+    incomingFriend: FriendNowPlaying,
+    lastUpdateTime: Long,
+    currentTime: Long
+): Boolean {
+    if (currentFriend == null) return true
+    if (currentFriend.id != incomingFriend.id) return true
+    if (currentFriend.trackTitle != incomingFriend.trackTitle) return true
+    if (currentFriend.artistName != incomingFriend.artistName) return true
+    if (currentFriend.albumArtUrl != incomingFriend.albumArtUrl) return true
+    if (currentFriend.friendName != incomingFriend.friendName) return true
+    if (currentFriend.isPlaying != incomingFriend.isPlaying) return true
+    if (currentFriend.isOnline != incomingFriend.isOnline) return true
+    if (currentFriend.durationMs != incomingFriend.durationMs) return true
+    if (abs(currentFriend.positionMs - incomingFriend.positionMs) >= 5_000L) return true
+    return currentTime - lastUpdateTime >= 15_000L
+}
+
 // ===== HELPER FUNCTIONS =====
 @Composable
 fun rememberNowPlayingState(): NowPlayingStateHolder {
@@ -105,7 +124,9 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
         
         scope.launch {
             try {
-                state.value = state.value.copy(isLoading = true)
+                if (state.value.friendNowPlaying == null && state.value.friendStatus == null) {
+                    state.value = state.value.copy(isLoading = true)
+                }
                 
                 val prefs = context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
                 val result = refreshFriendsActivity(prefs, json)
@@ -167,16 +188,12 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
                             
                             // Smooth update - only update if different
                             val currentFriend = state.value.friendNowPlaying
-                            if (currentFriend?.id != friendNowPlaying.id ||
-                                currentFriend?.trackTitle != friendNowPlaying.trackTitle ||
-                                currentFriend?.artistName != friendNowPlaying.artistName ||
-                                currentFriend?.albumArtUrl != friendNowPlaying.albumArtUrl ||
-                                currentFriend?.positionMs != friendNowPlaying.positionMs ||
-                                currentFriend?.durationMs != friendNowPlaying.durationMs ||
-                                currentFriend?.friendName != friendNowPlaying.friendName ||
-                                currentFriend?.isPlaying != friendNowPlaying.isPlaying ||
-                                currentFriend?.isOnline != friendNowPlaying.isOnline) {
-                                
+                            if (shouldCommitFriendNowPlayingUpdate(
+                                    currentFriend = currentFriend,
+                                    incomingFriend = friendNowPlaying,
+                                    lastUpdateTime = state.value.lastUpdateTime,
+                                    currentTime = currentTime
+                                )) {
                                 state.value = NowPlayingState(
                                     friendNowPlaying = friendNowPlaying,
                                     friendStatus = FriendStatus(
@@ -190,7 +207,7 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
                                     isLoading = false,
                                     lastUpdateTime = currentTime
                                 )
-                            } else {
+                            } else if (state.value.isLoading) {
                                 state.value = state.value.copy(isLoading = false)
                             }
                         } else {
@@ -218,28 +235,28 @@ fun rememberNowPlayingState(): NowPlayingStateHolder {
                                     isLoading = false,
                                     lastUpdateTime = currentTime
                                 )
-                            } else {
+                            } else if (state.value.isLoading) {
                                 state.value = state.value.copy(isLoading = false)
                             }
                         }
                     } else {
                         Timber.d("CubicJam - No online friends found")
                         // Keep last state but mark as no online friends
-                        state.value = state.value.copy(
-                            isLoading = false,
-                            lastUpdateTime = currentTime
-                        )
+                        if (state.value.isLoading) {
+                            state.value = state.value.copy(isLoading = false)
+                        }
                     }
                 } else {
                     Timber.d("CubicJam - No activity data in response")
-                    state.value = state.value.copy(
-                        isLoading = false,
-                        lastUpdateTime = System.currentTimeMillis()
-                    )
+                    if (state.value.isLoading) {
+                        state.value = state.value.copy(isLoading = false)
+                    }
                 }
             } catch (e: Exception) {
                 Timber.e("CubicJam - Error fetching friend now playing: ${e.message}")
-                state.value = state.value.copy(isLoading = false)
+                if (state.value.isLoading) {
+                    state.value = state.value.copy(isLoading = false)
+                }
             }
         }
     }

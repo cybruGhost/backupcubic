@@ -116,10 +116,19 @@ private fun sanitizedYouTubeAccountName(): String? {
     return value
 }
 
-private fun joinedSinceLabel(): String = "Joined 17th March 2024 - today"
+private fun joinedSinceLabel(context: Context): String {
+    val installedAt = runCatching {
+        context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
+    }.getOrDefault(System.currentTimeMillis())
+
+    val formatter = SimpleDateFormat("d MMMM yyyy", Locale.getDefault())
+    return "Joined ${formatter.format(java.util.Date(installedAt))} - today"
+}
 
 @Composable
-fun WelcomeMessage() {
+fun WelcomeMessage(
+    onOpenAccountsSettings: (() -> Unit)? = null
+) {
     val context = LocalContext.current
     var username by remember { mutableStateOf("") }
     var nameSource by remember { mutableStateOf(NAME_SOURCE_CUSTOM) }
@@ -193,6 +202,7 @@ fun WelcomeMessage() {
                 currentUsername = username,
                 currentNameSource = nameSource,
                 youtubeAccountName = youtubeAccountName,
+                onOpenAccountsSettings = onOpenAccountsSettings,
                 onDismiss = { showChangeDialog = false },
                 onUsernameChanged = { newUsername, newSource ->
                     DataStoreUtils.saveStringBlocking(context, KEY_USERNAME, newUsername)
@@ -667,6 +677,7 @@ private fun ChangeUsernameDialog(
     currentUsername: String,
     currentNameSource: String,
     youtubeAccountName: String?,
+    onOpenAccountsSettings: (() -> Unit)?,
     onDismiss: () -> Unit,
     onUsernameChanged: (String, String) -> Unit
 ) {
@@ -675,6 +686,7 @@ private fun ChangeUsernameDialog(
     val maxChars = 14
     val hasYouTubeAccount = !youtubeAccountName.isNullOrBlank()
     val isYouTubeConnected = isYouTubeLoggedIn()
+    val context = LocalContext.current
     val palette = colorPalette()
     val type = typography()
 
@@ -738,7 +750,7 @@ private fun ChangeUsernameDialog(
                         }
 
                         Text(
-                            text = joinedSinceLabel(),
+                            text = joinedSinceLabel(context),
                             style = type.xxs,
                             color = palette.textSecondary
                         )
@@ -782,7 +794,12 @@ private fun ChangeUsernameDialog(
                                 modifier = Modifier
                                     .weight(1f)
                                     .clickable {
-                                        if (hasYouTubeAccount) selectedSource = NAME_SOURCE_YT
+                                        if (hasYouTubeAccount) {
+                                            selectedSource = NAME_SOURCE_YT
+                                        } else if (!isYouTubeConnected) {
+                                            onOpenAccountsSettings?.invoke()
+                                            onDismiss()
+                                        }
                                     }
                             ) {
                                 Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
@@ -820,7 +837,12 @@ private fun ChangeUsernameDialog(
                     Surface(
                         shape = RoundedCornerShape(18.dp),
                         color = palette.background2,
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clickable {
+                                onOpenAccountsSettings?.invoke()
+                                onDismiss()
+                            }
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),

@@ -183,6 +183,8 @@ fun HomeArtists(
         refreshScope.launch(Dispatchers.IO) {
             refreshing = true
             justSynced = false
+            importYTMSubscribedChannels()
+            justSynced = true
             delay(500)
             refreshing = false
         }

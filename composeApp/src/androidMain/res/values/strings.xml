@@ -1292,5 +1292,9 @@
 <string name="username_label">Your name</string>
 <string name="character_count">%1$d / %2$d</string>
 <string name="save">Save</string>
+<string name="ytm_refreshing">Refreshing YouTube Music</string>
+<string name="ytm_playlists_synced">Playlists refreshed</string>
+<string name="ytm_playlists_sync_failed">Playlist refresh failed</string>
+<string name="ytm_likes_title">From your YT Music likes</string>
 
 </resources>

@@ -1,6 +1,5 @@
 package app.it.fast4x.rimusic.utils
 
-import android.widget.Toast
 import androidx.annotation.OptIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -32,11 +31,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
-import app.kreate.android.me.knighthat.utils.Toaster
 import app.it.fast4x.rimusic.cleanPrefix
 import timber.log.Timber
 
 private val ytmAlbumThumbnailCache = mutableMapOf<String, String?>()
+private var lastFullAccountSyncAtMs = 0L
 
 private data class SessionLibraryScope(
     val cookie: String,
@@ -44,10 +43,157 @@ private data class SessionLibraryScope(
     val pageId: String?
 )
 
-private data class RemotePlaylistSyncPayload(
-    val playlist: Playlist,
-    val songs: List<app.it.fast4x.rimusic.models.Song>
-)
+private fun playlistIdCandidates(vararg ids: String): List<String> =
+    ids.asSequence()
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .flatMap { id ->
+            sequenceOf(
+                id,
+                id.removePrefix("VL"),
+                "VL${id.removePrefix("VL")}"
+            )
+        }
+        .distinct()
+        .toList()
+
+private fun playlistIdentityKey(playlistId: String, title: String): String =
+    playlistId.removePrefix("VL").trim().ifBlank { title.trim().lowercase() }
+
+private fun normalizedPlaylistName(name: String): String =
+    cleanPrefix(name).trim().lowercase()
+
+private fun parseRemoteSongCount(songCount: String, subtitle: String): Int {
+    val direct = songCount.trim().toIntOrNull()
+    if (direct != null) return direct
+    return Regex("(\\d+)").find(subtitle)?.groupValues?.getOrNull(1)?.toIntOrNull() ?: 0
+}
+
+private suspend fun findExistingYtmPlaylist(
+    browseId: String,
+    title: String
+): Playlist? {
+    val allPlaylists = Database.playlistTable
+        .allAsPreview()
+        .first()
+        .map { it.playlist }
+
+    val candidateBrowseIds = playlistIdCandidates(browseId)
+
+    return allPlaylists.firstOrNull { playlist ->
+        playlist.isYoutubePlaylist &&
+            !playlist.browseId.isNullOrBlank() &&
+            candidateBrowseIds.contains(playlist.browseId.trim())
+    } ?: allPlaylists.firstOrNull { playlist ->
+        playlist.isYoutubePlaylist && normalizedPlaylistName(playlist.name) == normalizedPlaylistName(title)
+    }
+}
+
+private suspend fun cleanupDuplicateYtmPlaylists() {
+    Database.playlistTable
+        .allAsPreview()
+        .first()
+        .filter { it.playlist.isYoutubePlaylist }
+        .groupBy { preview ->
+            preview.playlist.browseId?.takeIf { it.isNotBlank() }
+                ?: normalizedPlaylistName(preview.playlist.name)
+        }
+        .values
+        .forEach { duplicates ->
+            duplicates
+                .sortedWith(
+                    compareByDescending<app.it.fast4x.rimusic.models.PlaylistPreview> { it.songCount > 0 }
+                        .thenByDescending { it.playlist.browseId?.isNotBlank() == true }
+                        .thenBy { it.playlist.id }
+                )
+                .drop(1)
+                .forEach { duplicate ->
+                    Database.songPlaylistMapTable.clear(duplicate.playlist.id)
+                    Database.playlistTable.delete(duplicate.playlist)
+                }
+        }
+}
+
+private suspend fun fetchRemotePlaylistSongs(
+    sessionScope: SessionLibraryScope?,
+    playlistId: String,
+    browseId: String,
+    timeoutMs: Long = 12_000L
+): List<app.it.fast4x.rimusic.models.Song> {
+    val isLikedMusicPlaylist = playlistId.equals("LM", ignoreCase = true) || browseId.equals("LM", ignoreCase = true)
+    val sessionSongs = sessionScope?.let { scope ->
+        val directSongs = if (isLikedMusicPlaylist) {
+            safeYtmCall(
+                label = "sessionLikedSongs:LM",
+                timeoutMs = timeoutMs
+            ) {
+                YtmSessionApi.fetchLikedSongs(
+                    cookies = scope.cookie,
+                    authUser = scope.authUser,
+                    pageId = scope.pageId
+                )
+            }?.takeIf { it.isNotEmpty() }
+        } else {
+            playlistIdCandidates(playlistId, browseId)
+                .firstNotNullOfOrNull { candidatePlaylistId ->
+                    safeYtmCall(
+                        label = "sessionPlaylistSongs:$candidatePlaylistId",
+                        timeoutMs = timeoutMs
+                    ) {
+                        YtmSessionApi.fetchPlaylistSongs(
+                            cookies = scope.cookie,
+                            playlistId = candidatePlaylistId,
+                            authUser = scope.authUser,
+                            pageId = scope.pageId
+                        )
+                    }?.takeIf { it.isNotEmpty() }
+                }
+        }
+
+        directSongs?.map { remoteSong ->
+                app.it.fast4x.rimusic.models.Song(
+                    id = remoteSong.videoId,
+                    title = cleanPrefix(remoteSong.title),
+                    artistsText = remoteSong.artist.ifBlank { null },
+                    durationText = remoteSong.duration.ifBlank { null },
+                    thumbnailUrl = remoteSong.thumbnail.ifBlank { null },
+                    totalPlayTimeMs = 1L
+                )
+            }
+    }
+
+    if (!sessionSongs.isNullOrEmpty()) {
+        return sessionSongs
+            .filter { it.id.isNotBlank() && it.title.isNotBlank() }
+            .distinctBy { it.id }
+    }
+
+    return safeYtmCall(
+        label = "ytmPlaylistSongs:$browseId",
+        timeoutMs = timeoutMs
+    ) {
+        YtMusic.getPlaylist(playlistId = browseId).completed()
+    }?.songs
+        ?.map { it.asNormalizedSong() }
+        ?.filter { it.id.isNotBlank() && it.title.isNotBlank() }
+        ?.distinctBy { it.id }
+        ?.takeIf { it.isNotEmpty() }
+        ?: playlistIdCandidates(browseId)
+            .firstNotNullOfOrNull { candidateBrowseId ->
+                safeYtmCall(
+                    label = "ytmPlaylistSongsCandidate:$candidateBrowseId",
+                    timeoutMs = timeoutMs,
+                    maxRetries = 1
+                ) {
+                    YtMusic.getPlaylist(playlistId = candidateBrowseId).completed()
+                }?.songs
+                    ?.map { it.asNormalizedSong() }
+                    ?.filter { it.id.isNotBlank() && it.title.isNotBlank() }
+                    ?.distinctBy { it.id }
+                    ?.takeIf { it.isNotEmpty() }
+            }
+        .orEmpty()
+}
 
 private fun currentSessionLibraryScope(): SessionLibraryScope? {
     val session = YouTubeSessionStore.applyCurrentSession() ?: return null
@@ -121,11 +267,13 @@ private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
     withTimeoutOrNull(60_000L) {
         val remotePlaylists = safeYtmCall("sessionPlaylists") {
             YtmSessionApi.fetchPlaylists(scope.cookie, scope.authUser, scope.pageId)
+        }?.distinctBy { playlist ->
+            playlistIdentityKey(playlist.playlistId, playlist.title)
         } ?: return@withTimeoutOrNull false
 
         if (remotePlaylists.isEmpty()) return@withTimeoutOrNull false
 
-        val payloads = mutableListOf<RemotePlaylistSyncPayload>()
+        val syncedBrowseIds = mutableSetOf<String>()
         remotePlaylists.forEachIndexed { index, remotePlaylist ->
             kotlinx.coroutines.currentCoroutineContext().ensureActive()
 
@@ -133,59 +281,61 @@ private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
                 return@forEachIndexed
             }
 
-            val browseId = remotePlaylist.playlistId.removePrefix("VL")
-            val localPlaylist = Database.playlistTable.findByBrowseId(browseId).first()
+            val remoteBrowseId = remotePlaylist.playlistId.trim()
+            val localPlaylist = findExistingYtmPlaylist(
+                browseId = remoteBrowseId,
+                title = remotePlaylist.title
+            )
+            syncedBrowseIds += remoteBrowseId
             val playlist = (localPlaylist ?: Playlist(
                 name = remotePlaylist.title,
-                browseId = browseId,
+                browseId = remoteBrowseId,
                 isYoutubePlaylist = true
             )).copy(
                 name = remotePlaylist.title,
-                browseId = browseId,
+                browseId = remoteBrowseId,
                 isYoutubePlaylist = true
             )
+            val localSongCount = if ((localPlaylist?.id ?: 0) > 0) {
+                Database.songPlaylistMapTable.allSongsOf(localPlaylist!!.id).first().size
+            } else {
+                0
+            }
+            val remoteSongCount = parseRemoteSongCount(remotePlaylist.songCount, remotePlaylist.subtitle)
+            val shouldFetchSongs = localSongCount <= 0 || (remoteSongCount > 0 && localSongCount != remoteSongCount)
 
-            Toaster.i("Syncing playlist ${index + 1}/${remotePlaylists.size}: ${remotePlaylist.title}")
-
-            if (index > 0) {
-                delay(1_000L)
+            if (index > 0 && shouldFetchSongs) {
+                delay(650L)
             }
 
-            val remoteSongs = safeYtmCall(
-                label = "sessionPlaylistSongs:$browseId",
-                timeoutMs = 12_000L
-            ) {
-                YtMusic.getPlaylist(browseId).completed()
-            }?.songs
-                ?.map { it.asNormalizedSong() }
-                ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
-                ?.distinctBy { song -> song.id }
-                .orEmpty()
+            val remoteSongs = if (!shouldFetchSongs) {
+                emptyList()
+            } else {
+                fetchRemotePlaylistSongs(
+                    sessionScope = scope,
+                    playlistId = remotePlaylist.playlistId,
+                    browseId = remoteBrowseId,
+                    timeoutMs = 12_000L
+                )
+            }
 
-            payloads += RemotePlaylistSyncPayload(
-                playlist = playlist,
-                songs = remoteSongs
-            )
-        }
-
-        Database.asyncTransaction {
-            payloads.forEach { payload ->
-                val playlistId = if (payload.playlist.id > 0) {
-                    playlistTable.update(payload.playlist)
-                    payload.playlist.id
+            Database.asyncTransaction {
+                val playlistId = if (playlist.id > 0) {
+                    playlistTable.update(playlist)
+                    playlist.id
                 } else {
-                    playlistTable.insert(payload.playlist)
+                    playlistTable.insert(playlist)
                 }
 
-                if (payload.songs.isNotEmpty()) {
-                    payload.songs.forEach(songTable::insertIgnore)
+                if (remoteSongs.isNotEmpty()) {
+                    remoteSongs.forEach(songTable::insertIgnore)
                     songPlaylistMapTable.clear(playlistId)
                     songPlaylistMapTable.updateReplace(
-                        payload.songs.mapIndexed { index, song ->
+                        remoteSongs.mapIndexed { songIndex, song ->
                             app.it.fast4x.rimusic.models.SongPlaylistMap(
                                 songId = song.id,
                                 playlistId = playlistId,
-                                position = index
+                                position = songIndex
                             )
                         }
                     )
@@ -193,7 +343,6 @@ private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
             }
         }
 
-        val syncedBrowseIds = payloads.mapNotNull { it.playlist.browseId }.toSet()
         Database.playlistTable
             .allAsPreview()
             .first()
@@ -209,6 +358,8 @@ private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
                     )
                 )
             }
+
+        cleanupDuplicateYtmPlaylists()
 
         true
     } ?: false
@@ -269,11 +420,9 @@ suspend fun importYTMSubscribedChannels(): Boolean {
     if (isYouTubeSyncEnabled()) {
         val sessionScope = currentSessionLibraryScope()
 
-        Toaster.n( R.string.syncing, Toast.LENGTH_LONG )
-
-        val sessionArtists = sessionScope?.let { scope ->
-            safeYtmCall("sessionArtists") {
-                YtmSessionApi.fetchArtists(scope.cookie, scope.authUser, scope.pageId)
+    val sessionArtists = sessionScope?.let { scope ->
+        safeYtmCall("sessionArtists") {
+            YtmSessionApi.fetchArtists(scope.cookie, scope.authUser, scope.pageId)
             }
         }
         if (!sessionArtists.isNullOrEmpty()) {
@@ -362,8 +511,6 @@ suspend fun importYTMLikedAlbums(): Boolean {
     println("importYTMLikedAlbums isYouTubeSyncEnabled() = ${isYouTubeSyncEnabled()} and isAutoSyncEnabled() = ${isAutoSyncEnabled()}")
     if (isYouTubeSyncEnabled()) {
         val sessionScope = currentSessionLibraryScope()
-
-        Toaster.n( R.string.syncing, Toast.LENGTH_LONG )
 
         val sessionAlbums = sessionScope?.let { scope ->
             safeYtmCall("sessionAlbums") {
@@ -456,8 +603,6 @@ suspend fun importYTMLikedPlaylists(): Boolean {
     if (!isYouTubeSyncEnabled()) return false
     val sessionScope = currentSessionLibraryScope()
 
-    Toaster.n(R.string.syncing, Toast.LENGTH_LONG)
-
     if (sessionScope != null && syncSessionPlaylists(sessionScope)) {
         return true
     }
@@ -492,21 +637,33 @@ suspend fun importYTMLikedPlaylists(): Boolean {
         return false
     }
 
-    ytmPlaylists.forEach { remotePlaylist ->
+    val distinctYtmPlaylists = ytmPlaylists.distinctBy { playlist ->
+        playlistIdentityKey(playlist.key, playlist.title.orEmpty())
+    }
+
+    distinctYtmPlaylists.forEach { remotePlaylist ->
         if (remotePlaylist.key.isBlank()) return@forEach
         val browseId = remotePlaylist.key.removePrefix("VL")
-        val localPlaylist = Database.playlistTable.findByBrowseId(browseId).first()
+        val localPlaylist = findExistingYtmPlaylist(
+            browseId = remotePlaylist.key,
+            title = remotePlaylist.title.orEmpty()
+        )
         val playlist = (localPlaylist ?: Playlist(
             name = remotePlaylist.title.orEmpty(),
-            browseId = browseId,
+            browseId = remotePlaylist.key,
             isEditable = remotePlaylist.isEditable == true,
             isYoutubePlaylist = true
         )).copy(
             name = remotePlaylist.title.orEmpty(),
-            browseId = browseId,
+            browseId = remotePlaylist.key,
             isEditable = remotePlaylist.isEditable == true,
             isYoutubePlaylist = true
         )
+        val localSongCount = if ((localPlaylist?.id ?: 0) > 0) {
+            Database.songPlaylistMapTable.allSongsOf(localPlaylist!!.id).first().size
+        } else {
+            0
+        }
 
         val playlistId = if (playlist.id > 0) {
             Database.playlistTable.update(playlist)
@@ -515,18 +672,18 @@ suspend fun importYTMLikedPlaylists(): Boolean {
             Database.playlistTable.insert(playlist)
         }
 
-        val remoteSongs = safeYtmCall(
-            label = "importYTMLikedPlaylists:playlist:$browseId",
-            timeoutMs = 30_000L
-        ) {
-            YtMusic.getPlaylist(browseId).completed()
+        val remoteSongs = if (localSongCount > 0) {
+            emptyList()
+        } else {
+            fetchRemotePlaylistSongs(
+                sessionScope = sessionScope,
+                playlistId = remotePlaylist.key,
+                browseId = remotePlaylist.key,
+                timeoutMs = 30_000L
+            )
         }
-            ?.songs
-            ?.map { it.asNormalizedSong() }
-            ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
-            ?.distinctBy { song -> song.id }
 
-        if (remoteSongs.isNullOrEmpty()) {
+        if (remoteSongs.isEmpty() && localSongCount <= 0) {
             println("Playlist sync skipped song remap for $browseId because remote song list was empty")
             return@forEach
         }
@@ -536,17 +693,19 @@ suspend fun importYTMLikedPlaylists(): Boolean {
                 val currentPlaylist = playlist.copy(id = playlistId)
                 playlistTable.insertIgnore(currentPlaylist)
                 playlistTable.update(currentPlaylist)
-                remoteSongs.forEach(songTable::insertIgnore)
-                songPlaylistMapTable.clear(currentPlaylist.id)
-                songPlaylistMapTable.updateReplace(
-                    remoteSongs.mapIndexed { index, song ->
-                        app.it.fast4x.rimusic.models.SongPlaylistMap(
-                            songId = song.id,
-                            playlistId = currentPlaylist.id,
-                            position = index
-                        )
-                    }
-                )
+                if (remoteSongs.isNotEmpty()) {
+                    remoteSongs.forEach(songTable::insertIgnore)
+                    songPlaylistMapTable.clear(currentPlaylist.id)
+                    songPlaylistMapTable.updateReplace(
+                        remoteSongs.mapIndexed { index, song ->
+                            app.it.fast4x.rimusic.models.SongPlaylistMap(
+                                songId = song.id,
+                                playlistId = currentPlaylist.id,
+                                position = index
+                            )
+                        }
+                    )
+                }
             }
         }.onFailure {
             Timber.e(it, "importYTMLikedPlaylists failed while saving playlist=%s", browseId)
@@ -558,7 +717,7 @@ suspend fun importYTMLikedPlaylists(): Boolean {
         .first()
         .map { it.playlist }
         .filter { playlist ->
-            playlist.isYoutubePlaylist && playlist.browseId !in ytmPlaylists.map { it.key.removePrefix("VL") }
+            playlist.isYoutubePlaylist && playlist.browseId !in distinctYtmPlaylists.map { it.key.removePrefix("VL") }
         }
         .forEach { playlist ->
             Database.playlistTable.update(
@@ -569,6 +728,8 @@ suspend fun importYTMLikedPlaylists(): Boolean {
             )
         }
 
+    cleanupDuplicateYtmPlaylists()
+
     return true
 }
 
@@ -576,34 +737,53 @@ suspend fun importYTMLikedSongs(): Boolean {
     if (!isYouTubeSyncEnabled()) return false
 
     val sessionScope = currentSessionLibraryScope() ?: return false
-    Toaster.n(R.string.syncing, Toast.LENGTH_LONG)
-
     val sessionSongs = safeYtmCall("sessionLikedSongs") {
         YtmSessionApi.fetchLikedSongs(sessionScope.cookie, sessionScope.authUser, sessionScope.pageId)
-    } ?: return false
+    }
+    val fallbackSongs = if (sessionSongs.isNullOrEmpty()) {
+        fetchRemotePlaylistSongs(
+            sessionScope = sessionScope,
+            playlistId = "LM",
+            browseId = "LM"
+        )
+    } else {
+        emptyList()
+    }
 
-    if (sessionSongs.isEmpty()) return false
+    if (sessionSongs.isNullOrEmpty() && fallbackSongs.isEmpty()) return false
 
     runCatching {
-        sessionSongs.forEach { remoteSong ->
-            if (remoteSong.videoId.isBlank() || remoteSong.title.isBlank()) return@forEach
+        if (!sessionSongs.isNullOrEmpty()) {
+            sessionSongs.forEach { remoteSong ->
+                if (remoteSong.videoId.isBlank() || remoteSong.title.isBlank()) return@forEach
 
-            val localSong = Database.songTable.findById(remoteSong.videoId).first()
-            val normalizedSong = (localSong ?: app.it.fast4x.rimusic.models.Song(
-                id = remoteSong.videoId,
-                title = cleanPrefix(remoteSong.title),
-                artistsText = remoteSong.artist.ifBlank { null },
-                durationText = remoteSong.duration.ifBlank { null },
-                thumbnailUrl = remoteSong.thumbnail.ifBlank { null }
-            )).copy(
-                title = cleanPrefix(remoteSong.title),
-                artistsText = remoteSong.artist.ifBlank { localSong?.artistsText },
-                durationText = remoteSong.duration.ifBlank { localSong?.durationText },
-                thumbnailUrl = remoteSong.thumbnail.ifBlank { localSong?.thumbnailUrl },
-                likedAt = localSong?.likedAt?.takeIf { it > 0 } ?: System.currentTimeMillis()
-            )
+                val localSong = Database.songTable.findById(remoteSong.videoId).first()
+                val normalizedSong = (localSong ?: app.it.fast4x.rimusic.models.Song(
+                    id = remoteSong.videoId,
+                    title = cleanPrefix(remoteSong.title),
+                    artistsText = remoteSong.artist.ifBlank { null },
+                    durationText = remoteSong.duration.ifBlank { null },
+                    thumbnailUrl = remoteSong.thumbnail.ifBlank { null }
+                )).copy(
+                    title = cleanPrefix(remoteSong.title),
+                    artistsText = remoteSong.artist.ifBlank { localSong?.artistsText },
+                    durationText = remoteSong.duration.ifBlank { localSong?.durationText },
+                    thumbnailUrl = remoteSong.thumbnail.ifBlank { localSong?.thumbnailUrl },
+                    likedAt = localSong?.likedAt?.takeIf { it > 0 } ?: System.currentTimeMillis()
+                )
 
-            Database.songTable.upsert(normalizedSong)
+                Database.songTable.upsert(normalizedSong)
+            }
+        } else {
+            fallbackSongs.forEach { song ->
+                val localSong = Database.songTable.findById(song.id).first()
+                Database.songTable.upsert(
+                    (localSong ?: song).copy(
+                        title = cleanPrefix((localSong ?: song).title),
+                        likedAt = localSong?.likedAt?.takeIf { it > 0 } ?: System.currentTimeMillis()
+                    )
+                )
+            }
         }
     }.onFailure {
         Timber.e(it, "importYTMLikedSongs failed")
@@ -615,6 +795,10 @@ suspend fun importYTMLikedSongs(): Boolean {
 
 suspend fun syncSelectedYtmAccountData(): Boolean {
     if (!isYouTubeSyncEnabled()) return false
+    val now = System.currentTimeMillis()
+    if (now - lastFullAccountSyncAtMs < 60_000L) {
+        return false
+    }
 
     val syncSteps = listOf(
         "liked songs" to ::importYTMLikedSongs,
@@ -626,13 +810,16 @@ suspend fun syncSelectedYtmAccountData(): Boolean {
     var syncedAny = false
     syncSteps.forEach { (label, syncStep) ->
         runCatching {
-            Toaster.i("Syncing $label")
             syncStep()
         }.onSuccess { stepSucceeded ->
             syncedAny = syncedAny || stepSucceeded
         }.onFailure { error ->
             Timber.e(error, "syncSelectedYtmAccountData failed while syncing %s", label)
         }
+    }
+
+    if (syncedAny) {
+        lastFullAccountSyncAtMs = now
     }
 
     return syncedAny

@@ -38,8 +38,6 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-
-
 import it.fast4x.innertube.models.bodies.QueueBody
 import it.fast4x.innertube.requests.queue
 
@@ -59,7 +57,6 @@ fun ArtistScreenModern(
     val transitionEffect by rememberPreference( transitionEffectKey, TransitionEffect.Scale )
     val playerPosition by rememberPreference( playerPositionKey, PlayerPosition.Bottom )
 
-
     var selectedTabIndex by remember { mutableStateOf(0) }
 
     var localArtist: Artist? by remember { mutableStateOf( null ) }
@@ -70,7 +67,6 @@ fun ArtistScreenModern(
                 .collect { localArtist = it }
     }
     var artistPage: ArtistPage? by remember { mutableStateOf( null ) }
-
     LaunchedEffect( Unit ) {
         YtMusic.getArtistPage( browseId )
                .onSuccess { online ->
@@ -152,5 +148,4 @@ fun ArtistScreenModern(
             }
         }
     }
-
 }

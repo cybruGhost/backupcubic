@@ -108,17 +108,36 @@ fun Player.playAtMedia(mediaItems: List<MediaItem>, mediaId: String) {
 
 fun Player.forcePlay(mediaItem: MediaItem) {
     val cleanedMediaItem = mediaItem.cleaned
-    val existingIndex = findMediaItemIndexById(cleanedMediaItem.mediaId)
+    val safeMediaItem = cleanedMediaItem.buildUpon()
+        .setUri(
+            sanitizePlaybackUri(
+                cleanedMediaItem.localConfiguration?.uri?.toString()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: cleanedMediaItem.mediaId
+            )
+        )
+        .build()
+    val existingIndex = findMediaItemIndexById(safeMediaItem.mediaId)
 
     if (existingIndex >= 0 && mediaItemCount > 0) {
         val remainingQueue = (existingIndex until mediaItemCount)
             .map(::getMediaItemAt)
-            .map(MediaItem::cleaned)
+            .map { queuedItem ->
+                queuedItem.cleaned.buildUpon()
+                    .setUri(
+                        sanitizePlaybackUri(
+                            queuedItem.localConfiguration?.uri?.toString()
+                                ?.takeIf { it.isNotBlank() }
+                                ?: queuedItem.mediaId
+                        )
+                    )
+                    .build()
+            }
             .fastDistinctBy(MediaItem::mediaId)
 
         setMediaItems(remainingQueue, 0, C.TIME_UNSET)
     } else {
-        setMediaItem(cleanedMediaItem, true)
+        setMediaItem(safeMediaItem, true)
     }
 
     prepare()
@@ -127,7 +146,16 @@ fun Player.forcePlay(mediaItem: MediaItem) {
 }
 
 fun Player.playVideo(mediaItem: MediaItem) {
-    setMediaItem(mediaItem.cleaned, true)
+    val safeMediaItem = mediaItem.cleaned.buildUpon()
+        .setUri(
+            sanitizePlaybackUri(
+                mediaItem.localConfiguration?.uri?.toString()
+                    ?.takeIf { it.isNotBlank() }
+                    ?: mediaItem.mediaId
+            )
+        )
+        .build()
+    setMediaItem(safeMediaItem, true)
     pause()
 }
 
@@ -145,7 +173,17 @@ fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
 
     // This will prevent UI from freezing up during conversion
     CoroutineScope( Dispatchers.Default ).launch {
-        val cleanedMediaItems = mediaItems.fastMap( MediaItem::cleaned ).fastDistinctBy( MediaItem::mediaId )
+        val cleanedMediaItems = mediaItems.fastMap { item ->
+            item.cleaned.buildUpon()
+                .setUri(
+                    sanitizePlaybackUri(
+                        item.localConfiguration?.uri?.toString()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: item.mediaId
+                    )
+                )
+                .build()
+        }.fastDistinctBy( MediaItem::mediaId )
 
         runBlocking( Dispatchers.Main ) {
             setMediaItems( cleanedMediaItems, mediaItemIndex, C.TIME_UNSET )

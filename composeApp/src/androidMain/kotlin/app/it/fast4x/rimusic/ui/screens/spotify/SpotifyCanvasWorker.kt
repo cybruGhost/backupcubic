@@ -12,6 +12,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.media3.common.Player
 import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
+import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.kreate.android.R
@@ -698,15 +699,15 @@ fun SpotifyCanvasWorker() {
     }
 
     LaunchedEffect(isCanvasEnabled) {
-        if (!isCanvasEnabled) {
+        if (!isCanvasEnabled || appRunningInBackground) {
             SpotifyCanvasState.clearAll()
             CanvasPlayerManager.stopAndClear()
             SpotifyApiConfig.clearAllCache()
         }
     }
 
-    LaunchedEffect(displayedMediaItem?.mediaId, isCanvasEnabled) {
-        if (!isCanvasEnabled) return@LaunchedEffect
+    LaunchedEffect(displayedMediaItem?.mediaId, isCanvasEnabled, appRunningInBackground) {
+        if (!isCanvasEnabled || appRunningInBackground) return@LaunchedEffect
 
         val mediaItem = displayedMediaItem
         val mediaId = mediaItem?.mediaId ?: return@LaunchedEffect
@@ -732,8 +733,8 @@ fun SpotifyCanvasWorker() {
         }
     }
 
-    LaunchedEffect(displayedMediaItem?.mediaId, displayedMediaItem?.mediaMetadata?.title, displayedMediaItem?.mediaMetadata?.artist, isCanvasEnabled) {
-        if (!isCanvasEnabled) return@LaunchedEffect
+    LaunchedEffect(displayedMediaItem?.mediaId, displayedMediaItem?.mediaMetadata?.title, displayedMediaItem?.mediaMetadata?.artist, isCanvasEnabled, appRunningInBackground) {
+        if (!isCanvasEnabled || appRunningInBackground) return@LaunchedEffect
 
         snapshotFlow {
             Triple(
@@ -742,7 +743,7 @@ fun SpotifyCanvasWorker() {
                 displayedMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
             )
         }.collect { (mediaId, title, artist) ->
-            if (mediaId == null) return@collect
+            if (mediaId == null || appRunningInBackground) return@collect
             val metadata = resolveCanvasMetadata(mediaId, title, artist)
             val resolvedTitle = metadata.first
             val resolvedArtist = metadata.second
@@ -772,11 +773,16 @@ fun SpotifyCanvasWorker() {
         }
     }
 
-    LaunchedEffect(binder.player, displayedMediaItem?.mediaId) {
+    LaunchedEffect(binder.player, displayedMediaItem?.mediaId, appRunningInBackground) {
 
         snapshotFlow {
             Pair(binder.player.playbackState, binder.player.playWhenReady)
         }.collect { (playbackState, playWhenReady) ->
+            if (appRunningInBackground) {
+                CanvasPlayerManager.stopAndClear()
+                SpotifyCanvasState.isPlaying = false
+                return@collect
+            }
             val mediaId = displayedMediaItem?.mediaId
 
             if (playbackState == Player.STATE_ENDED) {
@@ -829,6 +835,7 @@ private suspend fun fetchCanvasForSong(
     showLogs: Boolean,
     mediaId: String
 ) {
+    if (appRunningInBackground) return
     SpotifyCanvasState.isLoading = true
 
     try {

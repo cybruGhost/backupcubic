@@ -169,6 +169,7 @@ import app.it.fast4x.rimusic.utils.putEnum
 import app.it.fast4x.rimusic.utils.queueLoopTypeKey
 import app.it.fast4x.rimusic.utils.resumePlaybackOnStartKey
 import app.it.fast4x.rimusic.utils.resumePlaybackWhenDeviceConnectedKey
+import app.it.fast4x.rimusic.utils.sanitizePlaybackUri
 import app.it.fast4x.rimusic.utils.setGlobalVolume
 import app.it.fast4x.rimusic.utils.showDownloadButtonBackgroundPlayerKey
 import app.it.fast4x.rimusic.utils.showLikeButtonBackgroundPlayerKey
@@ -299,6 +300,11 @@ class PlayerServiceModern : MediaLibraryService(),
     private var notificationManager: NotificationManager? = null
 
     private lateinit var notificationActionReceiver: NotificationActionReceiver
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        return START_STICKY
+    }
 
     @kotlin.OptIn(FlowPreview::class, ExperimentalCoroutinesApi::class)
     override fun onCreate() {
@@ -484,6 +490,18 @@ class PlayerServiceModern : MediaLibraryService(),
         sessionPlayer.addListener(sleepTimer)
         player.addListener(this@PlayerServiceModern)
         player.addAnalyticsListener(playbackStatsListener)
+        crossfadeOverlayPlayer.addListener(object : Player.Listener {
+            override fun onPlayerError(error: PlaybackException) {
+                if (crossFadeMediaPlayer.recoverFromSecondaryError()) {
+                    Timber.w(
+                        error,
+                        "Recovered from secondary crossfade player error for mediaId=%s",
+                        crossfadeOverlayPlayer.currentMediaItem?.mediaId
+                    )
+                    Toaster.e("Crossfade hit a playback issue. Retrying on the current song.")
+                }
+            }
+        })
 
         // Force player to add all commands available, prior to android 13
         val forwardingPlayer =
@@ -1972,7 +1990,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 player.setMediaItems(
                     queuedSong.map { mediaItem ->
                         mediaItem.mediaItem.buildUpon()
-                            .setUri(mediaItem.mediaItem.mediaId)
+                            .setUri(sanitizePlaybackUri(mediaItem.mediaItem.mediaId))
                             .setCustomCacheKey(mediaItem.mediaItem.mediaId)
                             .build().apply {
                                 mediaMetadata.extras?.putBoolean("isFromPersistentQueue", true)
@@ -2007,7 +2025,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                 player.setMediaItems(
                     queue.songMediaItems.map { song ->
                         song.asMediaItem.buildUpon()
-                            .setUri(song.asMediaItem.mediaId)
+                            .setUri(sanitizePlaybackUri(song.asMediaItem.mediaId))
                             .setCustomCacheKey(song.asMediaItem.mediaId)
                             .build().apply {
                                 mediaMetadata.extras?.putBoolean("isFromPersistentQueue", true)
@@ -2264,10 +2282,20 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             endpoint: NavigationEndpoint.Endpoint.Watch? = null
         ) {
             this.stopRadio()
+            val sanitizedMediaItem = mediaItem.buildUpon()
+                .setUri(
+                    sanitizePlaybackUri(
+                        mediaItem.localConfiguration?.uri?.toString()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: mediaItem.mediaId
+                    )
+                )
+                .build()
+            val sourceVideoId = sanitizedMediaItem.mediaId.substringAfterLast("/")
 
             // Play song immediately while other songs are being loaded
-            if( player.currentMediaItem?.mediaId != mediaItem.mediaId )
-                player.forcePlay( mediaItem )
+            if( player.currentMediaItem?.mediaId != sanitizedMediaItem.mediaId )
+                player.forcePlay( sanitizedMediaItem )
 
             // Prevent UI from freezing up while data is being fetched
             radioJob = coroutineScope.launch {
@@ -2277,7 +2305,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
                 if( playlistId == null )
                     // Retrieve "playlistId" by sending song's id to "next" endpoint
-                    Innertube.nextPage( NextBody(videoId = mediaItem.mediaId) )
+                    Innertube.nextPage( NextBody(videoId = sourceVideoId) )
                              ?.getOrNull()
                              ?.itemsPage
                              ?.items
@@ -2287,7 +2315,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
                 // This time add "playlistId" to the search to get more songs
                 if( !playlistId.isNullOrBlank() )
-                    Innertube.nextPage( NextBody(videoId = mediaItem.mediaId, playlistId = playlistId) )
+                    Innertube.nextPage( NextBody(videoId = sourceVideoId, playlistId = playlistId) )
                              ?.getOrNull()
                              ?.itemsPage
                              ?.items
@@ -2305,7 +2333,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
                                  // Songs with the same id as provided [Song] should be removed.
                                  // The song usually lives at the the first index, but this
                                  // way is safer to implement, as it can live through changes in position.
-                                 relatedSongs.dropWhile { it.mediaId == mediaItem.mediaId || it.mediaId in currentQueue }
+                                 relatedSongs.dropWhile { it.mediaId == sanitizedMediaItem.mediaId || it.mediaId in currentQueue }
                              }
                              ?.also {
                                  // Any call to [player] must happen on Main thread

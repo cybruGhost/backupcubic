@@ -93,6 +93,8 @@ object YouTubeSessionStore {
                 cookie = session.cookie,
                 visitorData = session.visitorData,
                 dataSyncId = session.dataSyncId,
+                authUser = session.authUser,
+                pageId = session.pageId,
                 accountName = session.accountName,
                 accountEmail = session.accountEmail,
                 accountChannelHandle = session.accountChannelHandle,
@@ -333,7 +335,7 @@ object YouTubeSessionStore {
             visitorData = visitorData.trim(),
             dataSyncId = dataSyncId.trim(),
             sessionId = sessionId.ifBlank {
-                "ytmusic-${identitySeed.sha1().take(12)}"
+                "ytmusic-${listOf(identitySeed, authUser.trim(), pageId.trim()).joinToString("|").sha1().take(12)}"
             },
             isPreferred = makePreferred,
             lastUsedAt = now
@@ -345,13 +347,17 @@ object YouTubeSessionStore {
             .distinctBy { it.identityKey() }
 
     private fun YoutubeSession.identityKey(): String =
-        normalizeCookieString(cookie).ifBlank {
-            listOf(
-                accountEmail.trim().lowercase().ifBlank { null },
-                accountChannelHandle.trim().lowercase().ifBlank { null },
-                accountName.trim().lowercase().ifBlank { null }
-            ).filterNotNull().joinToString("|")
-        }.sha1()
+        listOf(
+            normalizeCookieString(cookie).ifBlank {
+                listOf(
+                    accountEmail.trim().lowercase().ifBlank { null },
+                    accountChannelHandle.trim().lowercase().ifBlank { null },
+                    accountName.trim().lowercase().ifBlank { null }
+                ).filterNotNull().joinToString("|")
+            },
+            authUser.trim(),
+            pageId.trim()
+        ).joinToString("|").sha1()
 
     private fun YoutubeSession.isSameStoredSession(other: YoutubeSession): Boolean =
         identityKey() == other.identityKey()

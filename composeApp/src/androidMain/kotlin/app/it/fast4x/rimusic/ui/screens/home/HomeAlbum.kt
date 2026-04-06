@@ -223,6 +223,8 @@ fun HomeAlbums(
         refreshScope.launch(Dispatchers.IO) {
             refreshing = true
             justSynced = false
+            importYTMLikedAlbums()
+            justSynced = true
             delay(500)
             refreshing = false
         }

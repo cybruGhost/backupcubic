@@ -21,6 +21,8 @@ data class YtmCloudSession(
     val cookie: String = "",
     val visitorData: String = "",
     val dataSyncId: String = "",
+    val authUser: String = "",
+    val pageId: String = "",
     val accountName: String = "",
     val accountEmail: String = "",
     val accountChannelHandle: String = "",
@@ -93,5 +95,23 @@ data class YtmAlbum(
     val artist: String = "",
     val thumbnail: String = "",
     val year: String = "",
+    val type: String = ""
+)
+
+data class YtmHomeSection(
+    val title: String = "",
+    val browseId: String = "",
+    val params: String = "",
+    val type: String = "",
+    val items: List<YtmHomeSectionItem> = emptyList()
+)
+
+data class YtmHomeSectionItem(
+    val videoId: String = "",
+    val playlistId: String = "",
+    val browseId: String = "",
+    val title: String = "",
+    val subtitle: String = "",
+    val thumbnail: String = "",
     val type: String = ""
 )

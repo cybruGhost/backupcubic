@@ -163,7 +163,11 @@ fun HistoryList(
                 ?.let { cookie ->
                     runCatching {
                         withTimeout(20_000L) {
-                            YtmSessionApi.fetchHistory(cookie).getOrThrow()
+                            YtmSessionApi.fetchHistory(
+                                cookies = cookie,
+                                authUser = currentSession.authUser.ifBlank { null },
+                                pageId = currentSession.pageId.ifBlank { null }
+                            ).getOrThrow()
                         }
                     }.getOrNull()
                 }
