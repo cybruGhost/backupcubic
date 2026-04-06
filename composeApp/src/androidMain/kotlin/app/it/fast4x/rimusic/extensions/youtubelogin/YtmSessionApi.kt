@@ -134,13 +134,79 @@ object YtmSessionApi {
         val arr = json.optJSONArray("playlists") ?: JSONArray()
         List(arr.length()) { index ->
             val item = arr.optJSONObject(index) ?: JSONObject()
+            val subtitle = item.optString("subtitle")
             YtmPlaylist(
                 playlistId = item.optString("playlistId"),
                 title = item.optString("title"),
                 thumbnail = item.optString("thumbnail"),
-                songCount = item.optString("songCount"),
-                subtitle = item.optString("subtitle")
+                songCount = item.optString("songCount").ifBlank { extractSongCount(subtitle) },
+                subtitle = subtitle
             )
+        }
+    }
+
+    suspend fun fetchHomeFeed(
+        cookies: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmHomeSection>> = postLibrary("home", cookies, authUser, pageId) { json ->
+        val arr = json.optJSONArray("sections") ?: JSONArray()
+        List(arr.length()) { index ->
+            val section = arr.optJSONObject(index) ?: JSONObject()
+            val items = section.optJSONArray("items") ?: JSONArray()
+            YtmHomeSection(
+                title = section.optString("title"),
+                browseId = section.optString("browseId"),
+                params = section.optString("params"),
+                type = section.optString("type"),
+                items = List(items.length()) { itemIndex ->
+                    val item = items.optJSONObject(itemIndex) ?: JSONObject()
+                    YtmHomeSectionItem(
+                        videoId = item.optString("videoId"),
+                        playlistId = item.optString("playlistId"),
+                        browseId = item.optString("browseId"),
+                        title = item.optString("title"),
+                        subtitle = item.optString("subtitle"),
+                        thumbnail = item.optString("thumbnail"),
+                        type = item.optString("type")
+                    )
+                }
+            )
+        }
+    }
+
+    suspend fun fetchPlaylistSongs(
+        cookies: String,
+        playlistId: String,
+        authUser: String? = null,
+        pageId: String? = null
+    ): Result<List<YtmSong>> = withContext(Dispatchers.IO) {
+        runCatching {
+            val normalizedCookies = YouTubeSessionStore.normalizeCookieString(cookies)
+            require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
+            require(playlistId.isNotBlank()) { "Missing playlistId" }
+
+            val url = buildString {
+                append(SESSION_ENDPOINT)
+                append("?action=playlist_songs")
+                append("&playlistId=").append(playlistId)
+                if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
+                if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
+            }
+
+            val request = Request.Builder()
+                .url(url)
+                .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
+                .header("Content-Type", "application/json")
+                .build()
+
+            execute(request).use { response ->
+                val body = response.body?.string().orEmpty()
+                if (!response.isSuccessful) {
+                    throw IOException(parseError(body, response.code))
+                }
+                parseSongs(JSONObject(body))
+            }
         }
     }
 
@@ -240,6 +306,13 @@ object YtmSessionApi {
             )
         }
     }
+
+    private fun extractSongCount(subtitle: String): String =
+        Regex("(\\d+)\\s+(?:tracks?|songs?)", RegexOption.IGNORE_CASE)
+            .find(subtitle)
+            ?.groupValues
+            ?.getOrNull(1)
+            .orEmpty()
 
     private suspend fun <T> postLibrary(
         action: String,

@@ -86,15 +86,20 @@ import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.service.MyDownloadHelper
 import app.it.fast4x.rimusic.typography
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmHomeSection
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmHomeSectionItem
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import app.it.fast4x.rimusic.ui.components.ButtonsRow
 import app.it.fast4x.rimusic.ui.components.LocalMenuState
 import app.it.fast4x.rimusic.ui.components.ShimmerHost
+import app.it.fast4x.rimusic.ui.components.themed.HeaderIconButton
 import app.it.fast4x.rimusic.ui.components.themed.HeaderWithIcon
 import app.it.fast4x.rimusic.ui.components.themed.Loader
 import app.it.fast4x.rimusic.ui.components.themed.Menu
 import app.it.fast4x.rimusic.ui.components.themed.MenuEntry
 import app.it.fast4x.rimusic.ui.components.themed.MultiFloatingActionsContainer
+import app.it.fast4x.rimusic.ui.components.themed.NonQueuedMediaItemGridMenu
 import app.it.fast4x.rimusic.ui.components.themed.TextPlaceholder
 import app.it.fast4x.rimusic.ui.components.themed.Title
 import app.it.fast4x.rimusic.ui.components.themed.Title2Actions
@@ -144,6 +149,7 @@ import app.it.fast4x.rimusic.utils.showRelatedAlbumsKey
 import app.it.fast4x.rimusic.utils.showSearchTabKey
 import app.it.fast4x.rimusic.utils.showSimilarArtistsKey
 import app.it.fast4x.rimusic.utils.showTipsKey
+import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
 import app.it.fast4x.rimusic.utils.ytCookieKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -315,6 +321,24 @@ private fun homeQuickAlbumKey(album: Innertube.AlbumItem?): String =
     album?.key?.takeIf { it.isNotBlank() }
         ?: "quick_album_${album?.info?.name.orEmpty()}_${album?.authors?.joinToString(",") { it.name.orEmpty() }.orEmpty()}"
 
+private fun YtmHomeSectionItem.asQuickPickSong(): Song? {
+    val mediaId = videoId.trim()
+    val cleanedTitle = cleanPrefix(title).trim()
+    if (mediaId.isBlank() || cleanedTitle.isBlank()) return null
+    return Song(
+        id = mediaId,
+        title = cleanedTitle,
+        artistsText = subtitle.trim().ifBlank { null },
+        durationText = null,
+        thumbnailUrl = thumbnail.trim().ifBlank { null },
+        totalPlayTimeMs = 1L
+    )
+}
+
+private fun isVisibleQuickPicksSection(title: String): Boolean {
+    return title.trim().isNotBlank()
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @ExperimentalTextApi
 @SuppressLint("SuspiciousIndentation")
@@ -364,8 +388,13 @@ fun HomeQuickPicks(
     var homePageInit by persist<HomePage?>("home/quickpicks/homePageInit")
     var homePagePreference by rememberPreference(quickPicsHomePageKey, homePageInit)
     var homePageSessionId by rememberPreference("quickPicsHomePageSessionId", "")
+    var homePageAccountHandle by rememberPreference("quickPicsHomePageAccountHandle", "")
     var selectedHomeChipTitle by rememberPreference("quickPicsHomePageChipTitle", "")
     var selectedHomeChipParams by rememberPreference("quickPicsHomePageChipParams", "")
+    var sessionHomeFeedResult by remember { mutableStateOf<Result<List<YtmHomeSection>?>?>(null) }
+    var sessionHomeFeedInit by remember { mutableStateOf<List<YtmHomeSection>?>(null) }
+    var sessionHomeFeedSessionId by rememberPreference("quickPicsSessionHomeFeedSessionId", "")
+    var sessionHomeFeedAccountHandle by rememberPreference("quickPicsSessionHomeFeedAccountHandle", "")
 
     var chartsPageResult by persist<Result<Innertube.ChartsPage?>>("home/quickpicks/chartsPageResult")
     var chartsPageInit by persist<Innertube.ChartsPage>("home/quickpicks/chartsPageInit")
@@ -379,7 +408,7 @@ fun HomeQuickPicks(
     val localCount = localRecommandationsNumber.value
     // ===== END FIX =====
 
-    fun homePersonalizedSongs(): List<Song> =
+    fun legacyHomePersonalizedSongs(): List<Song> =
         (homePageResult?.getOrNull() ?: homePageInit)
             ?.sections
             ?.flatMap { section ->
@@ -395,6 +424,44 @@ fun HomeQuickPicks(
             ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
             ?.distinctBy { song -> song.id }
             ?: emptyList()
+
+    fun homePersonalizedSongs(): List<Song> =
+        (sessionHomeFeedResult?.getOrNull() ?: sessionHomeFeedInit)
+            ?.flatMap { section ->
+                section.items.mapNotNull { item ->
+                    when (item.type.lowercase()) {
+                        "song", "video" -> {
+                            val mediaId = item.videoId.trim()
+                            val title = cleanPrefix(item.title).trim()
+                            if (mediaId.isBlank() || title.isBlank()) {
+                                null
+                            } else {
+                                Song(
+                                    id = mediaId,
+                                    title = title,
+                                    artistsText = item.subtitle.trim().ifBlank { null },
+                                    durationText = null,
+                                    thumbnailUrl = item.thumbnail.trim().ifBlank { null },
+                                    totalPlayTimeMs = 1L
+                                )
+                            }
+                        }
+                        else -> null
+                    }
+                }
+            }
+            ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
+            ?.distinctBy { song -> song.id }
+            ?.ifEmpty { legacyHomePersonalizedSongs() }
+            ?: legacyHomePersonalizedSongs()
+
+    suspend fun localLikedSongs(limit: Int = 25): List<Song> =
+        Database.songTable
+            .allFavorites()
+            .first()
+            .asReversed()
+            .filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
+            .take(limit)
 
     fun casualFallbackSongs(personalizedHomeSongs: List<Song>): List<Song> =
         personalizedHomeSongs.ifEmpty {
@@ -460,6 +527,7 @@ fun HomeQuickPicks(
 
     val context = LocalContext.current
     val activeYouTubeCookie by rememberPreference(ytCookieKey, "")
+    val activeYouTubeAccountHandle by rememberPreference(ytAccountChannelHandleKey, "")
     val activeYouTubeSessionId = YouTubeSessionStore.getCurrentSession(context)?.sessionId.orEmpty()
 
     val showRelatedAlbums by rememberPreference(showRelatedAlbumsKey, true)
@@ -498,6 +566,67 @@ fun HomeQuickPicks(
 
     var loadedData by rememberPreference(loadedDataKey, false)
 
+    val syncedLikedSongs by remember {
+        Database.songTable
+            .allFavorites(limit = 30)
+            .distinctUntilChanged()
+            .map { songs -> songs.asReversed().filter { it.id.isNotBlank() && it.title.isNotBlank() } }
+    }.collectAsState(emptyList(), Dispatchers.IO)
+
+    val syncedYtmArtists by remember {
+        Database.artistTable
+            .allFollowing()
+            .distinctUntilChanged()
+            .map { artists ->
+                artists.filter { artist ->
+                    artist.isYoutubeArtist &&
+                        artist.id.isNotBlank() &&
+                        !artist.name.isNullOrBlank()
+                }
+            }
+    }.collectAsState(emptyList(), Dispatchers.IO)
+
+    val syncedYtmAlbums by remember {
+        Database.albumTable
+            .all()
+            .distinctUntilChanged()
+            .map { albums ->
+                albums.filter { album ->
+                    album.isYoutubeAlbum &&
+                        album.id.isNotBlank() &&
+                        !album.title.isNullOrBlank()
+                }
+            }
+    }.collectAsState(emptyList(), Dispatchers.IO)
+
+    var sessionLikedSongsPreview by persistList<Song>("home/quickpicks/sessionLikedSongsPreview")
+
+    suspend fun currentAccountLikedSongs(limit: Int = 30): List<Song> {
+        val session = YouTubeSessionStore.applyCurrentSession(context) ?: return localLikedSongs(limit)
+        if (!YouTubeSessionStore.hasAuthCookies(session.cookie)) return localLikedSongs(limit)
+
+        val sessionSongs = YtmSessionApi.fetchLikedSongs(
+            cookies = session.cookie,
+            authUser = session.authUser.ifBlank { null },
+            pageId = session.pageId.ifBlank { null }
+        ).getOrNull().orEmpty()
+
+        return sessionSongs
+            .map { remoteSong ->
+                Song(
+                    id = remoteSong.videoId,
+                    title = cleanPrefix(remoteSong.title),
+                    artistsText = remoteSong.artist.ifBlank { null },
+                    durationText = remoteSong.duration.ifBlank { null },
+                    thumbnailUrl = remoteSong.thumbnail.ifBlank { null }
+                )
+            }
+            .filter { it.id.isNotBlank() && it.title.isNotBlank() }
+            .distinctBy { it.id }
+            .take(limit)
+            .ifEmpty { localLikedSongs(limit) }
+    }
+
     suspend fun preferredCachedSong(fallbackSong: Song): Song = withContext(Dispatchers.IO) {
         val storedSong = Database.songTable.findById(fallbackSong.id).first()
         if (storedSong == null) {
@@ -521,6 +650,9 @@ fun HomeQuickPicks(
     suspend fun preferredCachedMediaItem(songItem: Innertube.SongItem) =
         preferredCachedSong(songItem.asSong).asMediaItem
 
+    suspend fun preferredCachedMediaItem(videoItem: Innertube.VideoItem) =
+        preferredCachedSong(videoItem.asSong).asMediaItem
+
     suspend fun playHomeSectionItems(
         items: List<Any?>,
         clickedItem: Any
@@ -528,7 +660,7 @@ fun HomeQuickPicks(
         val playableItems = items.mapNotNull { sectionItem ->
             when (sectionItem) {
                 is Innertube.SongItem -> preferredCachedMediaItem(sectionItem)
-                is Innertube.VideoItem -> sectionItem.asSong.asMediaItem
+                is Innertube.VideoItem -> preferredCachedMediaItem(sectionItem)
                 else -> null
             }
         }
@@ -539,10 +671,57 @@ fun HomeQuickPicks(
             is Innertube.VideoItem -> clickedItem.key
             else -> ""
         }
+        val targetTitle = when (clickedItem) {
+            is Innertube.SongItem -> clickedItem.info?.name.orEmpty()
+            is Innertube.VideoItem -> clickedItem.info?.name.orEmpty()
+            else -> ""
+        }
+        val targetArtist = when (clickedItem) {
+            is Innertube.SongItem -> clickedItem.authors?.joinToString(", ") { it.name.orEmpty() }.orEmpty()
+            is Innertube.VideoItem -> clickedItem.authors?.joinToString(", ") { it.name.orEmpty() }.orEmpty()
+            else -> ""
+        }
 
-        val startIndex = playableItems.indexOfFirst { it.mediaId == targetMediaId }.coerceAtLeast(0)
+        val startIndex = playableItems.indexOfFirst { it.mediaId == targetMediaId }
+            .takeIf { it >= 0 }
+            ?: playableItems.indexOfFirst { mediaItem ->
+                mediaItem.mediaMetadata.title?.toString() == targetTitle &&
+                    mediaItem.mediaMetadata.artist?.toString().orEmpty() == targetArtist
+            }.takeIf { it >= 0 }
+            ?: 0
         binder?.stopRadio()
         binder?.player?.forcePlayAtIndex(playableItems, startIndex)
+    }
+
+    suspend fun playSessionHomeSectionItems(
+        items: List<YtmHomeSectionItem>,
+        clickedItem: YtmHomeSectionItem
+    ) {
+        val queuedSongs = items.mapNotNull { sectionItem ->
+            sectionItem.asQuickPickSong()?.let { song -> sectionItem to song.asMediaItem }
+        }
+        if (queuedSongs.isEmpty()) return
+
+        val clickedMediaId = clickedItem.videoId.trim()
+        val clickedTitle = cleanPrefix(clickedItem.title).trim()
+        val clickedArtist = clickedItem.subtitle.trim()
+
+        val exactIndex = queuedSongs.indexOfFirst { (sourceItem, mediaItem) ->
+            sourceItem.videoId.trim() == clickedMediaId &&
+                mediaItem.mediaMetadata.title?.toString()?.trim() == clickedTitle &&
+                mediaItem.mediaMetadata.artist?.toString().orEmpty().trim() == clickedArtist
+        }
+        val idIndex = queuedSongs.indexOfFirst { (sourceItem, _) ->
+            sourceItem.videoId.trim() == clickedMediaId
+        }
+        val metadataIndex = queuedSongs.indexOfFirst { (_, mediaItem) ->
+            mediaItem.mediaMetadata.title?.toString()?.trim() == clickedTitle &&
+                mediaItem.mediaMetadata.artist?.toString().orEmpty().trim() == clickedArtist
+        }
+        val startIndex = listOf(exactIndex, idIndex, metadataIndex).firstOrNull { it >= 0 } ?: 0
+
+        binder?.stopRadio()
+        binder?.player?.forcePlayAtIndex(queuedSongs.map { it.second }, startIndex)
     }
 
     suspend fun loadData(forceReload: Boolean = false) {
@@ -600,23 +779,34 @@ fun HomeQuickPicks(
             }
 
             val homeDeferred = async(Dispatchers.IO) {
-                if (isYouTubeLoggedIn() && (homePageResult == null || forceReload)) {
-                    YouTubeSessionStore.applyCurrentSession(context)
-                    YouTubeRequestThrottler.run {
-                        YtMusic.getHomePage(
-                            setLogin = true,
-                            params = selectedHomeChipParams.ifBlank { null }
-                        )
+                if (isYouTubeLoggedIn() && (sessionHomeFeedResult == null || forceReload)) {
+                    val session = YouTubeSessionStore.applyCurrentSession(context)
+                    val cookie = session?.cookie?.takeIf { it.isNotBlank() }
+                    if (cookie.isNullOrBlank()) {
+                        Result.success(null)
+                    } else {
+                        YouTubeRequestThrottler.run {
+                            YtmSessionApi.fetchHomeFeed(
+                                cookies = cookie,
+                                authUser = session.authUser.ifBlank { null },
+                                pageId = session.pageId.ifBlank { null }
+                            )
+                        }
                     }
                 } else {
-                    homePageResult
+                    sessionHomeFeedResult
                 }
+            }
+
+            val likedSongsDeferred = async(Dispatchers.IO) {
+                if (isYouTubeLoggedIn()) currentAccountLikedSongs() else emptyList()
             }
 
             chartsPageResult = chartsDeferred.await()
             notificationResult = notificationDeferred.await()
             discoverPageResult = discoverDeferred.await()
-            homePageResult = homeDeferred.await()
+            sessionHomeFeedResult = homeDeferred.await()
+            sessionLikedSongsPreview = likedSongsDeferred.await()
         }
 
         if (!forceReload) {
@@ -629,8 +819,13 @@ fun HomeQuickPicks(
             if (chartsPageInit == null) {
                 chartsPageInit = chartsPageResult?.getOrNull() ?: chartsPageInit
             }
-            if (isYouTubeLoggedIn() && homePageInit == null && activeYouTubeSessionId == homePageSessionId) {
-                homePageInit = homePagePreference ?: homePageResult?.getOrNull()
+            if (
+                isYouTubeLoggedIn() &&
+                sessionHomeFeedInit == null &&
+                activeYouTubeSessionId == sessionHomeFeedSessionId &&
+                activeYouTubeAccountHandle == sessionHomeFeedAccountHandle
+            ) {
+                sessionHomeFeedInit = sessionHomeFeedResult?.getOrNull()
             }
         }
 
@@ -638,7 +833,7 @@ fun HomeQuickPicks(
             relatedInit != null &&
                 discoverPageInit != null &&
                 (!showCharts || chartsPageInit != null) &&
-                (!isYouTubeLoggedIn() || homePageInit != null || homePageResult != null)
+                (!isYouTubeLoggedIn() || sessionHomeFeedInit != null || sessionHomeFeedResult != null)
 
         if (loadedData && !forceReload && isUiHydrated) return
 
@@ -688,7 +883,12 @@ fun HomeQuickPicks(
                             .findSongsMostPlayedBetween(from = 0, limit = 10)
                             .distinctUntilChanged()
                             .first()
-                        val personalizedHomeSongs = if (isYouTubeLoggedIn()) homePersonalizedSongs() else emptyList()
+                        val accountLikedSongs = if (isYouTubeLoggedIn()) currentAccountLikedSongs() else emptyList()
+                        val personalizedHomeSongs = if (isYouTubeLoggedIn()) {
+                            (homePersonalizedSongs() + accountLikedSongs).distinctBy { it.id }
+                        } else {
+                            emptyList()
+                        }
                         val casualSongs = casualFallbackSongs(personalizedHomeSongs)
                         showNewUserMessage = personalizedHomeSongs.isEmpty() && favoriteSongs.isEmpty() && casualSongs.isEmpty()
 
@@ -727,6 +927,14 @@ fun HomeQuickPicks(
                     if (activeYouTubeSessionId.isNotBlank()) {
                         homePageSessionId = activeYouTubeSessionId
                     }
+                    homePageAccountHandle = activeYouTubeAccountHandle
+                }
+                sessionHomeFeedResult?.getOrNull()?.let { fetchedHomeFeed ->
+                    sessionHomeFeedInit = fetchedHomeFeed
+                    if (activeYouTubeSessionId.isNotBlank()) {
+                        sessionHomeFeedSessionId = activeYouTubeSessionId
+                    }
+                    sessionHomeFeedAccountHandle = activeYouTubeAccountHandle
                 }
 
                 loadedData = true
@@ -791,7 +999,12 @@ fun HomeQuickPicks(
                             .findSongsMostPlayedBetween(from = 0, limit = 10)
                             .distinctUntilChanged()
                             .collect { favoriteSongs ->
-                                val personalizedHomeSongs = if (isYouTubeLoggedIn()) homePersonalizedSongs() else emptyList()
+                                val accountLikedSongs = if (isYouTubeLoggedIn()) currentAccountLikedSongs() else emptyList()
+                                val personalizedHomeSongs = if (isYouTubeLoggedIn()) {
+                                    (homePersonalizedSongs() + accountLikedSongs).distinctBy { it.id }
+                                } else {
+                                    emptyList()
+                                }
                                 val casualSongs = casualFallbackSongs(personalizedHomeSongs)
                                 showNewUserMessage = personalizedHomeSongs.isEmpty() && favoriteSongs.isEmpty() && casualSongs.isEmpty()
 
@@ -817,22 +1030,37 @@ fun HomeQuickPicks(
         }
     }
 
-    LaunchedEffect(activeYouTubeCookie, activeYouTubeSessionId) {
+    LaunchedEffect(activeYouTubeCookie, activeYouTubeSessionId, activeYouTubeAccountHandle) {
         if (!YouTubeSessionStore.hasAuthCookies(activeYouTubeCookie)) {
             homePageResult = null
             homePageInit = null
             homePagePreference = null
             homePageSessionId = ""
+            homePageAccountHandle = ""
+            sessionHomeFeedResult = null
+            sessionHomeFeedInit = null
+            sessionHomeFeedSessionId = ""
+            sessionHomeFeedAccountHandle = ""
+            sessionLikedSongsPreview = emptyList()
             selectedHomeChipTitle = ""
             selectedHomeChipParams = ""
             return@LaunchedEffect
         }
 
-        if (activeYouTubeSessionId.isNotBlank() && homePageSessionId != activeYouTubeSessionId) {
+        if (
+            activeYouTubeSessionId.isNotBlank() &&
+            (homePageSessionId != activeYouTubeSessionId || homePageAccountHandle != activeYouTubeAccountHandle)
+        ) {
             homePageResult = null
             homePageInit = null
             homePagePreference = null
             homePageSessionId = activeYouTubeSessionId
+            homePageAccountHandle = activeYouTubeAccountHandle
+            sessionHomeFeedResult = null
+            sessionHomeFeedInit = null
+            sessionHomeFeedSessionId = activeYouTubeSessionId
+            sessionHomeFeedAccountHandle = activeYouTubeAccountHandle
+            sessionLikedSongsPreview = emptyList()
             selectedHomeChipTitle = ""
             selectedHomeChipParams = ""
             loadData(forceReload = false)
@@ -895,6 +1123,7 @@ fun HomeQuickPicks(
 
     val scrollState = rememberScrollState()
     val quickPicksLazyGridState = rememberLazyGridState()
+    val ytmLikesLazyGridState = rememberLazyGridState()
     val moodAngGenresLazyGridState = rememberLazyGridState()
     val chartsPageSongLazyGridState = rememberLazyGridState()
     val chartsPageArtistLazyGridState = rememberLazyGridState()
@@ -965,7 +1194,14 @@ fun HomeQuickPicks(
                         onClick = onSearchClick
                     )
 
-                WelcomeMessage()
+                WelcomeMessage(
+                    onOpenAccountsSettings = {
+                        navController.currentBackStackEntry
+                            ?.savedStateHandle
+                            ?.set("settings_tab_index", 5)
+                        navController.navigate(NavRoutes.settings.name)
+                    }
+                )
 
                 if (showTips) {
                     Row(
@@ -1025,12 +1261,26 @@ fun HomeQuickPicks(
                         // Spacer to push icons to the right
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // CubicJam + Play icons (grouped together on right)
+                        // Home + CubicJam + Play icons (grouped together on right)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            // CubicJam icon with teal color
+                            if (isYouTubeLoggedIn()) {
+                                IconButton(
+                                    onClick = {
+                                        navController.navigate(NavRoutes.chipsPage.name)
+                                    },
+                                    modifier = Modifier.size(24.dp)
+                                ) {
+                                    Icon(
+                                        painter = painterResource(R.drawable.multipage),
+                                        contentDescription = "More YT Music home",
+                                        tint = colorPalette().accent
+                                    )
+                                }
+                            }
+
                             IconButton(
                                 onClick = {
                                     navController.navigate(NavRoutes.cubicjam.name)
@@ -1038,9 +1288,9 @@ fun HomeQuickPicks(
                                 modifier = Modifier.size(24.dp)
                             ) {
                                 Icon(
-                                    painter = painterResource(R.drawable.multipage),
+                                    painter = painterResource(R.drawable.ic_party_mode),
                                     contentDescription = "Cubic Jam",
-                                    tint = Color(0xFF00BFA5) // Teal color
+                                    tint = colorPalette().text
                                 )
                             }
 
@@ -1329,6 +1579,126 @@ fun HomeQuickPicks(
                     }
                 }
                 // ===== END NOTIFICATION MESSAGE SECTION =====
+
+                if (isYouTubeLoggedIn()) {
+                    if (sessionLikedSongsPreview.isNotEmpty()) {
+                        val likedSongsPreview = sessionLikedSongsPreview
+                            .distinctBy { it.id }
+                            .take(14)
+                        TitleMiniSection(
+                            stringResource(R.string.ytm_likes_title),
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 24.dp, bottom = 8.dp)
+                        )
+
+                        LazyHorizontalGrid(
+                            rows = GridCells.Fixed(2),
+                            modifier = Modifier
+                                .height(126.dp)
+                                .fillMaxWidth(),
+                            state = ytmLikesLazyGridState,
+                            flingBehavior = ScrollableDefaults.flingBehavior(),
+                            contentPadding = endPaddingValues,
+                        ) {
+                            itemsIndexed(
+                                items = likedSongsPreview,
+                                key = { _, song -> song.id }
+                            ) { index, song ->
+                                app.kreate.android.me.knighthat.component.SongItem(
+                                    song = song,
+                                    modifier = Modifier
+                                        .width(itemInHorizontalGridWidth),
+                                    navController = navController,
+                                    onClick = {
+                                            val queue = likedSongsPreview
+                                                .map(Song::asMediaItem)
+                                                .distinctBy { it.mediaId }
+                                            val startIndex = queue.indexOfFirst { it.mediaId == song.id }
+                                            binder?.stopRadio()
+                                            binder?.player?.forcePlayAtIndex(
+                                                queue,
+                                                startIndex.takeIf { it >= 0 } ?: index
+                                            )
+                                    },
+                                    trailingContent = {
+                                        HeaderIconButton(
+                                            icon = R.drawable.ellipsis_horizontal,
+                                            color = colorPalette().textSecondary,
+                                            onClick = {
+                                                menuState.display {
+                                                    NonQueuedMediaItemGridMenu(
+                                                        navController = navController,
+                                                        mediaItem = song.asMediaItem,
+                                                        onDismiss = menuState::hide,
+                                                        disableScrollingText = disableScrollingText
+                                                    )
+                                                }
+                                            },
+                                            modifier = Modifier.size(18.dp)
+                                        )
+                                    }
+                                )
+                            }
+                        }
+                    }
+
+                    if (syncedYtmArtists.isNotEmpty()) {
+                        TitleMiniSection(
+                            "Artists from your YT Music account",
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 14.dp, bottom = 4.dp)
+                        )
+
+                        LazyRow(contentPadding = endPaddingValues) {
+                            items(
+                                items = syncedYtmArtists.take(16),
+                                key = { artist -> artist.id }
+                            ) { artist ->
+                                ArtistItem(
+                                    artist = artist,
+                                    thumbnailSizePx = artistThumbnailSizePx,
+                                    thumbnailSizeDp = artistThumbnailSizeDp,
+                                    alternative = true,
+                                    modifier = Modifier.clickable {
+                                        onArtistClick(artist.id)
+                                    },
+                                    disableScrollingText = disableScrollingText,
+                                    isYoutubeArtist = artist.isYoutubeArtist
+                                )
+                            }
+                        }
+                    }
+
+                    if (syncedYtmAlbums.isNotEmpty()) {
+                        TitleMiniSection(
+                            "Albums from your YT Music account",
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 14.dp, bottom = 4.dp)
+                        )
+
+                        LazyRow(contentPadding = endPaddingValues) {
+                            items(
+                                items = syncedYtmAlbums.take(16),
+                                key = { album -> album.id }
+                            ) { album ->
+                                AlbumItem(
+                                    album = album,
+                                    thumbnailSizePx = albumThumbnailSizePx,
+                                    thumbnailSizeDp = albumThumbnailSizeDp,
+                                    alternative = true,
+                                    modifier = Modifier.clickable {
+                                        onAlbumClick(album.id)
+                                    },
+                                    disableScrollingText = disableScrollingText,
+                                    isYoutubeAlbum = album.isYoutubeAlbum
+                                )
+                            }
+                        }
+                    }
+                }
 
                 discoverPageInit?.let { page ->
                     val artists by remember {
@@ -1759,8 +2129,9 @@ fun HomeQuickPicks(
                                             thumbnailWidthDp = playlistThumbnailSizeDp * 1.45f,
                                             disableScrollingText = disableScrollingText,
                                             modifier = Modifier.clickable(onClick = {
-                                                binder?.stopRadio()
-                                                binder?.player?.forcePlay(video.asSong.asMediaItem)
+                                                refreshScope.launch {
+                                                    playHomeSectionItems(videos, video)
+                                                }
                                             })
                                         )
                                     }
@@ -1821,7 +2192,92 @@ fun HomeQuickPicks(
                     }
                 }
 
-                homePageInit?.let { page ->
+                val sessionSections = (sessionHomeFeedResult?.getOrNull() ?: sessionHomeFeedInit)
+                    ?.filter { section -> isVisibleQuickPicksSection(section.title) && section.items.isNotEmpty() }
+                    .orEmpty()
+
+                if (isYouTubeLoggedIn() && sessionSections.isNotEmpty()) {
+                    sessionSections.forEach { section ->
+                        TitleMiniSection(
+                            section.title,
+                            modifier = Modifier
+                                .padding(horizontal = 16.dp)
+                                .padding(top = 14.dp, bottom = 4.dp)
+                        )
+
+                        LazyRow(contentPadding = endPaddingValues) {
+                            items(
+                                items = section.items,
+                                key = { item ->
+                                    listOf(
+                                        item.type,
+                                        item.videoId,
+                                        item.playlistId,
+                                        item.browseId,
+                                        item.title
+                                    ).joinToString("|")
+                                }
+                            ) { item ->
+                                when (item.type.lowercase()) {
+                                    "song", "video" -> {
+                                        YtmHomeCard(
+                                            title = item.title,
+                                            subtitle = item.subtitle,
+                                            thumbnailUrl = item.thumbnail,
+                                            modifier = Modifier.clickable(onClick = {
+                                                refreshScope.launch {
+                                                    playSessionHomeSectionItems(section.items, item)
+                                                }
+                                            })
+                                        )
+                                    }
+
+                                    "album" -> {
+                                        YtmHomeCard(
+                                            title = item.title,
+                                            subtitle = item.subtitle,
+                                            thumbnailUrl = item.thumbnail,
+                                            modifier = Modifier.clickable(onClick = {
+                                                item.browseId.ifBlank { item.playlistId }
+                                                    .takeIf { it.isNotBlank() }
+                                                    ?.let(onAlbumClick)
+                                            })
+                                        )
+                                    }
+
+                                    "artist" -> {
+                                        YtmHomeCard(
+                                            title = item.title,
+                                            subtitle = item.subtitle,
+                                            thumbnailUrl = item.thumbnail,
+                                            imageWidth = 104.dp,
+                                            imageHeight = 104.dp,
+                                            rounded = false,
+                                            modifier = Modifier.clickable(onClick = {
+                                                item.browseId
+                                                    .takeIf { it.isNotBlank() }
+                                                    ?.let(onArtistClick)
+                                            })
+                                        )
+                                    }
+
+                                    "playlist" -> {
+                                        YtmHomeCard(
+                                            title = item.title,
+                                            subtitle = item.subtitle,
+                                            thumbnailUrl = item.thumbnail,
+                                            modifier = Modifier.clickable(onClick = {
+                                                item.playlistId.ifBlank { item.browseId }
+                                                    .takeIf { it.isNotBlank() }
+                                                    ?.let(onPlaylistClick)
+                                            })
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                    }
+                } else homePageInit?.let { page ->
                     page.chips
                         ?.takeIf { it.isNotEmpty() }
                         ?.let { chips ->

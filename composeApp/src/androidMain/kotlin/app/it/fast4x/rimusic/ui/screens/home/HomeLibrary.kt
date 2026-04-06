@@ -222,13 +222,13 @@ LaunchedEffect(justSynced, doAutoSync) {
                 withContext(Dispatchers.Main) {
                     if (result) {
                         justSynced = true
-                        Toaster.i("Playlists synced successfully")
+                        Toaster.i(R.string.ytm_playlists_synced)
                     }
                 }
             } catch (e: Exception) {
                 Timber.e(e, "Failed to sync playlists")
                 withContext(Dispatchers.Main) {
-                   Toaster.n("Failed to sync playlists", Toast.LENGTH_LONG)
+                   Toaster.n(R.string.ytm_playlists_sync_failed, duration = Toast.LENGTH_LONG)
                 }
             }
         }

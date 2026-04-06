@@ -7,6 +7,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -42,6 +43,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.os.LocaleListCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
+import app.kreate.android.service.PlaybackSourceKind
+import app.kreate.android.service.PlaybackSourceMonitor
 import app.kreate.android.R
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.colorPalette
@@ -127,6 +130,7 @@ import app.it.fast4x.rimusic.utils.resumePlaybackOnStartKey
 import app.it.fast4x.rimusic.utils.resumePlaybackWhenDeviceConnectedKey
 import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.shakeEventEnabledKey
+import app.it.fast4x.rimusic.utils.showLyricsSourceSwitcherKey
 import app.it.fast4x.rimusic.utils.skipMediaOnErrorKey
 import app.it.fast4x.rimusic.utils.skipSilenceKey
 import app.it.fast4x.rimusic.utils.useVolumeKeysToChangeSongKey
@@ -1060,6 +1064,7 @@ fun GeneralSettings(
                 icon    = R.drawable.refresh,
                 content = {
                     var alternateSourceRetryEnabled by rememberPreference("alternateSourceRetryKey", true)
+                    val playbackSourceStatus by PlaybackSourceMonitor.status.collectAsState()
                     if (search.inputValue.isBlank() || "Alternate Source Retry".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
                             title           = "Alternate Source Retry",
@@ -1073,6 +1078,35 @@ fun GeneralSettings(
                             modifier  = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
                         )
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(start = 25.dp, top = 10.dp)
+                                .clip(androidx.compose.foundation.shape.RoundedCornerShape(14.dp))
+                                .background(colorPalette().background2.copy(alpha = 0.5f))
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(8.dp)
+                                    .clip(androidx.compose.foundation.shape.CircleShape)
+                                    .background(
+                                        when (playbackSourceStatus.source) {
+                                            PlaybackSourceKind.Unknown -> colorPalette().textDisabled
+                                            else -> Color(0xFF34C759)
+                                        }
+                                    )
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            BasicText(
+                                text = buildString {
+                                    append("Current source: ")
+                                    append(playbackSourceStatus.source.label)
+                                    if (playbackSourceStatus.isFallback) append(" fallback")
+                                },
+                                style = typography().xxs.copy(color = colorPalette().text)
+                            )
+                        }
                     }
                 }
             )
@@ -1091,6 +1125,7 @@ fun GeneralSettings(
                 icon    = R.drawable.comments,
                 content = {
                     var showCommentsButton by rememberPreference("show_comments_button", true)
+                    var showLyricsSourceSwitcher by rememberPreference(showLyricsSourceSwitcherKey, true)
                     if (search.inputValue.isBlank() || "Comments Button".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
                             title           = "Show comments button",
@@ -1103,6 +1138,13 @@ fun GeneralSettings(
                             text      = "Show/hide the comments button in the player screen",
                             modifier  = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
+                        )
+                        OtherSwitchSettingEntry(
+                            title           = "Show lyrics sources",
+                            text            = "Display source pills in the lyrics screen",
+                            isChecked       = showLyricsSourceSwitcher,
+                            onCheckedChange = { showLyricsSourceSwitcher = it },
+                            icon            = R.drawable.song_lyrics
                         )
                         ImportantSettingsDescription(text = "Changes take effect immediately")
                     }

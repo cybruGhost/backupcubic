@@ -152,12 +152,18 @@ fun YouTubeLogin(
                                         val accountInfo = YtmSessionApi.fetchAccountInfo(
                                             cookies = combinedCookies
                                         ).getOrThrow()
+                                        val linkedAccounts = YtmSessionApi.listAccounts(
+                                            cookies = combinedCookies
+                                        ).getOrDefault(emptyList())
+                                        val selectedAccount = linkedAccounts.firstOrNull { it.isSelected }
                                         val savedSession = YouTubeSessionStore.saveSession(
                                             context = context,
                                             session = YoutubeSession(
                                                 cookie = combinedCookies,
                                                 visitorData = visitorData,
                                                 dataSyncId = dataSyncId,
+                                                authUser = selectedAccount?.authUser.orEmpty(),
+                                                pageId = selectedAccount?.pageId.orEmpty(),
                                                 accountName = accountInfo.accountName,
                                                 accountEmail = accountInfo.accountEmail,
                                                 accountChannelHandle = accountInfo.accountChannelHandle,

@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -26,6 +27,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
 import androidx.compose.ui.util.fastMap
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
@@ -120,6 +123,9 @@ fun HomeSongs(
 
     var items by remember { mutableStateOf(emptyList<Song>()) }
     var ytmFavoritesSynced by remember { mutableStateOf(false) }
+    var currentPlayingMediaId by remember {
+        mutableStateOf(binder?.player?.currentMediaItem?.mediaId.orEmpty())
+    }
 
     val songSort = Sort ( HOME_SONGS_SORT_BY, HOME_SONGS_SORT_ORDER )
     val topPlaylists = PeriodSelector( Preference.HOME_SONGS_TOP_PLAYLIST_PERIOD )
@@ -154,6 +160,22 @@ fun HomeSongs(
         if (builtInPlaylist == BuiltInPlaylist.Favorites && isYouTubeSyncEnabled() && !ytmFavoritesSynced) {
             importYTMLikedSongs()
             ytmFavoritesSynced = true
+        }
+    }
+
+    DisposableEffect(binder?.player) {
+        val player = binder?.player
+        if (player == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    currentPlayingMediaId = mediaItem?.mediaId.orEmpty()
+                }
+            }
+            currentPlayingMediaId = player.currentMediaItem?.mediaId.orEmpty()
+            player.addListener(listener)
+            onDispose { player.removeListener(listener) }
         }
     }
 
@@ -300,8 +322,8 @@ fun HomeSongs(
         onRecommendationsLoadingChange(false)
     }
 
-    LaunchedEffect( items, search.inputValue, isRecommendationEnabled, relatedSongsPositions ) {
-        items.toMutableList()
+    LaunchedEffect( items, search.inputValue, isRecommendationEnabled, relatedSongsPositions, currentPlayingMediaId ) {
+        val filteredItems = items.toMutableList()
              .apply {
                  if (isRecommendationEnabled) {
                      relatedSongsPositions.forEach { (song, position) ->
@@ -318,10 +340,30 @@ fun HomeSongs(
                  val containsArtist = song.cleanArtistsText().contains( search.inputValue, true )
                  containsTitle || containsArtist
              }
-             .let { 
-                 itemsOnDisplay.clear()
-                 itemsOnDisplay.addAll(it)
-             }
+
+        val reorderedItems = if (builtInPlaylist in setOf(
+                BuiltInPlaylist.Downloaded,
+                BuiltInPlaylist.Offline,
+                BuiltInPlaylist.Favorites
+            )
+        ) {
+            val normalizedPlayingId = currentPlayingMediaId.substringAfterLast("/", currentPlayingMediaId)
+            val currentIndex = filteredItems.indexOfFirst { song ->
+                song.id == currentPlayingMediaId || song.id == normalizedPlayingId
+            }
+            if (currentIndex > 0) {
+                filteredItems.toMutableList().apply {
+                    add(0, removeAt(currentIndex))
+                }
+            } else {
+                filteredItems
+            }
+        } else {
+            filteredItems
+        }
+
+        itemsOnDisplay.clear()
+        itemsOnDisplay.addAll(reorderedItems)
 
     }
 
@@ -437,7 +479,7 @@ fun HomeSongs(
 
                         binder?.stopRadio()
 
-                        val mediaItems = getSongs().fastMap( Song::asMediaItem )
+                        val mediaItems = itemsOnDisplay.fastMap( Song::asMediaItem )
                         binder?.player?.forcePlayAtIndex( mediaItems, index )
                     }
                 )

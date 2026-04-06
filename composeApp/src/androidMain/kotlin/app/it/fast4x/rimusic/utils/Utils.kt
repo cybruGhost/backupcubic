@@ -67,6 +67,35 @@ data class SimpMusicLyricsResult(
     val plainLyrics: String?,
 )
 
+private fun parseSimpMusicLyricsJson(raw: String): SimpMusicLyricsResult? {
+    val root = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return null
+
+    val directItems = root.optJSONArray("data")
+    val wrappedData = root.optJSONObject("data")?.optJSONArray("data")
+    val resultItems = root.optJSONArray("result")
+    val candidates = directItems ?: wrappedData ?: resultItems ?: return null
+
+    val bestItem = (0 until candidates.length())
+        .mapNotNull { index -> candidates.optJSONObject(index) }
+        .firstOrNull { item ->
+            item.optString("syncedLyrics").isNotBlank() || item.optString("plainLyrics").isNotBlank()
+        }
+        ?: (0 until candidates.length())
+            .mapNotNull { index -> candidates.optJSONObject(index) }
+            .firstOrNull()
+        ?: return null
+
+    val syncedLyrics = bestItem.optString("syncedLyrics").takeIf { it.isNotBlank() }
+    val plainLyrics = bestItem.optString("plainLyrics").takeIf { it.isNotBlank() }
+
+    if (syncedLyrics == null && plainLyrics == null) return null
+
+    return SimpMusicLyricsResult(
+        syncedLyrics = syncedLyrics,
+        plainLyrics = plainLyrics
+    )
+}
+
 suspend fun fetchSimpMusicLyrics(videoId: String): SimpMusicLyricsResult? {
     if (videoId.isBlank()) return null
 
@@ -75,23 +104,15 @@ suspend fun fetchSimpMusicLyrics(videoId: String): SimpMusicLyricsResult? {
             requestMethod = "GET"
             connectTimeout = 5000
             readTimeout = 5000
+            setRequestProperty("Accept", "application/json")
+            setRequestProperty("User-Agent", "SimpMusicLyrics/1.0")
+            setRequestProperty("Content-Type", "application/json")
         }
 
         if (connection.responseCode != HttpURLConnection.HTTP_OK) return@runCatching null
 
         connection.inputStream.bufferedReader().use { reader ->
-            val data = org.json.JSONObject(reader.readText()).optJSONArray("data") ?: return@use null
-            val bestItem = (0 until data.length())
-                .map { index -> data.optJSONObject(index) }
-                .filterNotNull()
-                .sortedByDescending { item -> item.optString("syncedLyrics").isNotBlank() }
-                .firstOrNull()
-                ?: return@use null
-
-            SimpMusicLyricsResult(
-                syncedLyrics = bestItem.optString("syncedLyrics").takeIf { it.isNotBlank() },
-                plainLyrics = bestItem.optString("plainLyrics").takeIf { it.isNotBlank() }
-            )
+            parseSimpMusicLyricsJson(reader.readText())
         }
     }.getOrNull()
 }
@@ -111,6 +132,63 @@ private fun filteredVideoAuthorNames(authors: List<Innertube.Info<*>>?): List<St
         ?.distinct()
         .orEmpty()
 
+fun sanitizePlaybackUri(raw: String): Uri {
+    val trimmed = raw.trim().removeSurrounding("\"").removeSurrounding("'")
+    if (
+        trimmed.isBlank() ||
+        trimmed.equals("null", ignoreCase = true) ||
+        trimmed.equals("undefined", ignoreCase = true) ||
+        trimmed.equals("about:blank", ignoreCase = true)
+    ) {
+        return Uri.EMPTY
+    }
+
+    val originalUri = runCatching { trimmed.toUri() }.getOrNull()
+    if (
+        originalUri != null &&
+        !originalUri.scheme.isNullOrBlank() &&
+        !originalUri.path.isNullOrBlank()
+    ) {
+        return originalUri.buildUpon()
+            .fragment(null)
+            .build()
+    }
+
+    val cleaned = trimmed
+        .substringBefore(" ")
+        .substringBefore("?")
+        .substringBefore("#")
+        .trim()
+
+    if (
+        cleaned.isBlank() ||
+        cleaned.equals("null", ignoreCase = true) ||
+        cleaned.equals("undefined", ignoreCase = true)
+    ) {
+        return Uri.EMPTY
+    }
+
+    return runCatching {
+        val parsed = cleaned.toUri()
+        when {
+            parsed == Uri.EMPTY -> Uri.EMPTY
+            parsed.scheme.isNullOrBlank() -> {
+                if (cleaned.contains('/') || cleaned.contains('\\')) {
+                    cleaned.replace('\\', '/').toUri()
+                } else if (cleaned.any { it.isLetterOrDigit() }) {
+                    cleaned.toUri()
+                } else {
+                    Uri.EMPTY
+                }
+            }
+            else -> parsed.buildUpon()
+                .clearQuery()
+                .fragment(null)
+                .build()
+        }
+    }.getOrElse { Uri.EMPTY }
+}
+
 val Innertube.AlbumItem.asAlbum: Album
     get() = Album (
         id = key,
@@ -125,7 +203,7 @@ val Innertube.Podcast.EpisodeItem.asMediaItem: MediaItem
     @UnstableApi
     get() = MediaItem.Builder()
         .setMediaId(videoId)
-        .setUri(videoId)
+        .setUri(sanitizePlaybackUri(videoId))
         .setCustomCacheKey(videoId)
         .setMediaMetadata(
             MediaMetadata.Builder()
@@ -150,7 +228,7 @@ val Innertube.SongItem.asMediaItem: MediaItem
     @UnstableApi
     get() = MediaItem.Builder()
         .setMediaId(key)
-        .setUri(key)
+        .setUri(sanitizePlaybackUri(key))
         .setCustomCacheKey(key)
         .setMediaMetadata(
             MediaMetadata.Builder()
@@ -187,7 +265,7 @@ val Innertube.VideoItem.asMediaItem: MediaItem
     @UnstableApi
     get() = MediaItem.Builder()
         .setMediaId(key)
-        .setUri(key)
+        .setUri(sanitizePlaybackUri(key))
         .setCustomCacheKey(key)
         .setMediaMetadata(
             MediaMetadata.Builder()
@@ -236,7 +314,7 @@ val Song.asMediaItem: MediaItem
             if (isLocal) ContentUris.withAppendedId(
                 MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
                 id.substringAfter(LOCAL_KEY_PREFIX).toLong()
-            ) else id.toUri()
+            ) else sanitizePlaybackUri(id)
         )
         .setCustomCacheKey(id)
         .build()

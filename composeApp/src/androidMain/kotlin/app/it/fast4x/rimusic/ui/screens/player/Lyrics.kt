@@ -87,6 +87,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
@@ -161,13 +162,16 @@ import app.it.fast4x.rimusic.utils.playerBackgroundColorsKey
 import app.it.fast4x.rimusic.utils.playerEnableLyricsPopupMessageKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.romanizationKey
+import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.showBackgroundLyricsKey
 import app.it.fast4x.rimusic.utils.showSecondLineKey
+import app.it.fast4x.rimusic.utils.showLyricsSourceSwitcherKey
 import app.it.fast4x.rimusic.utils.showlyricsthumbnailKey
 import app.it.fast4x.rimusic.utils.textCopyToClipboard
 import app.it.fast4x.rimusic.utils.verticalFadingEdge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -340,10 +344,12 @@ fun Lyrics(
 
         var fontSize by rememberPreference(lyricsFontSizeKey, LyricsFontSize.Medium)
         val showBackgroundLyrics by rememberPreference(showBackgroundLyricsKey, false)
+        val showLyricsSourceSwitcher by rememberPreference(showLyricsSourceSwitcherKey, true)
         val playerEnableLyricsPopupMessage by rememberPreference(
             playerEnableLyricsPopupMessageKey,
             true
         )
+        var selectedLyricsSource by rememberSaveable(mediaId) { mutableStateOf("lrclib") }
         var expandedplayer by rememberPreference(expandedplayerKey, false)
 
         var checkedLyricsLrc by remember(mediaId) {
@@ -403,6 +409,96 @@ fun Lyrics(
             invalidLrc = false
             isError = false
             isErrorSync = false
+            selectedLyricsSource = "lrclib"
+        }
+
+        suspend fun fetchLyricsFromSource(source: String) {
+            val existingLyrics = Database.lyricsTable.findBySongId(mediaId).first()
+            val metadataArtist = mediaMetadata.artist?.toString().orEmpty()
+            val metadataTitle = cleanPrefix(mediaMetadata.title?.toString().orEmpty())
+
+            when (source) {
+                "lrclib" -> {
+                    var duration = withContext(Dispatchers.Main) { durationProvider() }
+                    while (duration == C.TIME_UNSET) {
+                        delay(100)
+                        duration = withContext(Dispatchers.Main) { durationProvider() }
+                    }
+
+                    val result = LrcLib.lyrics(
+                        artist = artistName,
+                        title = title,
+                        duration = duration.milliseconds,
+                        album = mediaMetadata.albumTitle?.toString()
+                    )?.getOrNull()
+
+                    if (result?.text?.isNotBlank() == true) {
+                        Database.asyncTransaction {
+                            lyricsTable.upsert(
+                                Lyrics(
+                                    songId = mediaId,
+                                    fixed = existingLyrics?.fixed,
+                                    synced = result.text
+                                )
+                            )
+                        }
+                        checkedLyricsLrc = true
+                        isError = false
+                    } else {
+                        checkedLyricsLrc = true
+                        isError = true
+                    }
+                }
+
+                "kugou" -> {
+                    var duration = withContext(Dispatchers.Main) { durationProvider() }
+                    while (duration == C.TIME_UNSET) {
+                        delay(100)
+                        duration = withContext(Dispatchers.Main) { durationProvider() }
+                    }
+
+                    val result = KuGou.lyrics(
+                        artist = metadataArtist,
+                        title = metadataTitle,
+                        duration = duration / 1000
+                    )?.getOrNull()
+
+                    if (result?.value?.isNotBlank() == true) {
+                        Database.asyncTransaction {
+                            lyricsTable.upsert(
+                                Lyrics(
+                                    songId = mediaId,
+                                    fixed = existingLyrics?.fixed,
+                                    synced = result.value
+                                )
+                            )
+                        }
+                        checkedLyricsKugou = true
+                        isError = false
+                    } else {
+                        checkedLyricsKugou = true
+                        isError = true
+                    }
+                }
+
+                "simpmusic" -> {
+                    val simpLyrics = fetchSimpMusicLyrics(mediaId)
+                    if (!simpLyrics?.syncedLyrics.isNullOrBlank() || !simpLyrics?.plainLyrics.isNullOrBlank()) {
+                        Database.asyncTransaction {
+                            lyricsTable.upsert(
+                                Lyrics(
+                                    songId = mediaId,
+                                    fixed = simpLyrics?.plainLyrics ?: existingLyrics?.fixed,
+                                    synced = simpLyrics?.syncedLyrics ?: existingLyrics?.synced
+                                )
+                            )
+                        }
+                        isError = false
+                    } else {
+                        isError = true
+                    }
+                }
+            }
         }
 
         fun translateLyricsWithRomanization(output: MutableState<String>, textToTranslate: String, isSync: Boolean, destinationLanguage: Language = Language.AUTO) = @Composable{
@@ -988,6 +1084,46 @@ fun SelectLyricFromTrack(
                         .padding(all = 8.dp)
                         .fillMaxWidth()
                 )
+            }
+
+            if (showLyricsSourceSwitcher) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .align(Alignment.TopEnd)
+                        .zIndex(10f)
+                        .padding(top = 14.dp, end = 14.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(Color.Black.copy(alpha = 0.28f))
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    listOf(
+                        "lrclib" to "Lrc",
+                        "kugou" to "Kg",
+                        "simpmusic" to "Simp"
+                    ).forEach { (sourceKey, label) ->
+                        BasicText(
+                            text = label,
+                            style = typography().xxs.semiBold.copy(
+                                color = if (selectedLyricsSource == sourceKey) colorPalette().accent else Color.White.copy(alpha = 0.82f)
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(
+                                    if (selectedLyricsSource == sourceKey) colorPalette().background2.copy(alpha = 0.9f)
+                                    else Color.Transparent
+                                )
+                                .clickable {
+                                    selectedLyricsSource = sourceKey
+                                    coroutineScope.launch {
+                                        fetchLyricsFromSource(sourceKey)
+                                    }
+                                }
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
 
             if (text?.isEmpty() == true && !checkedLyricsLrc && !checkedLyricsKugou && !checkedLyricsInnertube)

@@ -36,10 +36,10 @@ class CrossFadeMediaPlayer(
     private val preloadThreshold = 0.72f
     private val readyTimeoutMs = 2_000L
     private val crossfadeCompletionGraceMs = 250L
-    private val outgoingCompletionThreshold = 0.03f
     private val earlyStartLeadInMs = 1_800L
     private val incomingStartVolumeRatio = 0.05f
     private val outgoingHoldPortion = 0f
+    private val minimumCrossfadeDurationMs = 18_000L
 
     private var enabled = false
     private var crossfadeDurationMs = 0L
@@ -50,6 +50,8 @@ class CrossFadeMediaPlayer(
     private var isCrossfading = false
     private var crossfadeStartedAtMs = 0L
     private var activeCrossfadeDurationMs = 0L
+    private var outgoingMediaId: String? = null
+    private var outgoingExpectedEndAtMs = 0L
     private var baseVolume = 1f
     private var isMonitoring = false
     private var pauseAtEndMethod: Method? = null
@@ -168,6 +170,28 @@ class CrossFadeMediaPlayer(
         }
     }
 
+    fun recoverFromSecondaryError(): Boolean {
+        if (!isCrossfading) return false
+
+        isCrossfading = false
+        waitingReadySinceMs = 0L
+        activeCrossfadeDurationMs = 0L
+        outgoingMediaId = null
+        outgoingExpectedEndAtMs = 0L
+        skippedMediaId = currentPlayer.currentMediaItem?.mediaId
+        setPauseAtEndOfMediaItems(currentPlayer, false)
+        currentPlayer.volume = baseVolume.coerceAtLeast(targetVolumeProvider())
+        if (currentPlayer.playbackState == Player.STATE_IDLE) {
+            currentPlayer.prepare()
+        }
+        if (currentPlayer.playWhenReady && !currentPlayer.isPlaying) {
+            currentPlayer.play()
+        }
+        resetNextPlayer()
+        updateUiState()
+        return true
+    }
+
     fun release() {
         stopMonitoring()
         nextPlayer.release()
@@ -268,7 +292,14 @@ class CrossFadeMediaPlayer(
         waitingReadySinceMs = 0L
         isCrossfading = true
         crossfadeStartedAtMs = SystemClock.elapsedRealtime()
-        activeCrossfadeDurationMs = durationMs.coerceAtLeast(1L)
+        activeCrossfadeDurationMs = durationMs.coerceAtLeast(minimumCrossfadeDurationMs)
+        outgoingMediaId = currentPlayer.currentMediaItem?.mediaId
+        outgoingExpectedEndAtMs = currentPlayer.duration
+            .takeIf { it != C.TIME_UNSET && it > 0L }
+            ?.let { duration ->
+                SystemClock.elapsedRealtime() + (duration - currentPlayer.currentPosition.coerceAtLeast(0L))
+                    .coerceAtLeast(crossfadeCompletionGraceMs)
+            } ?: 0L
         baseVolume = targetVolumeProvider()
         currentPlayer.volume = baseVolume
         setPauseAtEndOfMediaItems(currentPlayer, true)
@@ -308,18 +339,21 @@ class CrossFadeMediaPlayer(
         val currentRemaining = currentDuration?.let { duration ->
             (duration - currentPlayer.currentPosition.coerceAtLeast(0L)).coerceAtLeast(0L)
         }
-        val remainingFraction = currentDuration?.takeIf { it > 0L }?.let { duration ->
-            currentRemaining?.toFloat()?.div(duration.toFloat())
-        } ?: 1f
+        val outgoingReachedExpectedEnd =
+            outgoingExpectedEndAtMs > 0L &&
+                SystemClock.elapsedRealtime() + crossfadeCompletionGraceMs >= outgoingExpectedEndAtMs
 
         currentPlayer.volume = (baseVolume * fadeOut).coerceIn(0f, baseVolume)
         nextPlayer.volume = (baseVolume * fadeIn).coerceIn(0f, baseVolume)
         updateUiState(elapsed)
 
         if (
-            fraction >= 1f ||
-            (currentRemaining != null && currentRemaining <= crossfadeCompletionGraceMs) ||
-            remainingFraction <= outgoingCompletionThreshold ||
+            outgoingReachedExpectedEnd ||
+            (
+                currentRemaining != null &&
+                    currentRemaining <= crossfadeCompletionGraceMs &&
+                    currentPlayer.currentMediaItem?.mediaId == outgoingMediaId
+                ) ||
             currentPlayer.playbackState == Player.STATE_ENDED
         ) {
             completeCrossfade()
@@ -332,6 +366,8 @@ class CrossFadeMediaPlayer(
         val shouldKeepPlaying = outgoingPlayer.playWhenReady || outgoingPlayer.isPlaying
         isCrossfading = false
         activeCrossfadeDurationMs = 0L
+        outgoingMediaId = null
+        outgoingExpectedEndAtMs = 0L
 
         incomingPlayer.volume = baseVolume
         incomingPlayer.repeatMode = outgoingPlayer.repeatMode
@@ -375,6 +411,8 @@ class CrossFadeMediaPlayer(
         setPauseAtEndOfMediaItems(currentPlayer, false)
         setPauseAtEndOfMediaItems(nextPlayer, false)
         activeCrossfadeDurationMs = 0L
+        outgoingMediaId = null
+        outgoingExpectedEndAtMs = 0L
         resetNextPlayer()
         updateUiState()
     }
