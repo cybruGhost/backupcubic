@@ -78,14 +78,7 @@ import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.thumbnailRoundnessKey
 import app.it.fast4x.rimusic.utils.transitionEffectKey
 import app.it.fast4x.rimusic.ui.screens.welcome.WelcomeScreen
-import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamManager
-import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamScreen
-import androidx.compose.runtime.remember
-import android.content.Context
 import app.it.fast4x.rimusic.ui.styling.LocalAppearance
-// i should add this import at the top of your AppNavigation.kt file
-import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamWebView
-import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamSwipeScreen
 
 
 
@@ -323,27 +316,6 @@ fun AppNavigation(
                 miniPlayer = miniPlayer,
             )
         }
-// Cubic Jam Main Screen
-        composable(route = NavRoutes.cubicjam.name) {
-    val context = LocalContext.current
-    val cubicJamManager = remember {
-        CubicJamManager(
-            context = context,
-            getToken = {
-                context.getSharedPreferences(
-                    "cubic_jam_prefs",
-                    Context.MODE_PRIVATE
-                ).getString("bearer_token", null)
-            }
-        )
-    }
-
-    CubicJamScreen(
-        navController = navController,
-        cubicJamManager = cubicJamManager
-    )
-        }
-
         composable(route = NavRoutes.chipsPage.name) {
             HomePage(
                 navController = navController,
@@ -353,34 +325,8 @@ fun AppNavigation(
                 onAlbumClick = { navController.navigate("${NavRoutes.album.name}/$it") },
                 onArtistClick = { navController.navigate("${NavRoutes.artist.name}/$it") },
                 onPlaylistClick = { navController.navigate("${NavRoutes.playlist.name}/$it") },
-                onMoodClick = { mood ->
-                    navController.currentBackStackEntry
-                        ?.savedStateHandle
-                        ?.set("mood", mood)
-                    navController.navigate(NavRoutes.mood.name)
-                }
             )
         }
-
-// Cubic Jam WebView Screen with URL parameter
-composable(
-    route = "${NavRoutes.cubicjam_web.name}?url={url}",
-    arguments = listOf(
-        navArgument("url") {
-            type = NavType.StringType
-            defaultValue = "https://jam-wave-connect.lovable.app/feed"
-            nullable = true
-        }
-    )
-) { backStackEntry ->
-    val url = backStackEntry.arguments?.getString("url")
-        ?: "https://jam-wave-connect.lovable.app/feed"
-
-    CubicJamWebView(
-        navController = navController,
-        initialUrl = url
-    )
-}
 
         // Add Rewind screen here
         composable(route = NavRoutes.rewind.name) {
@@ -481,9 +427,7 @@ composable(
             }
         }
 
-        composable(
-            route = NavRoutes.moodsPage.name
-        ) { navBackStackEntry ->
+        composable(route = NavRoutes.moodsPage.name) {
             MoodsPageScreen(
                 navController = navController
             )

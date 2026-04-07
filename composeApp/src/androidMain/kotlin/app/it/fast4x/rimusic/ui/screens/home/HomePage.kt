@@ -95,7 +95,6 @@ import app.it.fast4x.rimusic.ui.items.PlaylistItem
 import app.it.fast4x.rimusic.ui.items.PlaylistItemPlaceholder
 import app.it.fast4x.rimusic.ui.items.SongItem
 import app.it.fast4x.rimusic.ui.items.SongItemPlaceholder
-import app.it.fast4x.rimusic.ui.screens.mood.defaultBrowseId
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.px
@@ -115,7 +114,6 @@ import app.it.fast4x.rimusic.utils.preferences
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import it.fast4x.innertube.Innertube
-import it.fast4x.innertube.requests.discoverPage
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -195,38 +193,6 @@ private fun AccentChip(label: String, modifier: Modifier = Modifier) {
             .background(palette.accent.copy(alpha = 0.13f))
             .padding(horizontal = 10.dp, vertical = 3.dp)
     )
-}
-
-@Composable
-private fun HomeMoodShortcuts(
-    moods: List<Innertube.Mood.Item>,
-    onMoodClick: (Innertube.Mood.Item) -> Unit
-) {
-    if (moods.isEmpty()) return
-    val accentColor = colorPalette().accent
-
-    Column(
-        modifier = Modifier
-            .padding(horizontal = 14.dp)
-            .padding(top = 14.dp)
-            .fillMaxWidth()
-    ) {
-        TitleMiniSection(
-            title = "Moods from YT Music",
-            modifier = Modifier.padding(horizontal = 4.dp).padding(bottom = 6.dp)
-        )
-        LazyRow(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            contentPadding = PaddingValues(horizontal = 4.dp)
-        ) {
-            items(moods, key = { "${it.endpoint.browseId}:${it.endpoint.params}:${it.title}" }) { mood ->
-                AccentChip(
-                    label = mood.title,
-                    modifier = Modifier.clickable { onMoodClick(mood) }
-                )
-            }
-        }
-    }
 }
 
 @Composable
@@ -445,7 +411,6 @@ fun HomePage(
     onAlbumClick: (String) -> Unit,
     onArtistClick: (String) -> Unit,
     onPlaylistClick: (String) -> Unit,
-    onMoodClick: (mood: Innertube.Mood.Item) -> Unit,
 ) {
     val binder = LocalPlayerServiceBinder.current
     val windowInsets = LocalPlayerAwareWindowInsets.current
@@ -454,7 +419,6 @@ fun HomePage(
 
     var homePageResult by persist<Result<List<YtmHomeSection>?>>("home/home/sessionFeedResult")
     var ytmPlaylistsResult by persist<Result<List<YtmPlaylist>?>>("home/home/ytmPlaylistsResult")
-    var moodsResult by persist<Result<Innertube.DiscoverPage?>>("home/home/discoverMoodsResult")
     var selectedCountryCode by rememberPreference(selectedCountryCodeKey, Countries.ZZ)
     val parentalControlEnabled by rememberPreference(parentalControlEnabledKey, false)
     var loadedData by rememberPreference(loadedDataKey, false)
@@ -463,14 +427,13 @@ fun HomePage(
     val showFloatingIcon by rememberPreference(showFloatingIconKey, false)
 
     @Suppress("UNUSED_VARIABLE")
-    val ignoredSettings = Triple(selectedCountryCode, parentalControlEnabled, onMoodClick)
+    val ignoredSettings = Pair(selectedCountryCode, parentalControlEnabled)
 
     suspend fun loadData() {
         if (appRunningInBackground) return
         if (!isYouTubeLoggedIn()) {
             homePageResult = Result.success(null)
             ytmPlaylistsResult = Result.success(emptyList())
-            moodsResult = Result.success(null)
             loadedData = true
             return
         }
@@ -479,7 +442,6 @@ fun HomePage(
         if (cookie.isNullOrBlank()) {
             homePageResult = Result.success(null)
             ytmPlaylistsResult = Result.success(emptyList())
-            moodsResult = Result.success(null)
             loadedData = true
             return
         }
@@ -502,12 +464,8 @@ fun HomePage(
                     )
                 }
             }
-            val moodsDeferred = async(Dispatchers.IO) {
-                Innertube.discoverPage()
-            }
             homePageResult = homeDeferred.await()
             ytmPlaylistsResult = playlistsDeferred.await()
-            moodsResult = moodsDeferred.await()
         }
         if (loadedData) return
         runCatching { refreshScope.launch(Dispatchers.IO) {} }
@@ -543,7 +501,6 @@ fun HomePage(
     val scrollState = rememberScrollState()
     val endInsetDp = windowInsets.only(WindowInsetsSides.End).asPaddingValues().calculateRightPadding(LayoutDirection.Ltr)
     var expandedSections by remember { mutableStateOf(setOf<String>()) }
-    val shortcutMoods = moodsResult?.getOrNull()?.moods.orEmpty().take(12)
     val playlistRail = ytmPlaylistsResult?.getOrNull().orEmpty()
 
     fun openPlaylistLibraryTab() {
@@ -625,11 +582,6 @@ fun HomePage(
                 }
 
                 YtmBanner()
-                HomeMoodShortcuts(
-                    moods = shortcutMoods,
-                    onMoodClick = onMoodClick
-                )
-
                 if (showLoader) {
                     HomeShimmer(albumThumbnailSizeDp, playlistThumbnailSizeDp)
                 } else {

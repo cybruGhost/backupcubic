@@ -218,7 +218,6 @@ import android.os.Binder as AndroidBinder
 import androidx.compose.ui.util.fastMap
 import app.it.fast4x.rimusic.utils.isDiscordPresenceEnabledKey
 
-import app.it.fast4x.rimusic.ui.screens.cubicjam.CubicJamManager
 
 const val LOCAL_KEY_PREFIX = "local:"
 
@@ -258,7 +257,6 @@ class PlayerServiceModern : MediaLibraryService(),
      * Discord presence
      */
     private var discordPresenceManager: DiscordPresenceManager? = null
-    private var cubicJamManager: CubicJamManager? = null
     private var lastReportedNotificationMediaId: String? = null
     private var lastPlaybackSurfaceRefreshMs = 0L
     private var lastNoInternetToastMs = 0L
@@ -656,16 +654,6 @@ QuickPicksRepository.refreshIfNeeded()
         /**
          * Cubic Jam presence
          */
-        val cubicJamPrefs = getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
-        val cubicJamToken = cubicJamPrefs.getString("bearer_token", null)
-        val cubicJamEnabled = cubicJamPrefs.getBoolean("is_enabled", false)
-        
-        if (cubicJamToken != null && cubicJamEnabled) {
-            cubicJamManager = CubicJamManager(
-                context = this,
-                getToken = { cubicJamToken }
-            )
-        }
     } 
 
     override fun onBind(intent: Intent?) = super.onBind(intent) ?: binder
@@ -767,8 +755,6 @@ QuickPicksRepository.refreshIfNeeded()
                 discordPresenceManager?.onStop()
             }
                         // ✨ ADD THIS CUBIC JAM CLEANUP ✨
-            cubicJamManager?.onStop()
-            cubicJamManager = null
             maybeSavePlayerQueue()
             preferences.unregisterOnSharedPreferenceChangeListener(this)
             stopService(intent<MyDownloadService>())
@@ -904,29 +890,6 @@ QuickPicksRepository.refreshIfNeeded()
         /**
          * Cubic Jam presence
          */
-        val cubicJamPrefs = getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
-        val cubicJamToken = cubicJamPrefs.getString("bearer_token", null)
-        val cubicJamEnabled = cubicJamPrefs.getBoolean("is_enabled", false)
-        
-        if (cubicJamToken != null && cubicJamEnabled) {
-            // Ensure manager exists
-            if (cubicJamManager == null) {
-                cubicJamManager = CubicJamManager(
-                    context = this,
-                    getToken = { cubicJamToken }
-                )
-            }
-            
-            cubicJamManager?.onPlayingStateChanged(
-                mediaItem = presenceSnapshot.mediaItem ?: mediaItem,
-                isPlaying = presenceSnapshot.isPlaying,
-                position = presenceSnapshot.position,
-                duration = presenceSnapshot.duration,
-                now = now,
-                getCurrentPosition = { currentPresenceSnapshot().position },
-                isPlayingProvider = { currentPresenceSnapshot().isPlaying }
-            )
-        }
     }
 
     override fun onTimelineChanged(timeline: Timeline, reason: Int) {
@@ -980,30 +943,6 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         
         // ✨ ADD THIS CUBIC JAM PRESENCE ✨
         // Cubic Jam presence
-        val cubicJamPrefs = getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
-        val cubicJamToken = cubicJamPrefs.getString("bearer_token", null)
-        val cubicJamEnabled = cubicJamPrefs.getBoolean("is_enabled", false)
-        
-        if (cubicJamToken != null && cubicJamEnabled) {
-            // Ensure manager exists
-            if (cubicJamManager == null) {
-                cubicJamManager = CubicJamManager(
-                    context = this,
-                    getToken = { cubicJamToken }
-                )
-            }
-            
-            cubicJamManager?.onPlayingStateChanged(
-                mediaItem = item,
-                isPlaying = presenceSnapshot.isPlaying,
-                position = presenceSnapshot.position,
-                duration = presenceSnapshot.duration,
-                now = now,
-                getCurrentPosition = { currentPresenceSnapshot().position },
-                isPlayingProvider = { currentPresenceSnapshot().isPlaying }
-            )
-        }
-        
         requestPlaybackSurfaceRefresh(item)
     }
 
@@ -1920,31 +1859,6 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             
             // ✨ ADD THIS CUBIC JAM PRESENCE ON SEEK/SKIP ✨
             // Cubic Jam presence: update on seek/skip
-            val cubicJamPrefs = getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
-            val cubicJamToken = cubicJamPrefs.getString("bearer_token", null)
-            val cubicJamEnabled = cubicJamPrefs.getBoolean("is_enabled", false)
-            
-            if (cubicJamToken != null && cubicJamEnabled) {
-                // Ensure manager exists
-                if (cubicJamManager == null) {
-                    cubicJamManager = CubicJamManager(
-                        context = this,
-                        getToken = { cubicJamToken }
-                    )
-                }
-                
-                val presenceSnapshot = currentPresenceSnapshot()
-                val now = System.currentTimeMillis()
-                cubicJamManager?.onPlayingStateChanged(
-                    mediaItem = presenceSnapshot.mediaItem,
-                    isPlaying = presenceSnapshot.isPlaying,
-                    position = presenceSnapshot.position,
-                    duration = presenceSnapshot.duration,
-                    now = now,
-                    getCurrentPosition = { currentPresenceSnapshot().position },
-                    isPlayingProvider = { currentPresenceSnapshot().isPlaying }
-                )
-            }
         }
         super.onPositionDiscontinuity(oldPosition, newPosition, reason)
     }

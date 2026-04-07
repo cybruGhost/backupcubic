@@ -2838,11 +2838,8 @@ private fun OptimizedCanvasVideoPlayer(
     
     // OPTIMIZED PLAY STATE UPDATES: Debounce rapid changes
     LaunchedEffect(isPlaying) {
-        // Small delay to prevent rapid toggling
-        if (isPlaying != CanvasPlayerManager.isActive()) {
-            delay(100) // 100ms debounce
-            CanvasPlayerManager.updatePlayState(isPlaying)
-        }
+        delay(100)
+        CanvasPlayerManager.updatePlayState(isPlaying)
     }
     
     //  OPTIMIZED ANDROID VIEW: With proper lifecycle
@@ -2855,7 +2852,10 @@ private fun OptimizedCanvasVideoPlayer(
                 mediaItemId = mediaItemId
             )
         },
-        update = { /* Manager handles updates */ },
+        update = { playerView ->
+            CanvasPlayerManager.bindPlayerView(playerView)
+            CanvasPlayerManager.updatePlayState(isPlaying)
+        },
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))
             .graphicsLayer {
