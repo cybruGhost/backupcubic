@@ -66,6 +66,16 @@ import com.mikepenz.hypnoticcanvas.shaders.GoldenMagma
 import kotlin.random.Random
 import java.time.LocalDate
 
+private object DesktopQuickPicksCache {
+    var relatedPage: Innertube.RelatedPage? = null
+    var discoverPage: Innertube.DiscoverPage? = null
+
+    fun clearHome() {
+        relatedPage = null
+        discoverPage = null
+    }
+}
+
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun QuickPicsScreen(
@@ -75,33 +85,56 @@ fun QuickPicsScreen(
     onPlaylistClick: (String) -> Unit,
     onMoodClick: (Innertube.Mood.Item) -> Unit
 ) {
+    val quickPicksLazyGridState = rememberLazyGridState()
+    val moodAngGenresLazyGridState = rememberLazyGridState()
+    val endPaddingValues = windowInsets.only(WindowInsetsSides.End).asPaddingValues()
+    val related = remember { mutableStateOf(DesktopQuickPicksCache.relatedPage) }
+    var relatedPageResult by remember { mutableStateOf<Result<Innertube.RelatedPage?>?>(null) }
+    var discoverPageResult by remember { mutableStateOf<Result<Innertube.DiscoverPage?>?>(null) }
+    var discover = remember { mutableStateOf(DesktopQuickPicksCache.discoverPage) }
+    var refreshNonce by remember { mutableStateOf(0) }
+    val songGridItemWidth = itemInHorizontalGridWidth - 20.dp
+    val compactAlbumSize = albumThumbnailSize - 12.dp
+    val compactArtistSize = artistThumbnailSize - 10.dp
+    val compactPlaylistSize = playlistThumbnailSize - 12.dp
 
     Title2Actions(
         title = "For You",
-        onClick1 = {},
+        onClick1 = {
+            DesktopQuickPicksCache.clearHome()
+            related.value = null
+            discover.value = null
+            relatedPageResult = null
+            discoverPageResult = null
+            refreshNonce++
+        },
         icon2 = Res.drawable.play,
         onClick2 = {}
     )
 
-    val quickPicksLazyGridState = rememberLazyGridState()
-    val moodAngGenresLazyGridState = rememberLazyGridState()
-    val endPaddingValues = windowInsets.only(WindowInsetsSides.End).asPaddingValues()
-    val related = remember { mutableStateOf<Innertube.RelatedPage?>(null) }
-    var relatedPageResult by remember { mutableStateOf<Result<Innertube.RelatedPage?>?>(null) }
-    var discoverPageResult by remember { mutableStateOf<Result<Innertube.DiscoverPage?>?>(null) }
-    var discover = remember { mutableStateOf<Innertube.DiscoverPage?>(null) }
-
-    LaunchedEffect(Unit) {
-        relatedPageResult = Innertube.relatedPage(
-            NextBody(
-                videoId = "HZnNt9nnEhw"
+    LaunchedEffect(refreshNonce) {
+        if (DesktopQuickPicksCache.relatedPage == null) {
+            relatedPageResult = Innertube.relatedPage(
+                NextBody(
+                    videoId = "HZnNt9nnEhw"
+                )
             )
-        )
-
-        discoverPageResult = Innertube.discoverPage()
+            DesktopQuickPicksCache.relatedPage = relatedPageResult?.getOrNull()
+        }
+        if (DesktopQuickPicksCache.discoverPage == null) {
+            discoverPageResult = Innertube.discoverPage()
+            DesktopQuickPicksCache.discoverPage = discoverPageResult?.getOrNull()
+        }
+        related.value = DesktopQuickPicksCache.relatedPage
+        discover.value = DesktopQuickPicksCache.discoverPage
     }
     relatedPageResult?.getOrNull().also { related.value = it }
     discoverPageResult?.getOrNull().also { discover.value = it }
+
+    Title(
+        title = "Your Daily Discover",
+        onClick = {}
+    )
 
     LazyHorizontalGrid(
         state = quickPicksLazyGridState,
@@ -132,8 +165,7 @@ fun QuickPicsScreen(
                                 onSongClick(song.asSong)
                             }
                         )
-                        .animateItemPlacement()
-                        .width(itemInHorizontalGridWidth)
+                        .width(songGridItemWidth)
                 )
             }
         } ?:
@@ -157,8 +189,9 @@ fun QuickPicsScreen(
                     items(items = it.distinctBy { it.key }, key = { it.key }) {
                         AlbumItem(
                             album = it,
-                            thumbnailSizeDp = albumThumbnailSize,
+                            thumbnailSizeDp = compactAlbumSize,
                             alternative = true,
+                            showAuthors = true,
                             modifier = Modifier.clickable(onClick = {
                                 onAlbumClick(it.key)
                             })
@@ -182,8 +215,9 @@ fun QuickPicsScreen(
                 items(items = albums.distinctBy { it.key }, key = { it.key }) {
                     AlbumItem(
                         album = it,
-                        thumbnailSizeDp = albumThumbnailSize,
+                        thumbnailSizeDp = compactAlbumSize,
                         alternative = true,
+                        showAuthors = true,
                         modifier = Modifier.clickable(onClick = {
                             onAlbumClick(it.key)
                         })
@@ -206,7 +240,7 @@ fun QuickPicsScreen(
                 items(items = artists.distinctBy { it.key }, key = { it.key }) {
                     ArtistItem(
                         artist = it,
-                        thumbnailSizeDp = artistThumbnailSize,
+                        thumbnailSizeDp = compactArtistSize,
                         alternative = true,
                         modifier = Modifier.clickable(onClick = {
                             onArtistClick(it.key)
@@ -231,7 +265,7 @@ fun QuickPicsScreen(
                 items(items = playlists.distinctBy { it.key }, key = { it.key }) {
                     PlaylistItem(
                         playlist = it,
-                        thumbnailSizeDp = playlistThumbnailSize,
+                        thumbnailSizeDp = compactPlaylistSize,
                         alternative = true,
                         showSongsCount = false,
                         modifier = Modifier.clickable(onClick = {
@@ -270,7 +304,7 @@ fun QuickPicsScreen(
                         MoodItemColored(
                             mood = it,
                             onClick = {
-                                it.endpoint.browseId?.let { _ -> onMoodClick(it) }
+                                onMoodClick(it)
                             },
                             modifier = Modifier
                                 //.width(itemWidth)

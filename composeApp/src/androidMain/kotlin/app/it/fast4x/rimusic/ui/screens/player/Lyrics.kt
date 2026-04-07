@@ -136,6 +136,7 @@ import app.it.fast4x.rimusic.utils.color
 import app.it.fast4x.rimusic.utils.colorPaletteModeKey
 import app.it.fast4x.rimusic.utils.colorPaletteNameKey
 import app.it.fast4x.rimusic.utils.conditional
+import app.it.fast4x.rimusic.utils.defaultLyricsSourceKey
 import app.it.fast4x.rimusic.utils.effectRotationKey
 import app.it.fast4x.rimusic.utils.expandedplayerKey
 import app.it.fast4x.rimusic.utils.fetchSimpMusicLyrics
@@ -167,6 +168,7 @@ import app.it.fast4x.rimusic.utils.showBackgroundLyricsKey
 import app.it.fast4x.rimusic.utils.showSecondLineKey
 import app.it.fast4x.rimusic.utils.showLyricsSourceSwitcherKey
 import app.it.fast4x.rimusic.utils.showlyricsthumbnailKey
+import app.it.fast4x.rimusic.utils.simpMusicTranslationEnabledKey
 import app.it.fast4x.rimusic.utils.textCopyToClipboard
 import app.it.fast4x.rimusic.utils.verticalFadingEdge
 import kotlinx.coroutines.Dispatchers
@@ -202,7 +204,7 @@ fun Lyrics(
     size: Dp,
     mediaMetadataProvider: () -> MediaMetadata,
     durationProvider: () -> Long,
-    ensureSongInserted: () -> Unit,
+    ensureSongInserted: Database.() -> Unit,
     modifier: Modifier = Modifier,
     clickLyricsText: Boolean,
     trailingContent: (@Composable () -> Unit)? = null,
@@ -229,7 +231,7 @@ fun Lyrics(
         )
         var lyricsOutline by rememberPreference(
             lyricsOutlineKey,
-            LyricsOutline.None
+            LyricsOutline.Glow
         )
         val playerBackgroundColors by rememberPreference(
             playerBackgroundColorsKey,
@@ -264,6 +266,9 @@ fun Lyrics(
         var showLanguagesList by remember {
             mutableStateOf(false)
         }
+        var changingSimpMusicLanguage by remember {
+            mutableStateOf(false)
+        }
 
         var translateEnabled by remember {
             mutableStateOf(false)
@@ -276,7 +281,9 @@ fun Lyrics(
         var lyricsBackground by rememberPreference(lyricsBackgroundKey, LyricsBackground.Black)
 
         if (showLanguagesList) {
-            translateEnabled = false
+            if (!changingSimpMusicLanguage) {
+                translateEnabled = false
+            }
             menuState.display {
                 Menu {
                     Row(
@@ -295,7 +302,11 @@ fun Lyrics(
                         onClick = {
                             menuState.hide()
                             showLanguagesList = false
-                            translateEnabled = false
+                            if (changingSimpMusicLanguage) {
+                                changingSimpMusicLanguage = false
+                            } else {
+                                translateEnabled = false
+                            }
 
                         }
                     )
@@ -306,7 +317,11 @@ fun Lyrics(
                         onClick = {
                             menuState.hide()
                             showLanguagesList = false
-                            translateEnabled = true
+                            if (changingSimpMusicLanguage) {
+                                changingSimpMusicLanguage = false
+                            } else {
+                                translateEnabled = true
+                            }
 
                         }
                     )
@@ -321,7 +336,11 @@ fun Lyrics(
                                     menuState.hide()
                                     otherLanguageApp = it
                                     showLanguagesList = false
-                                    translateEnabled = true
+                                    if (changingSimpMusicLanguage) {
+                                        changingSimpMusicLanguage = false
+                                    } else {
+                                        translateEnabled = true
+                                    }
 
                                 }
                             )
@@ -349,7 +368,10 @@ fun Lyrics(
             playerEnableLyricsPopupMessageKey,
             true
         )
-        var selectedLyricsSource by rememberSaveable(mediaId) { mutableStateOf("lrclib") }
+        var defaultLyricsSource by rememberPreference(defaultLyricsSourceKey, "lrclib")
+        var simpMusicTranslationEnabled by rememberPreference(simpMusicTranslationEnabledKey, false)
+        var selectedLyricsSource by rememberSaveable(mediaId) { mutableStateOf(defaultLyricsSource) }
+        var showSimpMusicOptions by rememberSaveable(mediaId) { mutableStateOf(false) }
         var expandedplayer by rememberPreference(expandedplayerKey, false)
 
         var checkedLyricsLrc by remember(mediaId) {
@@ -409,13 +431,42 @@ fun Lyrics(
             invalidLrc = false
             isError = false
             isErrorSync = false
-            selectedLyricsSource = "lrclib"
+            selectedLyricsSource = defaultLyricsSource
+            showSimpMusicOptions = false
         }
 
-        suspend fun fetchLyricsFromSource(source: String) {
-            val existingLyrics = Database.lyricsTable.findBySongId(mediaId).first()
+        suspend fun fetchLyricsFromSource(source: String, allowSimpFallback: Boolean = true) {
+            selectedLyricsSource = source
+            isError = false
+            showPlaceholder = true
+
+            val existingLyrics = withContext(Dispatchers.IO) {
+                Database.lyricsTable.findBySongId(mediaId).first()
+            }
             val metadataArtist = mediaMetadata.artist?.toString().orEmpty()
             val metadataTitle = cleanPrefix(mediaMetadata.title?.toString().orEmpty())
+
+            fun applyLyrics(updatedLyrics: Lyrics) {
+                lyrics = updatedLyrics
+                if (isShowingSynchronizedLyrics && updatedLyrics.synced.isNullOrBlank() && !updatedLyrics.fixed.isNullOrBlank()) {
+                    isShowingSynchronizedLyrics = false
+                }
+                showPlaceholder = false
+                isError = false
+            }
+
+            fun markFailure() {
+                showPlaceholder = false
+                isError = true
+            }
+
+            suspend fun fallbackFromSimpMusic() {
+                val firstFallback = defaultLyricsSource.takeIf { it != "simpmusic" }.orEmpty().ifBlank { "lrclib" }
+                fetchLyricsFromSource(firstFallback, allowSimpFallback = false)
+                if ((lyrics?.synced.isNullOrBlank() && lyrics?.fixed.isNullOrBlank()) || isError) {
+                    fetchLyricsFromSource("kugou", allowSimpFallback = false)
+                }
+            }
 
             when (source) {
                 "lrclib" -> {
@@ -433,20 +484,19 @@ fun Lyrics(
                     )?.getOrNull()
 
                     if (result?.text?.isNotBlank() == true) {
+                        val updatedLyrics = Lyrics(
+                            songId = mediaId,
+                            fixed = existingLyrics?.fixed,
+                            synced = result.text
+                        )
+                        applyLyrics(updatedLyrics)
                         Database.asyncTransaction {
-                            lyricsTable.upsert(
-                                Lyrics(
-                                    songId = mediaId,
-                                    fixed = existingLyrics?.fixed,
-                                    synced = result.text
-                                )
-                            )
+                            lyricsTable.upsert(updatedLyrics)
                         }
                         checkedLyricsLrc = true
-                        isError = false
                     } else {
                         checkedLyricsLrc = true
-                        isError = true
+                        markFailure()
                     }
                 }
 
@@ -464,38 +514,63 @@ fun Lyrics(
                     )?.getOrNull()
 
                     if (result?.value?.isNotBlank() == true) {
+                        val updatedLyrics = Lyrics(
+                            songId = mediaId,
+                            fixed = existingLyrics?.fixed,
+                            synced = result.value
+                        )
+                        applyLyrics(updatedLyrics)
                         Database.asyncTransaction {
-                            lyricsTable.upsert(
-                                Lyrics(
-                                    songId = mediaId,
-                                    fixed = existingLyrics?.fixed,
-                                    synced = result.value
-                                )
-                            )
+                            lyricsTable.upsert(updatedLyrics)
                         }
                         checkedLyricsKugou = true
-                        isError = false
                     } else {
                         checkedLyricsKugou = true
-                        isError = true
+                        markFailure()
                     }
                 }
 
                 "simpmusic" -> {
-                    val simpLyrics = fetchSimpMusicLyrics(mediaId)
-                    if (!simpLyrics?.syncedLyrics.isNullOrBlank() || !simpLyrics?.plainLyrics.isNullOrBlank()) {
+                    val simpLanguageCode = otherLanguageApp.code
+                        .substringBefore('-')
+                        .substringBefore('_')
+                        .ifBlank { "en" }
+                        .take(2)
+
+                    val simpLyrics = fetchSimpMusicLyrics(
+                        videoId = mediaId,
+                        translatedLanguage = simpLanguageCode,
+                        useTranslatedLyrics = simpMusicTranslationEnabled
+                    )
+
+                    val resolvedSyncedLyrics = when {
+                        simpMusicTranslationEnabled && !simpLyrics?.translatedLyrics.isNullOrBlank() -> simpLyrics?.translatedLyrics
+                        !simpLyrics?.syncedLyrics.isNullOrBlank() -> simpLyrics?.syncedLyrics
+                        else -> existingLyrics?.synced
+                    }
+                    val shouldFallbackToSyncedSources =
+                        isShowingSynchronizedLyrics &&
+                            resolvedSyncedLyrics.isNullOrBlank() &&
+                            allowSimpFallback
+
+                    if (shouldFallbackToSyncedSources) {
+                        fallbackFromSimpMusic()
+                    } else if (!resolvedSyncedLyrics.isNullOrBlank() || !simpLyrics?.plainLyrics.isNullOrBlank()) {
+                        val updatedLyrics = Lyrics(
+                            songId = mediaId,
+                            fixed = simpLyrics?.plainLyrics ?: existingLyrics?.fixed,
+                            synced = resolvedSyncedLyrics
+                        )
+                        applyLyrics(updatedLyrics)
                         Database.asyncTransaction {
-                            lyricsTable.upsert(
-                                Lyrics(
-                                    songId = mediaId,
-                                    fixed = simpLyrics?.plainLyrics ?: existingLyrics?.fixed,
-                                    synced = simpLyrics?.syncedLyrics ?: existingLyrics?.synced
-                                )
-                            )
+                            lyricsTable.upsert(updatedLyrics)
                         }
-                        isError = false
                     } else {
-                        isError = true
+                        if (allowSimpFallback) {
+                            fallbackFromSimpMusic()
+                        } else {
+                            markFailure()
+                        }
                     }
                 }
             }
@@ -1087,41 +1162,118 @@ fun SelectLyricFromTrack(
             }
 
             if (showLyricsSourceSwitcher) {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    verticalAlignment = Alignment.CenterVertically,
+                Column(
+                    horizontalAlignment = Alignment.End,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .zIndex(10f)
-                        .padding(top = 14.dp, end = 14.dp)
-                        .clip(RoundedCornerShape(18.dp))
-                        .background(Color.Black.copy(alpha = 0.28f))
-                        .padding(horizontal = 8.dp, vertical = 6.dp)
                 ) {
-                    listOf(
-                        "lrclib" to "Lrc",
-                        "kugou" to "Kg",
-                        "simpmusic" to "Simp"
-                    ).forEach { (sourceKey, label) ->
-                        BasicText(
-                            text = label,
-                            style = typography().xxs.semiBold.copy(
-                                color = if (selectedLyricsSource == sourceKey) colorPalette().accent else Color.White.copy(alpha = 0.82f)
-                            ),
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(14.dp))
-                                .background(
-                                    if (selectedLyricsSource == sourceKey) colorPalette().background2.copy(alpha = 0.9f)
-                                    else Color.Transparent
-                                )
-                                .clickable {
-                                    selectedLyricsSource = sourceKey
-                                    coroutineScope.launch {
-                                        fetchLyricsFromSource(sourceKey)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier
+                            .padding(top = 14.dp, end = 14.dp)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(Color.Black.copy(alpha = 0.28f))
+                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                    ) {
+                        listOf(
+                            "lrclib" to "Lrc",
+                            "kugou" to "Kg",
+                            "simpmusic" to "Simp"
+                        ).forEach { (sourceKey, label) ->
+                            BasicText(
+                                text = label,
+                                style = typography().xxs.semiBold.copy(
+                                    color = if (selectedLyricsSource == sourceKey) colorPalette().accent else Color.White.copy(alpha = 0.82f)
+                                ),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(
+                                        if (selectedLyricsSource == sourceKey) colorPalette().background2.copy(alpha = 0.9f)
+                                        else Color.Transparent
+                                    )
+                                    .clickable {
+                                        if (sourceKey == "simpmusic") {
+                                            selectedLyricsSource = sourceKey
+                                            showSimpMusicOptions = !showSimpMusicOptions
+                                        } else {
+                                            showSimpMusicOptions = false
+                                            selectedLyricsSource = sourceKey
+                                            coroutineScope.launch {
+                                                fetchLyricsFromSource(sourceKey)
+                                            }
+                                        }
                                     }
-                                }
-                                .padding(horizontal = 10.dp, vertical = 6.dp)
-                        )
+                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+
+                    if (showSimpMusicOptions) {
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier
+                                .padding(top = 8.dp, end = 14.dp)
+                                .clip(RoundedCornerShape(16.dp))
+                                .background(Color.Black.copy(alpha = 0.38f))
+                                .padding(horizontal = 10.dp, vertical = 10.dp)
+                        ) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                BasicText(
+                                    text = if (simpMusicTranslationEnabled) "Translated" else "Original",
+                                    style = typography().xxs.semiBold.copy(color = Color.White),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colorPalette().background2.copy(alpha = 0.9f))
+                                        .clickable { simpMusicTranslationEnabled = !simpMusicTranslationEnabled }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                                BasicText(
+                                    text = languageDestinationName(otherLanguageApp),
+                                    style = typography().xxs.semiBold.copy(color = Color.White),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colorPalette().background2.copy(alpha = 0.9f))
+                                        .clickable {
+                                            changingSimpMusicLanguage = true
+                                            showLanguagesList = true
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+
+                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                BasicText(
+                                    text = if (defaultLyricsSource == "simpmusic") "Default: Simp" else "Make Default",
+                                    style = typography().xxs.semiBold.copy(
+                                        color = if (defaultLyricsSource == "simpmusic") colorPalette().accent else Color.White
+                                    ),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colorPalette().background2.copy(alpha = 0.9f))
+                                        .clickable {
+                                            defaultLyricsSource =
+                                                if (defaultLyricsSource == "simpmusic") "lrclib" else "simpmusic"
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                                BasicText(
+                                    text = "Fetch",
+                                    style = typography().xxs.semiBold.copy(color = colorPalette().accent),
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(12.dp))
+                                        .background(colorPalette().background2.copy(alpha = 0.9f))
+                                        .clickable {
+                                            coroutineScope.launch {
+                                                fetchLyricsFromSource("simpmusic")
+                                            }
+                                        }
+                                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

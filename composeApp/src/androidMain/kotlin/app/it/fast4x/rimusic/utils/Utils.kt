@@ -49,7 +49,9 @@ import app.it.fast4x.rimusic.service.modern.LOCAL_KEY_PREFIX
 import app.it.fast4x.rimusic.service.modern.isLocal
 import app.it.fast4x.rimusic.ui.components.themed.NewVersionDialog
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeSyncEnabled
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.first
 import app.kreate.android.me.knighthat.utils.Toaster
 import java.io.File
@@ -64,57 +66,105 @@ private const val SIMPMUSIC_LYRICS_API = "https://api-lyrics.simpmusic.org/v1"
 
 data class SimpMusicLyricsResult(
     val syncedLyrics: String?,
+    val richSyncLyrics: String? = null,
     val plainLyrics: String?,
+    val translatedLyrics: String? = null,
+    val translatedLanguage: String? = null,
 )
 
 private fun parseSimpMusicLyricsJson(raw: String): SimpMusicLyricsResult? {
     val root = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return null
+
+    fun org.json.JSONObject.toLyricsResult(): SimpMusicLyricsResult? {
+        val syncedLyrics = optString("syncedLyrics").takeIf { it.isNotBlank() }
+        val richSyncLyrics = optString("richSyncLyrics").takeIf { it.isNotBlank() }
+        val plainLyrics = optString("plainLyrics").takeIf { it.isNotBlank() }
+            ?: optString("plainLyric").takeIf { it.isNotBlank() }
+        val translatedLyrics = optString("translatedLyrics").takeIf { it.isNotBlank() }
+            ?: optString("translatedLyric").takeIf { it.isNotBlank() }
+        val translatedLanguage = optString("language").takeIf { it.isNotBlank() }
+
+        if (syncedLyrics == null && richSyncLyrics == null && plainLyrics == null && translatedLyrics == null) return null
+
+        return SimpMusicLyricsResult(
+            syncedLyrics = syncedLyrics ?: richSyncLyrics,
+            richSyncLyrics = richSyncLyrics,
+            plainLyrics = plainLyrics,
+            translatedLyrics = translatedLyrics,
+            translatedLanguage = translatedLanguage,
+        )
+    }
+
+    root.optJSONObject("data")?.toLyricsResult()?.let { return it }
 
     val directItems = root.optJSONArray("data")
     val wrappedData = root.optJSONObject("data")?.optJSONArray("data")
     val resultItems = root.optJSONArray("result")
     val candidates = directItems ?: wrappedData ?: resultItems ?: return null
 
-    val bestItem = (0 until candidates.length())
-        .mapNotNull { index -> candidates.optJSONObject(index) }
-        .firstOrNull { item ->
-            item.optString("syncedLyrics").isNotBlank() || item.optString("plainLyrics").isNotBlank()
+    val parsedCandidates = (0 until candidates.length())
+        .mapNotNull { index -> candidates.optJSONObject(index)?.toLyricsResult() }
+
+    return parsedCandidates.maxByOrNull { candidate ->
+        when {
+            !candidate.translatedLyrics.isNullOrBlank() -> 4
+            !candidate.syncedLyrics.isNullOrBlank() -> 3
+            !candidate.richSyncLyrics.isNullOrBlank() -> 2
+            !candidate.plainLyrics.isNullOrBlank() -> 1
+            else -> 0
         }
-        ?: (0 until candidates.length())
-            .mapNotNull { index -> candidates.optJSONObject(index) }
-            .firstOrNull()
-        ?: return null
-
-    val syncedLyrics = bestItem.optString("syncedLyrics").takeIf { it.isNotBlank() }
-    val plainLyrics = bestItem.optString("plainLyrics").takeIf { it.isNotBlank() }
-
-    if (syncedLyrics == null && plainLyrics == null) return null
-
-    return SimpMusicLyricsResult(
-        syncedLyrics = syncedLyrics,
-        plainLyrics = plainLyrics
-    )
+    }
 }
 
-suspend fun fetchSimpMusicLyrics(videoId: String): SimpMusicLyricsResult? {
+suspend fun fetchSimpMusicLyrics(
+    videoId: String,
+    translatedLanguage: String? = null,
+    useTranslatedLyrics: Boolean = false,
+): SimpMusicLyricsResult? {
     if (videoId.isBlank()) return null
 
-    return runCatching {
-        val connection = (URL("$SIMPMUSIC_LYRICS_API/$videoId?limit=10").openConnection() as HttpURLConnection).apply {
-            requestMethod = "GET"
-            connectTimeout = 5000
-            readTimeout = 5000
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "SimpMusicLyrics/1.0")
-            setRequestProperty("Content-Type", "application/json")
-        }
+    return withContext(Dispatchers.IO) {
+        runCatching {
+            fun fetchJson(url: String): String? {
+                val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+                    requestMethod = "GET"
+                    connectTimeout = 5000
+                    readTimeout = 5000
+                    setRequestProperty("Accept", "application/json")
+                    setRequestProperty("User-Agent", "SimpMusicLyrics/1.0")
+                    setRequestProperty("Content-Type", "application/json")
+                }
 
-        if (connection.responseCode != HttpURLConnection.HTTP_OK) return@runCatching null
+                return if (connection.responseCode == HttpURLConnection.HTTP_OK) {
+                    connection.inputStream.bufferedReader().use { it.readText() }
+                } else {
+                    null
+                }
+            }
 
-        connection.inputStream.bufferedReader().use { reader ->
-            parseSimpMusicLyricsJson(reader.readText())
+            val baseResult = fetchJson("$SIMPMUSIC_LYRICS_API/$videoId?limit=10")
+                ?.let(::parseSimpMusicLyricsJson)
+                ?: return@runCatching null
+
+            if (!useTranslatedLyrics || translatedLanguage.isNullOrBlank()) {
+                return@runCatching baseResult
+            }
+
+            val translatedResult = fetchJson("$SIMPMUSIC_LYRICS_API/translated/$videoId/${translatedLanguage.lowercase()}?limit=1")
+                ?.let(::parseSimpMusicLyricsJson)
+
+            if (translatedResult?.translatedLyrics.isNullOrBlank()) {
+                return@runCatching baseResult
+            }
+
+            baseResult.copy(
+                syncedLyrics = translatedResult?.translatedLyrics ?: baseResult.syncedLyrics,
+                translatedLyrics = translatedResult?.translatedLyrics,
+                translatedLanguage = translatedResult?.translatedLanguage ?: translatedLanguage.lowercase()
+            )
         }
-    }.getOrNull()
+            .getOrNull()
+    }
 }
 
 private fun filteredVideoAuthorNames(authors: List<Innertube.Info<*>>?): List<String> =
@@ -710,11 +760,10 @@ suspend fun addSongToYtPlaylist(localPlaylistId: Long, position: Int, ytplaylist
 suspend fun addToYtLikedSong(mediaItem: MediaItem) {
     if( !isYouTubeSyncEnabled() ) return
 
-    Database.asyncTransaction {
-        insertIgnore( mediaItem )
+    val isSongLiked = withContext(Dispatchers.IO) {
+        Database.insertIgnore(mediaItem)
+        Database.songTable.isLiked(mediaItem.mediaId).first()
     }
-
-    val isSongLiked = Database.songTable.isLiked( mediaItem.mediaId ).first()
 
     val isSuccess: Boolean =
         (if( isSongLiked ) likeVideoOrSong( mediaItem.mediaId ) else removelikeVideoOrSong( mediaItem.mediaId )).isSuccess

@@ -785,15 +785,6 @@ fun SpotifyCanvasWorker() {
             }
             val mediaId = displayedMediaItem?.mediaId
 
-            if (playbackState == Player.STATE_ENDED) {
-                CanvasPlayerManager.stopLooping()
-                SpotifyCanvasState.isPlaying = false
-                if (mediaId == SpotifyCanvasState.currentMediaItemId) {
-                    SpotifyCanvasState.currentCanvasUrl = null
-                    SpotifyCanvasState.shouldRetryFetch = true
-                }
-            }
-
             if (mediaId == SpotifyCanvasState.currentMediaItemId &&
                 SpotifyCanvasState.currentCanvasUrl != null
             ) {

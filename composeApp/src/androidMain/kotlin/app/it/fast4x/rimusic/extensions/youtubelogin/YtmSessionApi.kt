@@ -302,7 +302,8 @@ object YtmSessionApi {
                 artist = item.optString("artist"),
                 album = item.optString("album"),
                 thumbnail = item.optString("thumbnail"),
-                duration = item.optString("duration")
+                duration = item.optString("duration"),
+                setVideoId = item.optString("setVideoId")
             )
         }
     }

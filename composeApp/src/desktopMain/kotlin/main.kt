@@ -4,10 +4,8 @@ import androidx.compose.ui.window.WindowState
 import androidx.compose.ui.window.application
 import coil3.annotation.ExperimentalCoilApi
 import coil3.compose.setSingletonImageLoaderFactory
-import database.MusicDatabaseDesktop
 import app.it.fast4x.rimusic.getAsyncImageLoader
-import app.it.fast4x.rimusic.ui.ThreeColumnsApp
-import app.it.fast4x.rimusic.ui.theme.DesktopTheme
+import app.it.fast4x.rimusic.ui.DesktopApp
 import org.jetbrains.compose.resources.painterResource
 import rimusic.composeapp.generated.resources.Res
 import rimusic.composeapp.generated.resources.app_icon
@@ -25,12 +23,8 @@ fun main() = application {
         state = WindowState(
             placement = WindowPlacement.Maximized,
         ),
-        title = "RiMusic MP",
+        title = "Cubic Music",
     ) {
-        //App(MusicDatabaseDesktop)
-        DesktopTheme {
-            ThreeColumnsApp()
-        }
-
+        DesktopApp()
     }
 }
