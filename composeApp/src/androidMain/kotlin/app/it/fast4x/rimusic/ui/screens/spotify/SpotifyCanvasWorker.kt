@@ -113,6 +113,8 @@ private object SpotifySessionApi {
             "sp_dc=$sessionCookie"
         }
 
+    fun buildSessionCookieHeader(sessionCookie: String): String = buildCookieHeader(sessionCookie)
+
     private fun extractSpDcValue(sessionCookie: String): String {
         if (!sessionCookie.contains("=")) return sessionCookie.trim()
 
@@ -902,13 +904,52 @@ private fun fetchSpotifyCanvas(
             SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_searching_track_id), LogType.LOADING)
         }
 
-        val (trackId, matchScore) = SpotifySessionApi.searchTrackIdViaMatcherApi(
+        var authToken: String? = null
+        var (trackId, matchScore) = SpotifySessionApi.searchTrackIdViaMatcherApi(
             client = client,
             sessionCookie = sessionCookie,
             title = title,
             artist = artist,
             showLogs = showLogs
         )
+
+        val shouldFallbackToSpotifySearch =
+            trackId.isNullOrBlank() ||
+                (matchScore != null && matchScore < SpotifyApiConfig.MIN_MATCH_SCORE)
+
+        if (shouldFallbackToSpotifySearch) {
+            if (showLogs) {
+                SpotifyCanvasState.addLog(
+                    canvasString(R.string.cubic_canvas_searching_track_id),
+                    LogType.INFO
+                )
+            }
+
+            authToken = SpotifySessionApi.getSpotifyTokenWithTotp(
+                client = client,
+                sessionCookie = sessionCookie,
+                showLogs = showLogs
+            )
+
+            if (!authToken.isNullOrBlank()) {
+                val (fallbackTrackId, fallbackScore) = SpotifySessionApi.searchTrackId(
+                    client = client,
+                    authToken = authToken,
+                    title = title,
+                    artist = artist,
+                    showLogs = showLogs
+                )
+
+                val fallbackWins =
+                    !fallbackTrackId.isNullOrBlank() &&
+                        (trackId.isNullOrBlank() || (fallbackScore ?: 0.0) >= (matchScore ?: 0.0))
+
+                if (fallbackWins) {
+                    trackId = fallbackTrackId
+                    matchScore = fallbackScore
+                }
+            }
+        }
 
         if (trackId == null) {
             if (showLogs) {
@@ -942,6 +983,12 @@ private fun fetchSpotifyCanvas(
                 .url("${SpotifyApiConfig.CANVAS_API}?trackId=$encodedTrackId")
                 .header("Accept", "application/json")
                 .header("X-Sp-Dc", spDc.orEmpty())
+                .header("Cookie", SpotifySessionApi.buildSessionCookieHeader(sessionCookie))
+                .apply {
+                    authToken?.takeIf { it.isNotBlank() }?.let {
+                        header("Authorization", "Bearer $it")
+                    }
+                }
                 .build()
         ).execute()
 

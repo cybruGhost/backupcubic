@@ -6,7 +6,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import android.content.Context
-import app.it.fast4x.rimusic.ui.screens.home.FriendNowPlayingSection
 import androidx.compose.foundation.gestures.ScrollableDefaults
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -543,14 +542,6 @@ fun HomeQuickPicks(
     )
     val showTips by rememberPreference(showTipsKey, true)
     val showCharts by rememberPreference(showChartsKey, true)
-
-    val isCubicJamLoggedIn = remember {
-        val prefs = context.getSharedPreferences("cubic_jam_prefs", Context.MODE_PRIVATE)
-        val token = prefs.getString("bearer_token", null)
-        val loggedIn = token != null
-        Timber.d("HomeQuickPicks - CubicJam logged in: $loggedIn")
-        loggedIn
-    }
 
     // ===== NOTIFICATION MESSAGE =====
     var notificationResult by remember { mutableStateOf<Result<NotificationData?>?>(null) }
@@ -1266,7 +1257,7 @@ fun HomeQuickPicks(
                         // Spacer to push icons to the right
                         Spacer(modifier = Modifier.weight(1f))
 
-                        // Home + CubicJam + Play icons (grouped together on right)
+                        // Home + Play icons (grouped together on right)
                         Row(
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                             verticalAlignment = Alignment.CenterVertically
@@ -1284,19 +1275,6 @@ fun HomeQuickPicks(
                                         tint = colorPalette().accent
                                     )
                                 }
-                            }
-
-                            IconButton(
-                                onClick = {
-                                    navController.navigate(NavRoutes.cubicjam.name)
-                                },
-                                modifier = Modifier.size(24.dp)
-                            ) {
-                                Icon(
-                                    painter = painterResource(R.drawable.ic_party_mode),
-                                    contentDescription = "Cubic Jam",
-                                    tint = colorPalette().text
-                                )
                             }
 
                             // Play icon
@@ -1456,10 +1434,6 @@ fun HomeQuickPicks(
                         )
                     }
                 }
-
-                // ===== FRIEND NOW PLAYING SECTION =====
-                FriendNowPlayingSection(navController = navController)
-                // ===== END FRIEND NOW PLAYING SECTION =====
 
                 // ===== NOTIFICATION MESSAGE SECTION =====
                 notificationInit?.let { notification ->

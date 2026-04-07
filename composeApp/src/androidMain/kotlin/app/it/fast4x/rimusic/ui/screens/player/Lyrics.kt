@@ -974,11 +974,12 @@ fun Lyrics(
 
         if (showShareCardPreview) {
             val configuration = LocalConfiguration.current
-            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.82f else 0.88f)
+            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.78f else 0.84f)
+            val previewCardScale = if (isLandscape) 0.76f else 0.82f
             DefaultDialog(
                 onDismiss = { showShareCardPreview = false },
                 modifier = Modifier
-                    .fillMaxWidth(if (isLandscape) 0.82f else 0.96f)
+                    .fillMaxWidth(if (isLandscape) 0.74f else 0.90f)
                     .heightIn(max = previewMaxHeight)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.Start
@@ -993,16 +994,26 @@ fun Lyrics(
                     modifier = Modifier.padding(top = 6.dp, bottom = 14.dp)
                 )
 
-                LyricsSharePreviewCard(
-                    title = cleanPrefix(mediaMetadata.title?.toString().orEmpty()),
-                    artist = cleanPrefix(mediaMetadata.artist?.toString().orEmpty()),
-                    lyricsSnippet = sharePreviewLyrics,
-                    artworkUrl = mediaMetadata.artworkUri?.toString(),
-                    deeplinkUrl = shareDeeplink,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .heightIn(max = if (isLandscape) 340.dp else 430.dp)
-                )
+                Box(
+                    modifier = Modifier.fillMaxWidth(),
+                    contentAlignment = Alignment.TopCenter
+                ) {
+                    LyricsSharePreviewCard(
+                        title = cleanPrefix(mediaMetadata.title?.toString().orEmpty()),
+                        artist = cleanPrefix(mediaMetadata.artist?.toString().orEmpty()),
+                        lyricsSnippet = sharePreviewLyrics,
+                        artworkUrl = mediaMetadata.artworkUri?.toString(),
+                        deeplinkUrl = shareDeeplink,
+                        modifier = Modifier
+                            .fillMaxWidth(if (isLandscape) 0.78f else 0.86f)
+                            .heightIn(max = if (isLandscape) 255.dp else 330.dp)
+                            .graphicsLayer {
+                                scaleX = previewCardScale
+                                scaleY = previewCardScale
+                                transformOrigin = TransformOrigin(0.5f, 0f)
+                            }
+                    )
+                }
 
                 BasicText(
                     text = "Start from line ${shareSliceStartIndex + 1}",
@@ -1058,7 +1069,7 @@ fun Lyrics(
                 ) {
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.48f)
+                            .weight(1f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(colorPalette().background2)
                             .clickable { showShareCardPreview = false }
@@ -1072,7 +1083,7 @@ fun Lyrics(
                     }
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.48f)
+                            .weight(1f)
                             .clip(RoundedCornerShape(18.dp))
                             .background(colorPalette().accent)
                             .clickable {
@@ -1097,7 +1108,9 @@ fun Lyrics(
                     ) {
                         BasicText(
                             text = "Share now",
-                            style = typography().xs.semiBold.color(colorPalette().onAccent)
+                            style = typography().xs.semiBold.color(colorPalette().onAccent),
+                            maxLines = 1,
+                            overflow = TextOverflow.Clip
                         )
                     }
                 }
@@ -3210,14 +3223,14 @@ private fun LyricsSharePreviewCard(
         modifier = modifier
             .clip(RoundedCornerShape(28.dp))
             .background(previewBackground)
-            .padding(16.dp)
+            .padding(14.dp)
     ) {
         Column(
             modifier = Modifier
                 .fillMaxWidth()
                 .clip(RoundedCornerShape(26.dp))
                 .background(colorPalette().background1.copy(alpha = 0.72f))
-                .padding(horizontal = 18.dp, vertical = 18.dp)
+                .padding(horizontal = 16.dp, vertical = 16.dp)
         ) {
             Row(
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -3228,7 +3241,7 @@ private fun LyricsSharePreviewCard(
                     contentDescription = null,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
-                        .size(68.dp)
+                        .size(64.dp)
                         .clip(RoundedCornerShape(16.dp))
                 )
                 Column(
@@ -3240,7 +3253,7 @@ private fun LyricsSharePreviewCard(
                         text = title.ifBlank { "Unknown title" },
                         style = TextStyle(
                             color = colorPalette().text,
-                            fontSize = 16.sp,
+                            fontSize = 15.sp,
                             fontWeight = FontWeight.SemiBold,
                             fontFamily = LyricsShareHeadlineFont
                         ),
@@ -3251,7 +3264,7 @@ private fun LyricsSharePreviewCard(
                         text = artist.ifBlank { "Unknown artist" },
                         style = TextStyle(
                             color = colorPalette().textSecondary,
-                            fontSize = 13.sp,
+                            fontSize = 12.sp,
                             fontWeight = FontWeight.Medium,
                             fontFamily = LyricsShareBodyFont
                         ),
@@ -3266,8 +3279,8 @@ private fun LyricsSharePreviewCard(
                 text = displayedLyrics,
                 style = TextStyle(
                     color = colorPalette().text,
-                    fontSize = 28.sp,
-                    lineHeight = 35.sp,
+                    fontSize = 22.sp,
+                    lineHeight = 28.sp,
                     fontWeight = FontWeight.Bold,
                     fontFamily = LyricsShareHeadlineFont,
                     shadow = Shadow(
@@ -3278,7 +3291,7 @@ private fun LyricsSharePreviewCard(
                 ),
                 maxLines = 6,
                 overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 22.dp)
+                modifier = Modifier.padding(top = 18.dp)
             )
 
             Row(
