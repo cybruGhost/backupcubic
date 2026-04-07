@@ -50,13 +50,10 @@ kotlin {
 
         val desktopMain by getting
         desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/ThreeColumnsApp.kt")
-        desktopMain.kotlin.exclude("it/fast4x/rimusic/player/vlcj/**")
+        desktopMain.kotlin.exclude("it/fast4x/rimusic/player/vlcj/VlcjFrameController.kt")
+        desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/screens/ArtistScreen.kt")
         desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/components/LayoutWithAdaptiveThumbnail.kt")
         desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/components/PlayerEssential.kt")
-        desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/screens/AlbumScreen.kt")
-        desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/screens/ArtistScreen.kt")
-        desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/screens/MoodScreen.kt")
-        desktopMain.kotlin.exclude("it/fast4x/rimusic/ui/screens/PlaylistScreen.kt")
         desktopMain.dependencies {
             implementation(compose.components.resources)
             implementation(compose.desktop.currentOs)
@@ -97,6 +94,7 @@ kotlin {
     implementation(libs.androidx.webkit)
     implementation(libs.compose.runtime.livedata)
     implementation(libs.compose.activity)
+    implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
     implementation(libs.media3.exoplayer)
     implementation(libs.media3.datasource.okhttp)
     implementation(libs.androidx.appcompat)

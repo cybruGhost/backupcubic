@@ -7,6 +7,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
+import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
@@ -31,6 +32,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import app.it.fast4x.rimusic.cleanPrefix
 import timber.log.Timber
 
@@ -40,6 +43,7 @@ import timber.log.Timber
 
 private val ytmAlbumThumbnailCache = mutableMapOf<String, String?>()
 private var lastFullAccountSyncAtMs = 0L
+private val ytmAccountSyncMutex = Mutex()
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal data types
@@ -95,12 +99,24 @@ private suspend fun <T> safeYtmCall(
     maxRetries: Int = 1,
     block: suspend () -> Result<T>,
 ): T? = withContext(Dispatchers.IO) {
+    if (appRunningInBackground) {
+        Timber.d("YTM sync call skipped in background label=%s", label)
+        return@withContext null
+    }
     repeat(maxRetries) { attempt ->
         try {
-            return@withContext withTimeout(timeoutMs) { block().getOrNull() }
+            return@withContext withTimeout(timeoutMs) {
+                if (appRunningInBackground) {
+                    Timber.d("YTM sync call aborted in background label=%s", label)
+                    null
+                } else {
+                    block().getOrNull()
+                }
+            }
         } catch (error: Exception) {
             Timber.w(error, "YTM sync call failed label=%s attempt=%s/%s", label, attempt + 1, maxRetries)
             if (attempt == maxRetries - 1) return@withContext null
+            if (appRunningInBackground) return@withContext null
             delay(750L * (attempt + 1))
         }
     }
@@ -630,24 +646,31 @@ suspend fun importYTMLikedSongs(): Boolean = withContext(Dispatchers.IO) {
  */
 suspend fun syncSelectedYtmAccountData(): Boolean = withContext(Dispatchers.IO) {
     if (!isYouTubeSyncEnabled()) return@withContext false
-    val now = System.currentTimeMillis()
-    if (now - lastFullAccountSyncAtMs < 60_000L) return@withContext false
+    if (appRunningInBackground) return@withContext false
+    ytmAccountSyncMutex.withLock {
+        if (appRunningInBackground) return@withLock false
 
-    val syncSteps = listOf(
-        "liked songs" to ::importYTMLikedSongs,
-        "playlists" to ::importYTMLikedPlaylists,
-        "artists" to ::importYTMSubscribedChannels,
-        "albums" to ::importYTMLikedAlbums,
-    )
+        val now = System.currentTimeMillis()
+        if (now - lastFullAccountSyncAtMs < 60_000L) return@withLock false
 
-    var syncedAny = false
-    syncSteps.forEach { (label, syncStep) ->
-        runCatching { syncStep() }
-            .onSuccess { syncedAny = syncedAny || it }
-            .onFailure { Timber.e(it, "syncSelectedYtmAccountData failed while syncing %s", label) }
+        val syncSteps = listOf(
+            "liked songs" to ::importYTMLikedSongs,
+            "playlists" to ::importYTMLikedPlaylists,
+            "artists" to ::importYTMSubscribedChannels,
+            "albums" to ::importYTMLikedAlbums,
+        )
+
+        var syncedAny = false
+        syncSteps.forEach { (label, syncStep) ->
+            if (appRunningInBackground) return@withLock syncedAny
+            runCatching { syncStep() }
+                .onSuccess { syncedAny = syncedAny || it }
+                .onFailure { Timber.e(it, "syncSelectedYtmAccountData failed while syncing %s", label) }
+        }
+
+        if (syncedAny) lastFullAccountSyncAtMs = now
+        syncedAny
     }
-    if (syncedAny) lastFullAccountSyncAtMs = now
-    syncedAny
 }
 
 /**

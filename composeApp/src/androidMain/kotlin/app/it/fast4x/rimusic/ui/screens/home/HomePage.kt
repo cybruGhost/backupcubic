@@ -1,6 +1,7 @@
 package app.it.fast4x.rimusic.ui.screens.home
 
 import android.annotation.SuppressLint
+import androidx.core.content.edit
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
@@ -66,11 +67,13 @@ import app.kreate.android.R
 import app.it.fast4x.compose.persist.persist
 import app.it.fast4x.rimusic.LocalPlayerAwareWindowInsets
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
+import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.enums.Countries
 import app.it.fast4x.rimusic.enums.NavRoutes
 import app.it.fast4x.rimusic.enums.NavigationBarPosition
 import app.it.fast4x.rimusic.enums.UiType
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmPlaylist
 import app.it.fast4x.rimusic.extensions.youtubelogin.YtmHomeSection
 import app.it.fast4x.rimusic.extensions.youtubelogin.YtmHomeSectionItem
 import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
@@ -78,7 +81,6 @@ import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import app.it.fast4x.rimusic.models.Album
 import app.it.fast4x.rimusic.models.Artist
-import app.it.fast4x.rimusic.models.Mood
 import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.typography
 import app.it.fast4x.rimusic.ui.components.ShimmerHost
@@ -108,28 +110,20 @@ import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.selectedCountryCodeKey
 import app.it.fast4x.rimusic.utils.showFloatingIconKey
 import app.it.fast4x.rimusic.utils.showSearchTabKey
+import app.it.fast4x.rimusic.utils.homeScreenTabIndexKey
+import app.it.fast4x.rimusic.utils.preferences
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import it.fast4x.innertube.Innertube
+import it.fast4x.innertube.requests.discoverPage
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import timber.log.Timber
 
 private enum class YtmHomeSectionStyle { SongGrid, SongRail, VideoRail, ArtistRail, AlbumRail, PlaylistRail }
-
-private val homeMoodShortcuts = listOf(
-    "Relax",
-    "Work out",
-    "Energise",
-    "Feel good",
-    "Party",
-    "Romance",
-    "Commute",
-    "Sad",
-    "Focus",
-    "Sleep"
-)
 
 private val gridSectionKeywords = listOf(
     "quick picks",
@@ -205,10 +199,10 @@ private fun AccentChip(label: String, modifier: Modifier = Modifier) {
 
 @Composable
 private fun HomeMoodShortcuts(
-    navController: NavController,
-    labels: List<String>
+    moods: List<Innertube.Mood.Item>,
+    onMoodClick: (Innertube.Mood.Item) -> Unit
 ) {
-    if (labels.isEmpty()) return
+    if (moods.isEmpty()) return
     val accentColor = colorPalette().accent
 
     Column(
@@ -225,25 +219,72 @@ private fun HomeMoodShortcuts(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             contentPadding = PaddingValues(horizontal = 4.dp)
         ) {
-            items(labels) { moodName ->
-                val moodShortcut = remember(moodName, accentColor) {
-                    Mood(
-                        name = moodName,
-                        color = accentColor,
-                        browseId = defaultBrowseId,
-                        params = null
+            items(moods, key = { "${it.endpoint.browseId}:${it.endpoint.params}:${it.title}" }) { mood ->
+                AccentChip(
+                    label = mood.title,
+                    modifier = Modifier.clickable { onMoodClick(mood) }
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun YtmPlaylistsFooter(
+    playlists: List<YtmPlaylist>,
+    onPlaylistClick: (String) -> Unit,
+    onOpenLibraryClick: () -> Unit
+) {
+    if (playlists.isEmpty()) return
+    SectionCard(
+        title = "From your YT Music playlists",
+        subtitle = "Saved mixes and collections from the active account",
+        hasMore = true,
+        moreLabel = "Playlists",
+        onMoreClick = onOpenLibraryClick
+    ) {
+        LazyRow(
+            contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 4.dp)
+        ) {
+            items(playlists.take(12), key = { it.playlistId.ifBlank { it.title } }) { playlist ->
+                PlaylistItem(
+                    browseId = playlist.playlistId,
+                    thumbnailContent = {
+                        AsyncImage(
+                            model = playlist.thumbnail,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize()
+                        )
+                    },
+                    songCount = playlist.songCount.toIntOrNull(),
+                    name = playlist.title,
+                    channelName = playlist.subtitle,
+                    thumbnailSizeDp = 108.dp,
+                    modifier = Modifier.clickable {
+                        if (playlist.playlistId.isNotBlank()) onPlaylistClick(playlist.playlistId)
+                    },
+                    alternative = true,
+                    showSongsCount = false,
+                    disableScrollingText = false,
+                    isYoutubePlaylist = true
+                )
+            }
+            item {
+                Box(
+                    modifier = Modifier
+                        .padding(horizontal = 8.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(20.dp))
+                        .background(colorPalette().accent.copy(alpha = 0.14f))
+                        .clickable(onClick = onOpenLibraryClick)
+                        .padding(horizontal = 18.dp, vertical = 14.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText(
+                        text = "Move to playlists",
+                        style = typography().xs.semiBold.copy(color = colorPalette().accent)
                     )
                 }
-                AccentChip(
-                    label = moodName,
-                    modifier = Modifier.clickable {
-                        navController.currentBackStackEntry?.savedStateHandle?.set(
-                            "mood",
-                            moodShortcut
-                        )
-                        navController.navigate(NavRoutes.mood.name)
-                    }
-                )
             }
         }
     }
@@ -412,6 +453,8 @@ fun HomePage(
     val refreshScope = rememberCoroutineScope()
 
     var homePageResult by persist<Result<List<YtmHomeSection>?>>("home/home/sessionFeedResult")
+    var ytmPlaylistsResult by persist<Result<List<YtmPlaylist>?>>("home/home/ytmPlaylistsResult")
+    var moodsResult by persist<Result<Innertube.DiscoverPage?>>("home/home/discoverMoodsResult")
     var selectedCountryCode by rememberPreference(selectedCountryCodeKey, Countries.ZZ)
     val parentalControlEnabled by rememberPreference(parentalControlEnabledKey, false)
     var loadedData by rememberPreference(loadedDataKey, false)
@@ -423,8 +466,11 @@ fun HomePage(
     val ignoredSettings = Triple(selectedCountryCode, parentalControlEnabled, onMoodClick)
 
     suspend fun loadData() {
+        if (appRunningInBackground) return
         if (!isYouTubeLoggedIn()) {
             homePageResult = Result.success(null)
+            ytmPlaylistsResult = Result.success(emptyList())
+            moodsResult = Result.success(null)
             loadedData = true
             return
         }
@@ -432,15 +478,36 @@ fun HomePage(
         val cookie = currentSession?.cookie?.takeIf { it.isNotBlank() }
         if (cookie.isNullOrBlank()) {
             homePageResult = Result.success(null)
+            ytmPlaylistsResult = Result.success(emptyList())
+            moodsResult = Result.success(null)
             loadedData = true
             return
         }
-        homePageResult = YouTubeRequestThrottler.run {
-            YtmSessionApi.fetchHomeFeed(
-                cookies = cookie,
-                authUser = currentSession.authUser.ifBlank { null },
-                pageId = currentSession.pageId.ifBlank { null }
-            )
+        coroutineScope {
+            val homeDeferred = async(Dispatchers.IO) {
+                YouTubeRequestThrottler.run {
+                    YtmSessionApi.fetchHomeFeed(
+                        cookies = cookie,
+                        authUser = currentSession.authUser.ifBlank { null },
+                        pageId = currentSession.pageId.ifBlank { null }
+                    )
+                }
+            }
+            val playlistsDeferred = async(Dispatchers.IO) {
+                YouTubeRequestThrottler.run {
+                    YtmSessionApi.fetchPlaylists(
+                        cookies = cookie,
+                        authUser = currentSession.authUser.ifBlank { null },
+                        pageId = currentSession.pageId.ifBlank { null }
+                    )
+                }
+            }
+            val moodsDeferred = async(Dispatchers.IO) {
+                Innertube.discoverPage()
+            }
+            homePageResult = homeDeferred.await()
+            ytmPlaylistsResult = playlistsDeferred.await()
+            moodsResult = moodsDeferred.await()
         }
         if (loadedData) return
         runCatching { refreshScope.launch(Dispatchers.IO) {} }
@@ -455,9 +522,10 @@ fun HomePage(
 
     var refreshing by remember { mutableStateOf(false) }
     fun refresh() {
-        if (refreshing) return
+        if (refreshing || appRunningInBackground) return
         loadedData = false
         refreshScope.launch(Dispatchers.IO) {
+            if (appRunningInBackground) return@launch
             refreshing = true
             loadData()
             delay(500)
@@ -475,6 +543,13 @@ fun HomePage(
     val scrollState = rememberScrollState()
     val endInsetDp = windowInsets.only(WindowInsetsSides.End).asPaddingValues().calculateRightPadding(LayoutDirection.Ltr)
     var expandedSections by remember { mutableStateOf(setOf<String>()) }
+    val shortcutMoods = moodsResult?.getOrNull()?.moods.orEmpty().take(12)
+    val playlistRail = ytmPlaylistsResult?.getOrNull().orEmpty()
+
+    fun openPlaylistLibraryTab() {
+        context.preferences.edit { putInt(homeScreenTabIndexKey, 4) }
+        navController.navigate(NavRoutes.home.name)
+    }
 
     var showLoader by remember { mutableStateOf(!loadedData) }
     LaunchedEffect(loadedData) {
@@ -551,8 +626,8 @@ fun HomePage(
 
                 YtmBanner()
                 HomeMoodShortcuts(
-                    navController = navController,
-                    labels = homeMoodShortcuts
+                    moods = shortcutMoods,
+                    onMoodClick = onMoodClick
                 )
 
                 if (showLoader) {
@@ -748,6 +823,11 @@ fun HomePage(
                                     }
                                 }
                             }
+                            YtmPlaylistsFooter(
+                                playlists = playlistRail,
+                                onPlaylistClick = onPlaylistClick,
+                                onOpenLibraryClick = ::openPlaylistLibraryTab
+                            )
                             Spacer(modifier = Modifier.height(Dimensions.bottomSpacer + Dimensions.miniPlayerHeight + 20.dp))
                         }
                     }

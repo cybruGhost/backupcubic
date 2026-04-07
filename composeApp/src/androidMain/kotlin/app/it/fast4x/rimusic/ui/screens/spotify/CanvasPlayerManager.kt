@@ -1,6 +1,8 @@
 package app.it.fast4x.rimusic.ui.screens.spotify
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
@@ -16,9 +18,13 @@ object CanvasPlayerManager {
     private var currentMediaItemId: String? = null
     private var isPlayerActive = false
     private var lastSetupTime = 0L
+    private val releaseHandler = Handler(Looper.getMainLooper())
+    private var pendingReleaseRunnable: Runnable? = null
     
     // Memory optimization
     private const val PLAYER_RECYCLE_THRESHOLD = 2000L // Reduced for faster switching
+    private const val NORMAL_RELEASE_DELAY_MS = 350L
+    private const val NEW_SONG_RELEASE_DELAY_MS = 500L
     
     fun getCurrentCanvasUrl(): String? = currentCanvasUrl
     fun getCurrentMediaItemId(): String? = currentMediaItemId
@@ -33,6 +39,7 @@ object CanvasPlayerManager {
         isPlaying: Boolean,
         mediaItemId: String? = null
     ): PlayerView {
+        cancelPendingRelease()
         val now = System.currentTimeMillis()
         
         // Check if we can reuse existing player (same media and within threshold)
@@ -134,35 +141,11 @@ object CanvasPlayerManager {
     }
     
     fun stopAndClear() {
-        Timber.d("CanvasPlayer: Stopping and clearing player")
-        
-        currentPlayer?.let { player ->
-            player.stop()
-            player.release()
-        }
-        
-        currentPlayer = null
-        currentCanvasUrl = null
-        currentMediaItemId = null
-        isPlayerActive = false
-        
-        Timber.d("CanvasPlayer: Cleanup complete")
+        scheduleRelease("CanvasPlayer: Stopping and clearing player", NORMAL_RELEASE_DELAY_MS)
     }
     
     fun stopAndClearForNewSong() {
-        Timber.d("CanvasPlayer: Clearing player for new song")
-        
-        currentPlayer?.let { player ->
-            player.stop()
-            player.release()
-        }
-        
-        currentPlayer = null
-        currentCanvasUrl = null
-        currentMediaItemId = null
-        isPlayerActive = false
-        
-        Timber.d("CanvasPlayer: Ready for new song")
+        scheduleRelease("CanvasPlayer: Clearing player for new song", NEW_SONG_RELEASE_DELAY_MS)
     }
     
     fun releasePlayer() {
@@ -194,6 +177,7 @@ object CanvasPlayerManager {
     fun isActive(): Boolean = isPlayerActive
     
     fun forceCleanup() {
+        cancelPendingRelease()
         stopAndClear()
         Timber.d("CanvasPlayer: Force cleanup complete")
     }
@@ -207,5 +191,39 @@ object CanvasPlayerManager {
             playerView.setControllerAutoShow(false)
             playerView.setOnTouchListener { _, _ -> true }
         }
+    }
+
+    private fun scheduleRelease(logMessage: String, delayMs: Long) {
+        Timber.d(logMessage)
+        cancelPendingRelease()
+
+        val playerToRelease = currentPlayer
+        if (playerToRelease == null) {
+            currentCanvasUrl = null
+            currentMediaItemId = null
+            isPlayerActive = false
+            return
+        }
+
+        currentPlayer = null
+        currentCanvasUrl = null
+        currentMediaItemId = null
+        isPlayerActive = false
+
+        pendingReleaseRunnable = Runnable {
+            runCatching {
+                playerToRelease.stop()
+                playerToRelease.release()
+            }.onFailure {
+                Timber.w(it, "CanvasPlayer: delayed release failed")
+            }
+            pendingReleaseRunnable = null
+            Timber.d("CanvasPlayer: Cleanup complete")
+        }.also { releaseHandler.postDelayed(it, delayMs) }
+    }
+
+    private fun cancelPendingRelease() {
+        pendingReleaseRunnable?.let(releaseHandler::removeCallbacks)
+        pendingReleaseRunnable = null
     }
 }

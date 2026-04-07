@@ -72,16 +72,65 @@ data class SimpMusicLyricsResult(
     val translatedLanguage: String? = null,
 )
 
+private fun normalizeSimpMusicSyncedLyrics(raw: String?): String? {
+    if (raw.isNullOrBlank()) return null
+
+    val timestampedLineRegex = Regex("""^\[(\d{2}:\d{2}\.\d{2,3})](.*)$""")
+    val taggedRichLineRegex = Regex("""^\[([a-zA-Z0-9]+):(.*)$""")
+    val inlineTimestampRegex = Regex("""<(\d{2}:\d{2}\.\d{2,3})>""")
+
+    val normalizedLines = raw.lines().mapNotNull { originalLine ->
+        val line = originalLine.trim()
+        if (line.isBlank()) return@mapNotNull null
+
+        timestampedLineRegex.matchEntire(line)?.let { match ->
+            val timestamp = match.groupValues[1]
+            val content = match.groupValues[2]
+                .replace(Regex("""^[a-zA-Z0-9]+:"""), "")
+                .replace(inlineTimestampRegex, "")
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+
+            return@mapNotNull if (content.isBlank()) null else "[$timestamp]$content"
+        }
+
+        taggedRichLineRegex.matchEntire(line)?.let { match ->
+            val contentPortion = match.groupValues[2]
+            val inlineTime = inlineTimestampRegex.find(contentPortion)?.groupValues?.getOrNull(1)
+            val content = contentPortion
+                .replace(inlineTimestampRegex, "")
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+
+            return@mapNotNull when {
+                inlineTime != null && content.isNotBlank() -> "[$inlineTime]$content"
+                content.isNotBlank() -> content
+                else -> null
+            }
+        }
+
+        line
+    }
+
+    return normalizedLines.joinToString("\n").ifBlank { null }
+}
+
 private fun parseSimpMusicLyricsJson(raw: String): SimpMusicLyricsResult? {
     val root = runCatching { org.json.JSONObject(raw) }.getOrNull() ?: return null
 
     fun org.json.JSONObject.toLyricsResult(): SimpMusicLyricsResult? {
-        val syncedLyrics = optString("syncedLyrics").takeIf { it.isNotBlank() }
-        val richSyncLyrics = optString("richSyncLyrics").takeIf { it.isNotBlank() }
+        val syncedLyrics = normalizeSimpMusicSyncedLyrics(
+            optString("syncedLyrics").takeIf { it.isNotBlank() }
+        )
+        val richSyncLyrics = normalizeSimpMusicSyncedLyrics(
+            optString("richSyncLyrics").takeIf { it.isNotBlank() }
+        )
         val plainLyrics = optString("plainLyrics").takeIf { it.isNotBlank() }
             ?: optString("plainLyric").takeIf { it.isNotBlank() }
-        val translatedLyrics = optString("translatedLyrics").takeIf { it.isNotBlank() }
-            ?: optString("translatedLyric").takeIf { it.isNotBlank() }
+        val translatedLyrics = normalizeSimpMusicSyncedLyrics(
+            optString("translatedLyrics").takeIf { it.isNotBlank() }
+                ?: optString("translatedLyric").takeIf { it.isNotBlank() }
+        )
         val translatedLanguage = optString("language").takeIf { it.isNotBlank() }
 
         if (syncedLyrics == null && richSyncLyrics == null && plainLyrics == null && translatedLyrics == null) return null

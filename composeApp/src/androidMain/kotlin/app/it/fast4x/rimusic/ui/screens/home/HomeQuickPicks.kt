@@ -74,6 +74,7 @@ import app.it.fast4x.rimusic.EXPLICIT_PREFIX
 import app.it.fast4x.rimusic.LocalPlayerAwareWindowInsets
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.MONTHLY_PREFIX
+import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.cleanPrefix
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.enums.Countries
@@ -725,6 +726,7 @@ fun HomeQuickPicks(
     }
 
     suspend fun loadData(forceReload: Boolean = false) {
+        if (appRunningInBackground) return
         coroutineScope {
             val chartsDeferred = async(Dispatchers.IO) {
                 if (showCharts && (chartsPageResult == null || forceReload)) {
@@ -1077,12 +1079,14 @@ fun HomeQuickPicks(
     }
 
     LaunchedEffect(Unit) {
+        val needsSignedInHomeFeed =
+            isYouTubeLoggedIn() && sessionHomeFeedInit == null && sessionHomeFeedResult == null
         val shouldLoad =
             !loadedData ||
                 relatedInit == null ||
                 discoverPageInit == null ||
                 (showCharts && chartsPageInit == null) ||
-                (isYouTubeLoggedIn() && homePageInit == null)
+                needsSignedInHomeFeed
 
         if (shouldLoad) loadData(forceReload = false)
     }
@@ -1090,9 +1094,10 @@ fun HomeQuickPicks(
     var refreshing by remember { mutableStateOf(false) }
 
     fun refresh() {
-        if (refreshing) return
+        if (refreshing || appRunningInBackground) return
 
         refreshScope.launch(Dispatchers.IO) {
+            if (appRunningInBackground) return@launch
             refreshing = true
 
             // Clear trending data

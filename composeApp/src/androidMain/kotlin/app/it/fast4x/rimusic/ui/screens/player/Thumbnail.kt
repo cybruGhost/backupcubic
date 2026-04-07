@@ -722,13 +722,10 @@ fun Thumbnail(
     showthumbnail: Boolean,
     modifier: Modifier = Modifier
 ) {
-    println("Thumbnail call")
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
     val player = binder?.player ?: return
     val displayedPlayerState = rememberDisplayedPlayerState(binder)
-
-    println("Thumbnail call after return")
 
     val (thumbnailSizeDp, thumbnailSizePx) = Dimensions.thumbnails.player.song.let {
         it to (it - 64.dp).px

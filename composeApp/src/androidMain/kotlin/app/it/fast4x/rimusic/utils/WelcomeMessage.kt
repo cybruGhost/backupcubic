@@ -1,6 +1,7 @@
 package app.it.fast4x.rimusic.utils
 
 import android.content.Context
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.slideInVertically
@@ -59,8 +60,12 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.LifecycleEventObserver
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -84,6 +89,33 @@ private const val PREF_TEMP_UNIT = "temperature_unit"
 private const val DEFAULT_TEMP_UNIT = "celsius"
 private const val NAME_SOURCE_CUSTOM = "custom"
 private const val NAME_SOURCE_YT = "yt"
+private const val WEATHER_REFRESH_INTERVAL_MS = 10 * 60 * 1000L
+
+private object WeatherSessionCache {
+    private var cachedCity: String? = null
+    private var cachedWeather: WeatherData? = null
+    private var fetchedAtMillis: Long = 0L
+
+    fun get(city: String, forceRefresh: Boolean = false): WeatherData? {
+        if (forceRefresh) return null
+        if (cachedCity != city) return null
+        if (cachedWeather == null) return null
+        if (System.currentTimeMillis() - fetchedAtMillis > WEATHER_REFRESH_INTERVAL_MS) return null
+        return cachedWeather
+    }
+
+    fun isStale(city: String): Boolean {
+        if (cachedCity != city) return true
+        if (cachedWeather == null) return true
+        return System.currentTimeMillis() - fetchedAtMillis > WEATHER_REFRESH_INTERVAL_MS
+    }
+
+    fun update(city: String, weatherData: WeatherData?) {
+        cachedCity = city
+        cachedWeather = weatherData
+        fetchedAtMillis = System.currentTimeMillis()
+    }
+}
 
 // Temperature unit management
 private fun getSavedTemperatureUnit(context: Context): String {
@@ -130,6 +162,8 @@ fun WelcomeMessage(
     onOpenAccountsSettings: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
+    val lifecycleOwner = LocalLifecycleOwner.current
+    val coroutineScope = rememberCoroutineScope()
     var username by remember { mutableStateOf("") }
     var nameSource by remember { mutableStateOf(NAME_SOURCE_CUSTOM) }
     var city by remember { mutableStateOf("") }
@@ -163,17 +197,48 @@ fun WelcomeMessage(
     } else {
         username.ifBlank { youtubeAccountName.orEmpty() }
     }
+
+    suspend fun refreshWeather(forceRefresh: Boolean = false) {
+        if (city.isBlank()) return
+
+        val cachedWeather = WeatherSessionCache.get(city, forceRefresh)
+        if (cachedWeather != null) {
+            weatherData = cachedWeather
+            isLoading = false
+            errorMessage = null
+            return
+        }
+
+        isLoading = true
+        errorMessage = null
+        val fetchedWeather = fetchWeatherData(city)
+        weatherData = fetchedWeather
+        WeatherSessionCache.update(city, fetchedWeather)
+        isLoading = false
+        if (fetchedWeather == null) {
+            errorMessage = "Failed to fetch weather data"
+        }
+    }
     
     // Fetch weather when city is available
     LaunchedEffect(city) {
         if (city.isNotBlank()) {
-            isLoading = true
-            errorMessage = null
-            weatherData = fetchWeatherData(city)
-            isLoading = false
-            if (weatherData == null) {
-                errorMessage = "Failed to fetch weather data"
+            refreshWeather(forceRefresh = false)
+        }
+    }
+
+    androidx.compose.runtime.DisposableEffect(lifecycleOwner, city) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME && city.isNotBlank() && WeatherSessionCache.isStale(city)) {
+                coroutineScope.launch {
+                    refreshWeather(forceRefresh = true)
+                }
             }
+        }
+
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
         }
     }
     
@@ -223,6 +288,7 @@ fun WelcomeMessage(
                     // FIX: Save the city to DataStore persistently
                     DataStoreUtils.saveStringBlocking(context, KEY_CITY, newCity)
                     city = newCity
+                    WeatherSessionCache.update(newCity, null)
                     showCityDialog = false
                 },
                 temperatureUnit = temperatureUnit,

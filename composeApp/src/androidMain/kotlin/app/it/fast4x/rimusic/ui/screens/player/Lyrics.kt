@@ -31,8 +31,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -41,6 +43,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Slider
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
@@ -77,13 +80,18 @@ import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.Font
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -91,6 +99,7 @@ import androidx.compose.ui.zIndex
 import androidx.media3.common.C
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
+import coil.compose.AsyncImage
 import app.kreate.android.R
 import com.valentinilk.shimmer.shimmer
 import it.fast4x.innertube.Innertube
@@ -115,6 +124,7 @@ import app.it.fast4x.rimusic.enums.LyricsOutline
 import app.it.fast4x.rimusic.enums.PlayerBackgroundColors
 import app.it.fast4x.rimusic.enums.Romanization
 import app.it.fast4x.rimusic.models.Lyrics
+import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.thumbnailShape
 import app.it.fast4x.rimusic.typography
 import app.it.fast4x.rimusic.ui.components.LocalMenuState
@@ -133,6 +143,9 @@ import app.it.fast4x.rimusic.ui.styling.onOverlayShimmer
 import app.it.fast4x.rimusic.utils.SynchronizedLyrics
 import app.it.fast4x.rimusic.utils.center
 import app.it.fast4x.rimusic.utils.color
+import app.it.fast4x.rimusic.utils.buildLyricsShareLink
+import app.it.fast4x.rimusic.utils.buildLyricsShareLines
+import app.it.fast4x.rimusic.utils.buildLyricsShareSlice
 import app.it.fast4x.rimusic.utils.colorPaletteModeKey
 import app.it.fast4x.rimusic.utils.colorPaletteNameKey
 import app.it.fast4x.rimusic.utils.conditional
@@ -164,6 +177,7 @@ import app.it.fast4x.rimusic.utils.playerEnableLyricsPopupMessageKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.romanizationKey
 import app.it.fast4x.rimusic.utils.semiBold
+import app.it.fast4x.rimusic.utils.shareLyricsCard
 import app.it.fast4x.rimusic.utils.showBackgroundLyricsKey
 import app.it.fast4x.rimusic.utils.showSecondLineKey
 import app.it.fast4x.rimusic.utils.showLyricsSourceSwitcherKey
@@ -357,8 +371,11 @@ fun Lyrics(
             mutableStateOf(false)
         }
 
-        if (copyToClipboard) text?.let {
-            textCopyToClipboard(it, context)
+        LaunchedEffect(copyToClipboard, text) {
+            if (copyToClipboard && !text.isNullOrBlank()) {
+                textCopyToClipboard(text!!, context)
+                copyToClipboard = false
+            }
         }
 
         var fontSize by rememberPreference(lyricsFontSizeKey, LyricsFontSize.Medium)
@@ -372,6 +389,8 @@ fun Lyrics(
         var simpMusicTranslationEnabled by rememberPreference(simpMusicTranslationEnabledKey, false)
         var selectedLyricsSource by rememberSaveable(mediaId) { mutableStateOf(defaultLyricsSource) }
         var showSimpMusicOptions by rememberSaveable(mediaId) { mutableStateOf(false) }
+        var showShareCardPreview by rememberSaveable(mediaId) { mutableStateOf(false) }
+        var shareSliceStartLine by rememberSaveable(mediaId) { mutableStateOf(0f) }
         var expandedplayer by rememberPreference(expandedplayerKey, false)
 
         var checkedLyricsLrc by remember(mediaId) {
@@ -392,6 +411,22 @@ fun Lyrics(
         val mediaMetadata = mediaMetadataProvider()
         var artistName by rememberSaveable(mediaId) { mutableStateOf(cleanPrefix(mediaMetadata.artist?.toString().orEmpty()))}
         var title by rememberSaveable(mediaId) { mutableStateOf(cleanPrefix(mediaMetadata.title?.toString().orEmpty()))}
+        val sharePreviewLines = remember(text) { buildLyricsShareLines(text.orEmpty()) }
+        val shareMaxStartIndex = (sharePreviewLines.size - 1).coerceAtLeast(0)
+        val shareSliceStartIndex = shareSliceStartLine.toInt().coerceIn(0, shareMaxStartIndex)
+        val sharePreviewLyrics = remember(text, shareSliceStartIndex) {
+            buildLyricsShareSlice(
+                lines = sharePreviewLines,
+                startIndex = shareSliceStartIndex
+            )
+        }
+        val shareDeeplink = remember(mediaId, mediaMetadata.title, mediaMetadata.artist) {
+            buildLyricsShareLink(
+                mediaId = mediaId,
+                title = cleanPrefix(mediaMetadata.title?.toString().orEmpty()),
+                artist = cleanPrefix(mediaMetadata.artist?.toString().orEmpty())
+            )
+        }
         var lyricsSize by rememberPreference(lyricsSizeKey, 20f)
         var lyricsSizeL by rememberPreference(lyricsSizeLKey, 20f)
         var customSize = if (isLandscape) lyricsSizeL else lyricsSize
@@ -422,7 +457,7 @@ fun Lyrics(
             title = cleanPrefix(mediaMetadata.title?.toString().orEmpty())
         }
 
-        LaunchedEffect(mediaId) {
+        LaunchedEffect(mediaId, mediaMetadata.title, mediaMetadata.artist) {
             lyrics = null
             checkedLyricsLrc = false
             checkedLyricsKugou = false
@@ -433,6 +468,8 @@ fun Lyrics(
             isErrorSync = false
             selectedLyricsSource = defaultLyricsSource
             showSimpMusicOptions = false
+            showShareCardPreview = false
+            shareSliceStartLine = 0f
         }
 
         suspend fun fetchLyricsFromSource(source: String, allowSimpFallback: Boolean = true) {
@@ -445,6 +482,24 @@ fun Lyrics(
             }
             val metadataArtist = mediaMetadata.artist?.toString().orEmpty()
             val metadataTitle = cleanPrefix(mediaMetadata.title?.toString().orEmpty())
+
+            suspend fun awaitPlaybackDurationMs(): Long {
+                var duration = withContext(Dispatchers.Main) { durationProvider() }
+                while (duration == C.TIME_UNSET) {
+                    delay(100)
+                    duration = withContext(Dispatchers.Main) { durationProvider() }
+                }
+                return duration
+            }
+
+            fun plainLyricsFromTimedText(timedLyrics: String?): String? {
+                return timedLyrics
+                    ?.lineSequence()
+                    ?.map { line -> line.replace(Regex("""\[[^\]]*]"""), "").trim() }
+                    ?.filter { it.isNotBlank() }
+                    ?.joinToString("\n")
+                    ?.ifBlank { null }
+            }
 
             fun applyLyrics(updatedLyrics: Lyrics) {
                 lyrics = updatedLyrics
@@ -460,6 +515,26 @@ fun Lyrics(
                 isError = true
             }
 
+            suspend fun persistLyricsSafely(updatedLyrics: Lyrics) {
+                val existingSong = withContext(Dispatchers.IO) {
+                    Database.songTable.findById(mediaId).first()
+                }
+                Database.asyncTransaction {
+                    if (existingSong == null) {
+                        songTable.insertIgnore(
+                            Song(
+                                id = mediaId,
+                                title = metadataTitle.ifBlank { mediaId },
+                                artistsText = metadataArtist.ifBlank { null },
+                                durationText = null,
+                                thumbnailUrl = mediaMetadata.artworkUri?.toString()
+                            )
+                        )
+                    }
+                    lyricsTable.upsert(updatedLyrics)
+                }
+            }
+
             suspend fun fallbackFromSimpMusic() {
                 val firstFallback = defaultLyricsSource.takeIf { it != "simpmusic" }.orEmpty().ifBlank { "lrclib" }
                 fetchLyricsFromSource(firstFallback, allowSimpFallback = false)
@@ -470,11 +545,7 @@ fun Lyrics(
 
             when (source) {
                 "lrclib" -> {
-                    var duration = withContext(Dispatchers.Main) { durationProvider() }
-                    while (duration == C.TIME_UNSET) {
-                        delay(100)
-                        duration = withContext(Dispatchers.Main) { durationProvider() }
-                    }
+                    val duration = awaitPlaybackDurationMs()
 
                     val result = LrcLib.lyrics(
                         artist = artistName,
@@ -486,13 +557,11 @@ fun Lyrics(
                     if (result?.text?.isNotBlank() == true) {
                         val updatedLyrics = Lyrics(
                             songId = mediaId,
-                            fixed = existingLyrics?.fixed,
+                            fixed = existingLyrics?.fixed ?: plainLyricsFromTimedText(result.text),
                             synced = result.text
                         )
                         applyLyrics(updatedLyrics)
-                        Database.asyncTransaction {
-                            lyricsTable.upsert(updatedLyrics)
-                        }
+                        persistLyricsSafely(updatedLyrics)
                         checkedLyricsLrc = true
                     } else {
                         checkedLyricsLrc = true
@@ -501,11 +570,7 @@ fun Lyrics(
                 }
 
                 "kugou" -> {
-                    var duration = withContext(Dispatchers.Main) { durationProvider() }
-                    while (duration == C.TIME_UNSET) {
-                        delay(100)
-                        duration = withContext(Dispatchers.Main) { durationProvider() }
-                    }
+                    val duration = awaitPlaybackDurationMs()
 
                     val result = KuGou.lyrics(
                         artist = metadataArtist,
@@ -520,9 +585,7 @@ fun Lyrics(
                             synced = result.value
                         )
                         applyLyrics(updatedLyrics)
-                        Database.asyncTransaction {
-                            lyricsTable.upsert(updatedLyrics)
-                        }
+                        persistLyricsSafely(updatedLyrics)
                         checkedLyricsKugou = true
                     } else {
                         checkedLyricsKugou = true
@@ -562,9 +625,7 @@ fun Lyrics(
                             synced = resolvedSyncedLyrics
                         )
                         applyLyrics(updatedLyrics)
-                        Database.asyncTransaction {
-                            lyricsTable.upsert(updatedLyrics)
-                        }
+                        persistLyricsSafely(updatedLyrics)
                     } else {
                         if (allowSimpFallback) {
                             fallbackFromSimpMusic()
@@ -641,10 +702,79 @@ fun Lyrics(
         }
 
 
-        LaunchedEffect(mediaId, isShowingSynchronizedLyrics, checkLyrics) {
+        LaunchedEffect(mediaId, mediaMetadata.title, mediaMetadata.artist, isShowingSynchronizedLyrics, checkLyrics) {
             Database.lyricsTable
                     .findBySongId( mediaId )
                     .collect { currentLyrics ->
+                        if (!showLyricsSourceSwitcher) {
+                            if (isShowingSynchronizedLyrics && currentLyrics?.synced.isNullOrBlank()) {
+                                fetchLyricsFromSource("lrclib", allowSimpFallback = false)
+                                return@collect
+                            }
+
+                            if (!isShowingSynchronizedLyrics && currentLyrics?.fixed.isNullOrBlank()) {
+                                var duration = withContext(Dispatchers.Main) { durationProvider() }
+                                while (duration == C.TIME_UNSET) {
+                                    delay(100)
+                                    duration = withContext(Dispatchers.Main) { durationProvider() }
+                                }
+                                val lrcLibResult = runCatching {
+                                    LrcLib.lyrics(
+                                        artist = artistName ?: "",
+                                        title = title ?: "",
+                                        duration = duration.milliseconds,
+                                        album = mediaMetadata.albumTitle?.toString()
+                                    )?.getOrNull()
+                                }.getOrNull()
+
+                                val lrcLibPlainLyrics = lrcLibResult?.text
+                                    ?.lineSequence()
+                                    ?.map { line -> line.replace(Regex("""\[[^\]]*]"""), "").trim() }
+                                    ?.filter { it.isNotBlank() }
+                                    ?.joinToString("\n")
+                                    ?.ifBlank { null }
+
+                                if (!lrcLibPlainLyrics.isNullOrBlank()) {
+                                    val updatedLyrics = Lyrics(
+                                        songId = mediaId,
+                                        fixed = lrcLibPlainLyrics,
+                                        synced = currentLyrics?.synced ?: lrcLibResult.text
+                                    )
+                                    lyrics = updatedLyrics
+                                    Database.asyncTransaction {
+                                        lyricsTable.upsert(updatedLyrics)
+                                    }
+                                    isError = false
+                                } else {
+                                    kotlin.runCatching {
+                                        Innertube.lyrics(NextBody(videoId = mediaId))
+                                            ?.onSuccess { fixedLyrics ->
+                                                val updatedLyrics = Lyrics(
+                                                    songId = mediaId,
+                                                    fixed = fixedLyrics ?: "",
+                                                    synced = currentLyrics?.synced
+                                                )
+                                                lyrics = updatedLyrics
+                                                Database.asyncTransaction {
+                                                    lyricsTable.upsert(updatedLyrics)
+                                                }
+                                                isError = false
+                                            }?.onFailure {
+                                                isError = true
+                                            }
+                                    }.onFailure {
+                                        Timber.e("Lyrics hidden-source fixed fallback error ${it.stackTraceToString()}")
+                                        isError = true
+                                    }
+                                }
+                                checkedLyricsInnertube = true
+                                return@collect
+                            }
+
+                            lyrics = currentLyrics
+                            return@collect
+                        }
+
                         if (isShowingSynchronizedLyrics && currentLyrics?.synced == null) {
                             lyrics = null
                             var duration = withContext(Dispatchers.Main) {
@@ -840,6 +970,138 @@ fun Lyrics(
 
                 }
             )
+        }
+
+        if (showShareCardPreview) {
+            val configuration = LocalConfiguration.current
+            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.82f else 0.88f)
+            DefaultDialog(
+                onDismiss = { showShareCardPreview = false },
+                modifier = Modifier
+                    .fillMaxWidth(if (isLandscape) 0.82f else 0.96f)
+                    .heightIn(max = previewMaxHeight)
+                    .verticalScroll(rememberScrollState()),
+                horizontalAlignment = Alignment.Start
+            ) {
+                BasicText(
+                    text = "Share lyrics card",
+                    style = typography().m.semiBold.color(colorPalette().text)
+                )
+                BasicText(
+                    text = "Preview the card, tap the lyric line you want to start from, then send that exact slice.",
+                    style = typography().xs.color(colorPalette().textSecondary),
+                    modifier = Modifier.padding(top = 6.dp, bottom = 14.dp)
+                )
+
+                LyricsSharePreviewCard(
+                    title = cleanPrefix(mediaMetadata.title?.toString().orEmpty()),
+                    artist = cleanPrefix(mediaMetadata.artist?.toString().orEmpty()),
+                    lyricsSnippet = sharePreviewLyrics,
+                    artworkUrl = mediaMetadata.artworkUri?.toString(),
+                    deeplinkUrl = shareDeeplink,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = if (isLandscape) 340.dp else 430.dp)
+                )
+
+                BasicText(
+                    text = "Start from line ${shareSliceStartIndex + 1}",
+                    style = typography().xs.semiBold.color(colorPalette().text),
+                    modifier = Modifier.padding(top = 16.dp)
+                )
+
+                Slider(
+                    value = shareSliceStartLine.coerceIn(0f, shareMaxStartIndex.toFloat()),
+                    onValueChange = { shareSliceStartLine = it },
+                    valueRange = 0f..shareMaxStartIndex.toFloat().coerceAtLeast(0f)
+                )
+
+                BasicText(
+                    text = "Selected ${sharePreviewLyrics.lines().size.coerceAtMost(6)} preview lines",
+                    style = typography().xxs.color(colorPalette().textSecondary),
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+
+                LazyColumn(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(170.dp)
+                        .clip(RoundedCornerShape(18.dp))
+                        .background(colorPalette().background2.copy(alpha = 0.55f))
+                        .padding(horizontal = 10.dp, vertical = 8.dp)
+                ) {
+                    itemsIndexed(sharePreviewLines) { index, line ->
+                        val isSelected = index == shareSliceStartIndex
+                        BasicText(
+                            text = line,
+                            style = typography().xs.color(
+                                if (isSelected) colorPalette().text else colorPalette().textSecondary
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(
+                                    if (isSelected) colorPalette().accent.copy(alpha = 0.20f)
+                                    else Color.Transparent
+                                )
+                                .clickable { shareSliceStartLine = index.toFloat() }
+                                .padding(horizontal = 10.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 14.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.48f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(colorPalette().background2)
+                            .clickable { showShareCardPreview = false }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText(
+                            text = stringResource(R.string.cancel),
+                            style = typography().xs.semiBold.color(colorPalette().text)
+                        )
+                    }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth(0.48f)
+                            .clip(RoundedCornerShape(18.dp))
+                            .background(colorPalette().accent)
+                            .clickable {
+                                coroutineScope.launch {
+                                    shareLyricsCard(
+                                        context = context,
+                                        mediaId = mediaId,
+                                        title = cleanPrefix(mediaMetadata.title?.toString().orEmpty()),
+                                        artist = cleanPrefix(mediaMetadata.artist?.toString().orEmpty()),
+                                        lyricsText = sharePreviewLyrics,
+                                        artworkUrl = mediaMetadata.artworkUri?.toString(),
+                                        deeplinkUrl = shareDeeplink
+                                    ).onSuccess {
+                                        showShareCardPreview = false
+                                    }.onFailure {
+                                        Toaster.e("Failed to share lyrics card")
+                                    }
+                                }
+                            }
+                            .padding(vertical = 14.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText(
+                            text = "Share now",
+                            style = typography().xs.semiBold.color(colorPalette().onAccent)
+                        )
+                    }
+                }
+            }
         }
 
 @Composable
@@ -1275,6 +1537,22 @@ fun SelectLyricFromTrack(
                             }
                         }
                     }
+
+                    BasicText(
+                        text = "Share Card",
+                        style = typography().xxs.semiBold.copy(
+                            color = if (text.isNullOrBlank()) Color.White.copy(alpha = 0.45f) else colorPalette().accent
+                        ),
+                        modifier = Modifier
+                            .padding(top = 8.dp, end = 14.dp)
+                            .clip(RoundedCornerShape(14.dp))
+                            .background(Color.Black.copy(alpha = 0.32f))
+                            .clickable(enabled = !text.isNullOrBlank()) {
+                                shareSliceStartLine = 0f
+                                showShareCardPreview = true
+                            }
+                            .padding(horizontal = 12.dp, vertical = 8.dp)
+                    )
                 }
             }
 
@@ -1299,6 +1577,10 @@ fun SelectLyricFromTrack(
                     }
 
                     val lazyListState = rememberLazyListState()
+
+                    LaunchedEffect(mediaId, text) {
+                        lazyListState.scrollToItem(0)
+                    }
 
                     LaunchedEffect(synchronizedLyrics, density) {
                         //val centerOffset = with(density) { (-thumbnailSize / 3).roundToPx() }
@@ -2771,6 +3053,17 @@ fun SelectLyricFromTrack(
                                         )
 
                                         MenuEntry(
+                                            icon = R.drawable.share_social,
+                                            text = "Share lyrics card",
+                                            enabled = !text.isNullOrBlank(),
+                                            onClick = {
+                                                menuState.hide()
+                                                shareSliceStartLine = 0f
+                                                showShareCardPreview = true
+                                            }
+                                        )
+
+                                        MenuEntry(
                                             icon = R.drawable.search,
                                             text = stringResource(R.string.search_lyrics_online),
                                             onClick = {
@@ -2880,3 +3173,140 @@ fun SelectLyricFromTrack(
         }
     }
 }*/
+
+private val LyricsShareHeadlineFont = FontFamily(
+    Font(R.font.poppins_w600, FontWeight.SemiBold),
+    Font(R.font.poppins_w700, FontWeight.Bold)
+)
+
+private val LyricsShareBodyFont = FontFamily(
+    Font(R.font.poppins_w500, FontWeight.Medium),
+    Font(R.font.poppins_w600, FontWeight.SemiBold)
+)
+
+@Composable
+private fun LyricsSharePreviewCard(
+    title: String,
+    artist: String,
+    lyricsSnippet: String,
+    artworkUrl: String?,
+    deeplinkUrl: String,
+    modifier: Modifier = Modifier
+) {
+    val previewBackground = Brush.verticalGradient(
+        colors = listOf(
+            colorPalette().accent.copy(alpha = 0.38f),
+            colorPalette().background0.copy(alpha = 0.96f),
+            colorPalette().background1
+        )
+    )
+
+    val displayedLyrics = lyricsSnippet
+        .lines()
+        .take(6)
+        .joinToString("\n")
+
+    Box(
+        modifier = modifier
+            .clip(RoundedCornerShape(28.dp))
+            .background(previewBackground)
+            .padding(16.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(26.dp))
+                .background(colorPalette().background1.copy(alpha = 0.72f))
+                .padding(horizontal = 18.dp, vertical = 18.dp)
+        ) {
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                AsyncImage(
+                    model = artworkUrl,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier
+                        .size(68.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                )
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(end = 6.dp)
+                ) {
+                    BasicText(
+                        text = title.ifBlank { "Unknown title" },
+                        style = TextStyle(
+                            color = colorPalette().text,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = LyricsShareHeadlineFont
+                        ),
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    BasicText(
+                        text = artist.ifBlank { "Unknown artist" },
+                        style = TextStyle(
+                            color = colorPalette().textSecondary,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Medium,
+                            fontFamily = LyricsShareBodyFont
+                        ),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
+
+            BasicText(
+                text = displayedLyrics,
+                style = TextStyle(
+                    color = colorPalette().text,
+                    fontSize = 28.sp,
+                    lineHeight = 35.sp,
+                    fontWeight = FontWeight.Bold,
+                    fontFamily = LyricsShareHeadlineFont,
+                    shadow = Shadow(
+                        color = Color.Black.copy(alpha = 0.15f),
+                        offset = Offset(0f, 2f),
+                        blurRadius = 10f
+                    )
+                ),
+                maxLines = 6,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 22.dp)
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 18.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Image(
+                        painter = painterResource(R.drawable.ic_launcher),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    BasicText(
+                        text = "Cubic Music",
+                        style = TextStyle(
+                            color = colorPalette().text,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            fontFamily = LyricsShareBodyFont
+                        )
+                    )
+                }
+            }
+        }
+    }
+}

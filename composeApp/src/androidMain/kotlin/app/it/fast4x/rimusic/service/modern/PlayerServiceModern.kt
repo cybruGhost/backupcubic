@@ -267,6 +267,8 @@ class PlayerServiceModern : MediaLibraryService(),
     private var lastAutoSourceRecoveryMs = 0L
     private var lastEndedRecoveryMediaId: String? = null
     private var lastEndedRecoveryMs = 0L
+    private var lastWidgetUpdateMs = 0L
+    private var widgetUpdateJob: Job? = null
     private var cacheCompletionJob: Job? = null
     private var cacheCompletionMediaId: String? = null
 
@@ -738,10 +740,18 @@ QuickPicksRepository.refreshIfNeeded()
     override fun onTaskRemoved(rootIntent: Intent?) {
         isclosebackgroundPlayerEnabled = preferences.getBoolean(closebackgroundPlayerKey, false)
         if (isclosebackgroundPlayerEnabled) {
-            broadCastPendingIntent<NotificationDismissReceiver>().send()
-            this.stopService(this.intent<MyDownloadService>())
-            this.stopService(this.intent<PlayerServiceModern>())
-            onDestroy()
+            runCatching {
+                broadCastPendingIntent<NotificationDismissReceiver>().send()
+            }.onFailure {
+                Timber.e(it, "PlayerServiceModern failed to send dismiss broadcast from onTaskRemoved")
+            }
+            runCatching {
+                stopForeground(STOP_FOREGROUND_REMOVE)
+            }.onFailure {
+                Timber.e(it, "PlayerServiceModern failed to stop foreground from onTaskRemoved")
+            }
+            stopSelf()
+            return
         }
         super.onTaskRemoved(rootIntent)
     }
@@ -1784,6 +1794,10 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
     @MainThread
     fun updateWidgets() {
+        val now = System.currentTimeMillis()
+        if (now - lastWidgetUpdateMs < 750L) return
+        lastWidgetUpdateMs = now
+
         val displayMediaMetadata = displayedMediaItem()?.mediaMetadata ?: binder.player.mediaMetadata
         val status = Triple(
             cleanPrefix(cleanPrefix(displayMediaMetadata.title.toString())),
@@ -1797,7 +1811,8 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             binder.player::seekToNext
         )
 
-        CoroutineScope( Dispatchers.IO ).launch {
+        widgetUpdateJob?.cancel()
+        widgetUpdateJob = coroutineScope.launch {
             // Save bitmap to file
             val file = File( cacheDir, "widget_thumbnail.png" )
             FileOutputStream(file).use { outStream ->
@@ -2400,8 +2415,15 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
          * This method should ONLY be called when the application (sc. activity) is in the foreground!
          */
         fun restartForegroundOrStop() {
-            player.pause()
-            stopSelf()
+            runCatching {
+                updateDefaultNotification()
+                if (!player.isPlaying && !player.playWhenReady && player.playbackState == Player.STATE_IDLE) {
+                    stopForeground(STOP_FOREGROUND_REMOVE)
+                    stopSelf()
+                }
+            }.onFailure {
+                Timber.e(it, "PlayerServiceModern restartForegroundOrStop failed")
+            }
         }
 
         @kotlin.OptIn(FlowPreview::class)
