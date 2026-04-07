@@ -960,7 +960,7 @@ fun Thumbnail(
                         onDismiss = {
                             onShowLyrics(false)
                         },
-                        ensureSongInserted = { Database.insertIgnore(currentDisplayedMediaItem) },
+                        ensureSongInserted = { insertIgnore(currentDisplayedMediaItem) },
                         size = thumbnailSizeDp,
                         mediaMetadataProvider = currentDisplayedMediaItem::mediaMetadata,
                         durationProvider = player::getDuration,

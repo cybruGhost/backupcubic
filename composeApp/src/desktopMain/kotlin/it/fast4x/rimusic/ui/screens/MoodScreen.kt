@@ -43,6 +43,16 @@ import app.it.fast4x.rimusic.ui.components.Title
 
 internal const val defaultBrowseId = "FEmusic_moods_and_genres_category"
 
+private object DesktopMoodCache {
+    private val pages = mutableMapOf<String, Result<BrowseResult>>()
+
+    fun get(key: String): Result<BrowseResult>? = pages[key]
+
+    fun put(key: String, value: Result<BrowseResult>) {
+        pages[key] = value
+    }
+}
+
 @Composable
 fun MoodScreen(
     mood: Innertube.Mood.Item,
@@ -52,24 +62,22 @@ fun MoodScreen(
 ) {
 
     val browseId = mood.endpoint.browseId ?: defaultBrowseId
+    val params = mood.endpoint.params
+    val cacheKey = "$browseId:${params.orEmpty()}"
 
     println("mediaItem browseId: $browseId")
 
     var moodPage by remember { mutableStateOf<BrowseResult?>(null) }
-    var moodPageResult by remember { mutableStateOf<Result<BrowseResult>?>(null) }
-    LaunchedEffect(browseId) {
-        moodPageResult = Innertube.browse(BrowseBodyWithLocale(browseId = browseId, params = mood.endpoint.params))
+    var moodPageResult by remember(cacheKey) { mutableStateOf(DesktopMoodCache.get(cacheKey)) }
+    LaunchedEffect(cacheKey) {
+        if (moodPageResult == null) {
+            moodPageResult = Innertube.browse(BrowseBodyWithLocale(browseId = browseId, params = params))
+            moodPageResult?.let { DesktopMoodCache.put(cacheKey, it) }
+        }
+        moodPage = moodPageResult?.getOrNull()
     }
 
-    moodPageResult?.getOrThrow().also { moodPage = it }
-
     val endPaddingValues = windowInsets.only(WindowInsetsSides.End).asPaddingValues()
-
-    val sectionTextModifier = Modifier
-        .padding(horizontal = 16.dp)
-        .padding(top = 24.dp, bottom = 8.dp)
-
-    val lazyListState = rememberLazyListState()
 
     Box(
         modifier = Modifier

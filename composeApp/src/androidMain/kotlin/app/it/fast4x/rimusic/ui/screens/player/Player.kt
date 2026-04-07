@@ -343,65 +343,60 @@ private fun PlayerContent(
     val configuration = LocalConfiguration.current
     val menuState = LocalMenuState.current
     val binder = LocalPlayerServiceBinder.current ?: return
-    // Settings
-    val disablePlayerHorizontalSwipe by rememberPreference(disablePlayerHorizontalSwipeKey, false)
-    val showlyricsthumbnail by rememberPreference(showlyricsthumbnailKey, false)
-    val effectRotationEnabled by rememberPreference(effectRotationKey, true)
-    val playerThumbnailSize by rememberPreference( playerThumbnailSizeKey, PlayerThumbnailSize.Biggest )
-    var playerThumbnailSizeL by rememberPreference( playerThumbnailSizeLKey, PlayerThumbnailSize.Biggest )
-    val showvisthumbnail by rememberPreference(showvisthumbnailKey, false)
-    var thumbnailSpacing  by rememberPreference( thumbnailSpacingKey, 0f )
-    var thumbnailSpacingL  by rememberPreference( thumbnailSpacingLKey, 0f )
-    var thumbnailFade  by rememberPreference( thumbnailFadeKey, 5f )
-    var thumbnailFadeEx  by rememberPreference( thumbnailFadeExKey, 5f )
-    var imageCoverSize by rememberPreference( VinylSizeKey, 50f )
-    val queueDurationExpanded by rememberPreference( queueDurationExpandedKey, true )
-    val statsExpanded by rememberPreference( statsExpandedKey, true )
-    var showthumbnail by rememberPreference( showthumbnailKey, true )
-    val showButtonPlayerMenu by rememberPreference( showButtonPlayerMenuKey, false )
-    val showTotalTimeQueue by rememberPreference( showTotalTimeQueueKey, true )
-    val backgroundProgress by rememberPreference( backgroundProgressKey, BackgroundProgress.MiniPlayer )
-    var queueLoopState = rememberPreference( queueLoopTypeKey, defaultValue = QueueLoopType.Default )
-    val playerType by rememberPreference( playerTypeKey, PlayerType.Modern )
-    val queueType by rememberPreference( queueTypeKey, QueueType.Essential )
-    val noblur by rememberPreference( noblurKey, true )
-    val fadingedge by rememberPreference( fadingedgeKey, false )
-    val colorPaletteMode by rememberPreference( colorPaletteModeKey, ColorPaletteMode.Dark )
-    val playerBackgroundColors by rememberPreference( playerBackgroundColorsKey, PlayerBackgroundColors.BlurredCoverColor )
-    val animatedGradient by rememberPreference( animatedGradientKey, AnimatedGradient.Linear )
-    val thumbnailTapEnabled by rememberPreference( thumbnailTapEnabledKey, true )
-    val showTopActionsBar by rememberPreference( showTopActionsBarKey, true )
-    val blackgradient by rememberPreference( blackgradientKey, false )
-    val bottomgradient by rememberPreference( bottomgradientKey, false )
-    val disableScrollingText by rememberPreference( disableScrollingTextKey, false )
-    var discoverState = rememberPreference( discoverKey, false )
-    val titleExpanded by rememberPreference( titleExpandedKey, true )
-    val timelineExpanded by rememberPreference( timelineExpandedKey, true )
-    val controlsExpanded by rememberPreference( controlsExpandedKey, true )
-    val showCoverThumbnailAnimation by rememberPreference( showCoverThumbnailAnimationKey, false )
-    var coverThumbnailAnimation by rememberPreference( coverThumbnailAnimationKey, ThumbnailCoverType.Vinyl )
-    var albumCoverRotation by rememberPreference( albumCoverRotationKey, false )
-    val textoutline by rememberPreference( textoutlineKey, false )
-    val carousel by rememberPreference( carouselKey, true )
-    val carouselSize by rememberPreference( carouselSizeKey, CarouselSize.Biggest )
-    val clickLyricsText by rememberPreference( clickOnLyricsTextKey, true )
-    var extraspace by rememberPreference( extraspaceKey, false )
-    val thumbnailRoundness by rememberPreference( thumbnailRoundnessKey, ThumbnailRoundness.Heavy )
-    val thumbnailType by rememberPreference( thumbnailTypeKey, ThumbnailType.Modern )
-    val statsfornerds by rememberPreference( statsfornerdsKey, false )
-    val topPadding by rememberPreference( topPaddingKey, true )
-    var swipeAnimationNoThumbnail by rememberPreference( swipeAnimationsNoThumbnailKey, SwipeAnimationNoThumbnail.Sliding )
-    val expandPlayerState = rememberPreference( expandedplayerKey, false )
+    val uiConfig = rememberPlayerUiConfig()
+    val disablePlayerHorizontalSwipe = uiConfig.disablePlayerHorizontalSwipe
+    val showlyricsthumbnail = uiConfig.showlyricsthumbnail
+    val effectRotationEnabled = uiConfig.effectRotationEnabled
+    val playerThumbnailSize by uiConfig.playerThumbnailSizeState
+    var playerThumbnailSizeL by uiConfig.playerThumbnailSizeLState
+    val showvisthumbnail = uiConfig.showvisthumbnail
+    var thumbnailSpacing by uiConfig.thumbnailSpacingState
+    var thumbnailSpacingL by uiConfig.thumbnailSpacingLState
+    var thumbnailFade by uiConfig.thumbnailFadeState
+    var thumbnailFadeEx by uiConfig.thumbnailFadeExState
+    var imageCoverSize by uiConfig.imageCoverSizeState
+    val queueDurationExpanded = uiConfig.queueDurationExpanded
+    val statsExpanded = uiConfig.statsExpanded
+    var showthumbnail by uiConfig.showthumbnailState
+    val showButtonPlayerMenu = uiConfig.showButtonPlayerMenu
+    val showTotalTimeQueue = uiConfig.showTotalTimeQueue
+    val backgroundProgress = uiConfig.backgroundProgress
+    val queueLoopState = uiConfig.queueLoopState
+    val playerType = uiConfig.playerType
+    val queueType = uiConfig.queueType
+    val noblur = uiConfig.noblur
+    val fadingedge = uiConfig.fadingedge
+    val colorPaletteMode = uiConfig.colorPaletteMode
+    val playerBackgroundColors = uiConfig.playerBackgroundColors
+    val animatedGradient = uiConfig.animatedGradient
+    val thumbnailTapEnabled = uiConfig.thumbnailTapEnabled
+    val showTopActionsBar = uiConfig.showTopActionsBar
+    val blackgradient = uiConfig.blackgradient
+    val bottomgradient = uiConfig.bottomgradient
+    val disableScrollingText = uiConfig.disableScrollingText
+    val discoverState = uiConfig.discoverState
+    val titleExpanded = uiConfig.titleExpanded
+    val timelineExpanded = uiConfig.timelineExpanded
+    val controlsExpanded = uiConfig.controlsExpanded
+    val showCoverThumbnailAnimation = uiConfig.showCoverThumbnailAnimation
+    var coverThumbnailAnimation by uiConfig.coverThumbnailAnimationState
+    var albumCoverRotation by uiConfig.albumCoverRotationState
+    val textoutline = uiConfig.textoutline
+    val carousel = uiConfig.carousel
+    val carouselSize = uiConfig.carouselSize
+    val clickLyricsText = uiConfig.clickLyricsText
+    var extraspace by uiConfig.extraspaceState
+    val thumbnailRoundness = uiConfig.thumbnailRoundness
+    val thumbnailType = uiConfig.thumbnailType
+    val statsfornerds = uiConfig.statsfornerds
+    val topPadding = uiConfig.topPadding
+    var swipeAnimationNoThumbnail by uiConfig.swipeAnimationNoThumbnailState
+    val expandPlayerState = uiConfig.expandedPlayerState
     var expandedplayer by expandPlayerState
-    // SPOTIFY CANVAS
-    val spotifyCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
-    val showSpotifyCanvasLogs by rememberPreference("showSpotifyCanvasLogs", false)
-    
-    // Alternate source retry
-    val alternateSourceRetryEnabled by rememberPreference("alternateSourceRetryKey", true)
-
-    // AUDIO FADE 
-    val playbackFadeAudioDuration by rememberPreference("playbackFadeAudioDurationKey", DurationInMilliseconds.Disabled)
+    val spotifyCanvasEnabled = uiConfig.spotifyCanvasEnabled
+    val showSpotifyCanvasLogs = uiConfig.showSpotifyCanvasLogs
+    val alternateSourceRetryEnabled = uiConfig.alternateSourceRetryEnabled
+    val playbackFadeAudioDuration = uiConfig.playbackFadeAudioDuration
     val blurAdjuster = BlurAdjuster()
     
 
@@ -997,17 +992,16 @@ LaunchedEffect(playerError, alternateSourceRetryEnabled, retryWithAlternateSourc
     var darkMuted by remember{ mutableStateOf(0) }
 
 
-    @Composable
+    val lightTheme = colorPaletteMode == ColorPaletteMode.Light || (colorPaletteMode == ColorPaletteMode.System && (!isSystemInDarkTheme()))
+
     fun saturate(color : Int): Color {
-        val colorHSL by remember { mutableStateOf(floatArrayOf(0f, 0f, 0f)) }
-        val lightTheme = colorPaletteMode == ColorPaletteMode.Light || (colorPaletteMode == ColorPaletteMode.System && (!isSystemInDarkTheme()))
+        val colorHSL = floatArrayOf(0f, 0f, 0f)
         colorToHSL(color,colorHSL)
         colorHSL[1] = (colorHSL[1] + if (lightTheme || colorHSL[1] < 0.1f) 0f else 0.35f).coerceIn(0f,1f)
         colorHSL[2] = if (lightTheme) {colorHSL[2].coerceIn(0.5f,1f)} else colorHSL[2]
         return Color.hsl(colorHSL[0],colorHSL[1],colorHSL[2])
     }
 
-    var lightTheme = colorPaletteMode == ColorPaletteMode.Light || (colorPaletteMode == ColorPaletteMode.System && (!isSystemInDarkTheme()))
     var ratio = if (lightTheme) 1f else 0.5f
 
     fun Color.darkenBy(): Color {
@@ -1137,242 +1131,76 @@ LaunchedEffect(shouldBePlaying) {
     }
 }
 
-    if (!isGradientBackgroundEnabled) {
-        if (playerBackgroundColors == PlayerBackgroundColors.BlurredCoverColor && (playerType == PlayerType.Essential || (showthumbnail && (!albumCoverRotation)))) {
-            containerModifier = containerModifier
-                .background(
-                    Brush.verticalGradient(
-                        0.0f to Color.Transparent,
-                        1.0f to if (bottomgradient) if (colorPaletteMode == ColorPaletteMode.Light) Color.White.copy(
-                            if (isLandscape) 0.8f else 0.75f
-                        ) else Color.Black.copy(if (isLandscape) 0.8f else 0.75f) else Color.Transparent,
-                        startY = if (isLandscape) 600f else if (expandedplayer) 1300f else 950f,
-                        endY = POSITIVE_INFINITY
-                    )
-                )
-                .background(
-                    if (bottomgradient) if (isLandscape) if (colorPaletteMode == ColorPaletteMode.Light) Color.White.copy(
-                        0.25f
-                    ) else Color.Black.copy(0.25f) else Color.Transparent else Color.Transparent
-                )
-                .combinedClickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null,
-                    onClick = {
-                        if (thumbnailTapEnabled && !showthumbnail) {
-                            if (isShowingVisualizer) isShowingVisualizer = false
-                            isShowingLyrics = !isShowingLyrics
-                        }
+    containerModifier = containerModifier.then(
+        rememberPlayerBackgroundModifier(
+            isGradientBackgroundEnabled = isGradientBackgroundEnabled,
+            playerBackgroundColors = playerBackgroundColors,
+            playerType = playerType,
+            showthumbnail = showthumbnail,
+            albumCoverRotation = albumCoverRotation,
+            bottomgradient = bottomgradient,
+            colorPaletteMode = colorPaletteMode,
+            expandedplayer = expandedplayer,
+            isLandscape = isLandscape,
+            dynamicColorPalette = dynamicColorPalette,
+            basePalette = color,
+            blackgradient = blackgradient,
+            lightTheme = lightTheme,
+            animatedGradient = animatedGradient,
+            tempGradient = tempGradient,
+            dominant = dominant,
+            vibrant = vibrant,
+            lightVibrant = lightVibrant,
+            darkVibrant = darkVibrant,
+            muted = muted,
+            lightMuted = lightMuted,
+            darkMuted = darkMuted,
+            isPlaying = binder.player.isPlaying,
+            saturate = { input -> saturate(input) },
+            darkenBy = { source -> source.darkenBy() },
+        )
+    )
+
+    if (!isGradientBackgroundEnabled &&
+        playerBackgroundColors == PlayerBackgroundColors.BlurredCoverColor &&
+        (playerType == PlayerType.Essential || (showthumbnail && !albumCoverRotation))
+    ) {
+        containerModifier = containerModifier
+            .combinedClickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = {
+                    if (thumbnailTapEnabled && !showthumbnail) {
+                        if (isShowingVisualizer) isShowingVisualizer = false
+                        isShowingLyrics = !isShowingLyrics
+                    }
+                },
+                onDoubleClick = {
+                    if (!showlyricsthumbnail && !showvisthumbnail) {
+                        showthumbnail = !showthumbnail
+                    }
+                },
+                onLongClick = {
+                    blurAdjuster.isActive =
+                        showthumbnail || (isShowingLyrics && !isShowingVisualizer) || !noblur
+                }
+            )
+            .pointerInput(Unit) {
+                detectHorizontalDragGestures(
+                    onHorizontalDrag = { _, dragAmount ->
+                        deltaX = dragAmount
                     },
-                    onDoubleClick = {
-                        if (!showlyricsthumbnail && !showvisthumbnail)
-                            showthumbnail = !showthumbnail
-                    },
-                    onLongClick = {
-                        blurAdjuster.isActive =
-                            showthumbnail || (isShowingLyrics && !isShowingVisualizer) || !noblur
+                    onDragEnd = {
+                        if (!disablePlayerHorizontalSwipe && playerType == PlayerType.Essential) {
+                            if (deltaX > 5) {
+                                binder.player.playPrevious()
+                            } else if (deltaX < -5) {
+                                binder.player.playNext()
+                            }
+                        }
                     }
                 )
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { _, dragAmount ->
-                            deltaX = dragAmount
-                        },
-                        onDragStart = {
-                        },
-                        onDragEnd = {
-                            if (!disablePlayerHorizontalSwipe && playerType == PlayerType.Essential) {
-                                if (deltaX > 5) {
-                                    binder.player.playPrevious()
-                                } else if (deltaX < -5) {
-                                    binder.player.playNext()
-                                }
-
-                            }
-
-                        }
-
-                    )
-                }
-
-        } else if (playerBackgroundColors == PlayerBackgroundColors.ColorPalette){
-            containerModifier = containerModifier
-                .drawBehind {
-                    val colors = listOf(Color(dominant),Color(vibrant),Color(lightVibrant),Color(darkVibrant),Color(muted),Color(lightMuted),Color(darkMuted))
-                    val boxheight = (size.height)/7
-                    colors.forEachIndexed {i, _ ->
-                        drawRect(
-                            color = colors[i],
-                            topLeft = Offset(0f,i*boxheight),
-                            size = Size(size.width,boxheight)
-                        )
-                    }
-                }
-        } else if (playerBackgroundColors == PlayerBackgroundColors.CoverColor){
-            containerModifier = containerModifier
-                .background(dynamicColorPalette.background1)
-        } else if (playerBackgroundColors == PlayerBackgroundColors.ThemeColor){
-            containerModifier = containerModifier
-                .background(color.background1)
-        }
-    } else {
-        when (playerBackgroundColors) {
-            PlayerBackgroundColors.AnimatedGradient -> {
-                var background by remember {
-                    mutableStateOf( Color.Transparent )
-                }
-                var shaderCondition by remember {
-                    mutableStateOf( true )
-                }
-                var shader: Shader? by remember {
-                    mutableStateOf( null )
-                }
-                val type = remember( animatedGradient, tempGradient ) {
-                    if( animatedGradient == AnimatedGradient.Random )
-                        tempGradient
-                    else
-                        animatedGradient
-                }
-
-                when( type ) {
-                    AnimatedGradient.FluidThemeColorGradient, AnimatedGradient.FluidCoverColorGradient -> {
-                        val shaderA = LinearGradientShader(
-                            Offset(sizeShader.width / 2f, 0f),
-                            Offset(sizeShader.width / 2f, sizeShader.height),
-                            listOf(
-                                dynamicColorPalette.background2,
-                                colorPalette().background2,
-                            ),
-                            listOf(0f, 1f)
-                        )
-                        val brushA by animateBrushRotation(shaderA, sizeShader, 20_000, true)
-
-                        val shaderB = LinearGradientShader(
-                            Offset(sizeShader.width / 2f, 0f),
-                            Offset(sizeShader.width / 2f, sizeShader.height),
-                            listOf(
-                                colorPalette().background1,
-                                dynamicColorPalette.accent,
-                            ),
-                            listOf(0f, 1f)
-                        )
-                        val brushB by animateBrushRotation(shaderB, sizeShader, 12_000, false)
-
-                        val shaderMask = LinearGradientShader(
-                            Offset(sizeShader.width / 2f, 0f),
-                            Offset(sizeShader.width / 2f, sizeShader.height),
-                            listOf(
-                                //Color.White,
-                                colorPalette().background2,
-                                Color.Transparent,
-                            ),
-                            listOf(0f, 1f)
-                        )
-                        val brushMask by animateBrushRotation(shaderMask, sizeShader, 15_000, true)
-
-                        containerModifier = containerModifier
-                            .drawBehind {
-                                drawRect(brush = brushA)
-                                drawRect(brush = brushMask, blendMode = BlendMode.DstOut)
-                                drawRect(brush = brushB, blendMode = BlendMode.DstAtop)
-                            }
-                    }
-                    AnimatedGradient.Linear -> {
-                        containerModifier = containerModifier.animatedGradient(
-                            binder.player.isPlaying,
-                            saturate(dominant).darkenBy(),
-                            saturate(vibrant).darkenBy(),
-                            saturate(lightVibrant).darkenBy(),
-                            saturate(darkVibrant).darkenBy(),
-                            saturate(muted).darkenBy(),
-                            saturate(lightMuted).darkenBy(),
-                            saturate(darkMuted).darkenBy()
-                        )
-                    }
-                    AnimatedGradient.Mesh -> {
-                        shaderCondition = !appRunningInBackground
-                        shader = MeshGradient(
-                            colors = arrayOf(
-                                saturate(vibrant).darkenBy(),
-                                saturate(lightVibrant).darkenBy(),
-                                saturate(darkVibrant).darkenBy(),
-                                saturate(muted).darkenBy(),
-                                saturate(lightMuted).darkenBy(),
-                                saturate(darkMuted).darkenBy(),
-                                saturate(dominant).darkenBy()
-                            ),
-                            scale = 1f
-                        )
-                    }
-                    AnimatedGradient.MesmerizingLens -> shader = MesmerizingLens
-                    AnimatedGradient.GlossyGradients -> {
-                        if( !lightTheme )
-                            background = Color.Black.copy(.2f)
-                        shader = GlossyGradients
-                    }
-                    AnimatedGradient.GradientFlow -> {
-                        if( !lightTheme )
-                            background = Color.Black.copy(.2f)
-                        shader = GradientFlow
-                    }
-                    AnimatedGradient.PurpleLiquid -> shader = PurpleLiquid
-                    AnimatedGradient.InkFlow -> {
-                        if( lightTheme )
-                            background = Color.White.copy(.4f)
-                        shader = InkFlow
-                    }
-                    AnimatedGradient.OilFlow -> {
-                        if( lightTheme )
-                            background = Color.White.copy(.4f)
-                        shader = OilFlow
-                    }
-                    AnimatedGradient.IceReflection -> {
-                        background = if( !lightTheme ) Color.Black.copy( .3f ) else Color.White.copy( .4f )
-                        shader = IceReflection
-                    }
-                    AnimatedGradient.Stage -> {
-                        if( !lightTheme )
-                            background = Color.Black.copy( .3f )
-                        shader = Stage
-                    }
-                    AnimatedGradient.GoldenMagma -> {
-                        background = if( !lightTheme ) Color.Black.copy( .2f ) else Color.White.copy( .3f )
-                        shader = GoldenMagma
-                    }
-                    AnimatedGradient.BlackCherryCosmos -> {
-                        if( lightTheme )
-                            background = Color.White.copy( .35f )
-                        shader = BlackCherryCosmos
-                    }
-                    // if [animatedGradient] is [AnimatedGradient.Random] then it should choose
-                    // [tempGradient]. If [tempGradient] is [AnimatedGradient.Random], you have
-                    // a problem.
-                    AnimatedGradient.Random -> throw IllegalStateException("Anything but this")
-                }
-
-                containerModifier = containerModifier.conditional( shaderCondition && shader != null ) {
-                                                         shaderBackground( shader!! )
-                                                     }
-                                                     .background( background )
-                                                     .onSizeChanged {
-                                                         sizeShader = Size( it.width.toFloat(), it.height.toFloat() )
-                                                     }
             }
-
-            else -> {
-                containerModifier = containerModifier
-                    .background(
-                        Brush.verticalGradient(
-                            0.5f to if (playerBackgroundColors == PlayerBackgroundColors.CoverColorGradient) dynamicColorPalette.background1 else colorPalette().background1,
-                            1.0f to if (blackgradient) Color.Black else if (playerBackgroundColors == PlayerBackgroundColors.CoverColorGradient) dynamicColorPalette.background2 else colorPalette().background2,
-                            startY = 0.0f,
-                            endY = 1500.0f
-                        )
-                    )
-
-            }
-        }
-
     }
 
     val thumbnailContent: @Composable () -> Unit = {
@@ -1488,30 +1316,24 @@ SpotifyCanvasWorker()
         val player = binder.player
 
         if (isLandscape) {
+        LandscapePlayerContent {
         Box { 
 
-        // CANVAS PLAYER FOR LANDSCAPE MODE
-        val currentMediaItemId = mediaItem.mediaId
-        val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
-        val shouldShowCanvas = spotifyCanvasEnabled && 
-            SpotifyCanvasState.currentCanvasUrl != null && 
-            isCanvasForCurrentSong && 
-            !isShowingLyrics && 
-            !isShowingVisualizer &&
-            showthumbnail
-
-        if (shouldShowCanvas) {
-            OptimizedSpotifyCanvasPlayer(
-                canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
-                mediaItemId = SpotifyCanvasState.currentMediaItemId,
-                isPlaying = SpotifyCanvasState.isPlaying,
-                showLogs = showSpotifyCanvasLogs,
-                maxWidth = screenWidth,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .zIndex(0f)
-            )
-        }
+        val shouldShowCanvas = rememberShouldShowPlayerCanvas(
+            spotifyCanvasEnabled = spotifyCanvasEnabled,
+            mediaItem = mediaItem,
+            isShowingLyrics = isShowingLyrics,
+            isShowingVisualizer = isShowingVisualizer,
+            showthumbnail = showthumbnail,
+        )
+        PlayerCanvasLayer(
+            shouldShowCanvas = shouldShowCanvas,
+            showSpotifyCanvasLogs = showSpotifyCanvasLogs,
+            screenWidth = screenWidth,
+            modifier = Modifier
+                .fillMaxSize()
+                .zIndex(0f)
+        )
          if (!shouldShowCanvas) {
              if (playerBackgroundColors == PlayerBackgroundColors.BlurredCoverColor && playerType == PlayerType.Modern && (!showthumbnail || albumCoverRotation)) {
                  val fling = PagerDefaults.flingBehavior(
@@ -1755,43 +1577,35 @@ SpotifyCanvasWorker()
                             .weight(1f)
                             .navigationBarsPadding()
                     ){
-                        if (!showlyricsthumbnail) {
-                            Lyrics(
-                                mediaId = mediaItem.mediaId,
-                                isDisplayed = isShowingLyrics,
-                                onDismiss = {
-                                        isShowingLyrics = false
-                                },
-                                ensureSongInserted = { Database.insertIgnore( mediaItem ) },
-                                size = 1000.dp,
-                                mediaMetadataProvider = mediaItem::mediaMetadata,
-                                durationProvider = player::getDuration,
-                                isLandscape = isLandscape,
-                                clickLyricsText = clickLyricsText,
-                                modifier = Modifier
-                                    .pointerInput(Unit) {
-                                        detectHorizontalDragGestures(
-                                            onHorizontalDrag = { _, dragAmount ->
-                                                deltaX = dragAmount
-                                            },
-                                            onDragStart = {
-                                            },
-                                            onDragEnd = {
-                                                if (!disablePlayerHorizontalSwipe) {
-                                                    if (deltaX > 5) {
-                                                        binder.player.playPrevious()
-                                                    } else if (deltaX < -5) {
-                                                        binder.player.playNext()
-                                                    }
-
-                                                }
-
+                        PlayerLyricsAndVisualizerOverlay(
+                            mediaItem = mediaItem,
+                            player = player,
+                            isShowingLyrics = isShowingLyrics,
+                            onDismissLyrics = { isShowingLyrics = false },
+                            isLandscape = isLandscape,
+                            clickLyricsText = clickLyricsText,
+                            showLyricsThumbnail = showlyricsthumbnail,
+                            isShowingVisualizer = isShowingVisualizer,
+                            showVisualizerThumbnail = showvisthumbnail,
+                            modifier = Modifier.pointerInput(Unit) {
+                                detectHorizontalDragGestures(
+                                    onHorizontalDrag = { _, dragAmount ->
+                                        deltaX = dragAmount
+                                    },
+                                    onDragStart = {
+                                    },
+                                    onDragEnd = {
+                                        if (!disablePlayerHorizontalSwipe) {
+                                            if (deltaX > 5) {
+                                                binder.player.playPrevious()
+                                            } else if (deltaX < -5) {
+                                                binder.player.playNext()
                                             }
-
-                                        )
+                                        }
                                     }
-                            )
-                        }
+                                )
+                            }
+                        )
                     }
                 }
                 Column (
@@ -2019,30 +1833,27 @@ SpotifyCanvasWorker()
                 }
             }
          }
+        }
         } else {
+        PortraitPlayerContent {
                     Box {
                //  CANVAS PLAYER HERE
-               val currentMediaItemId = mediaItem.mediaId
-               val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
-               val shouldShowCanvas = spotifyCanvasEnabled && 
-                   SpotifyCanvasState.currentCanvasUrl != null && 
-                   isCanvasForCurrentSong && 
-                   !isShowingLyrics && 
-                   !isShowingVisualizer &&
-                   showthumbnail
+               val shouldShowCanvas = rememberShouldShowPlayerCanvas(
+                   spotifyCanvasEnabled = spotifyCanvasEnabled,
+                   mediaItem = mediaItem,
+                   isShowingLyrics = isShowingLyrics,
+                   isShowingVisualizer = isShowingVisualizer,
+                   showthumbnail = showthumbnail,
+               )
 
-               if (shouldShowCanvas) {
-                   OptimizedSpotifyCanvasPlayer(
-                       canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
-                       mediaItemId = SpotifyCanvasState.currentMediaItemId,
-                       isPlaying = SpotifyCanvasState.isPlaying,
-                       showLogs = showSpotifyCanvasLogs,
-                       maxWidth = screenWidth,
-                       modifier = Modifier
+                PlayerCanvasLayer(
+                    shouldShowCanvas = shouldShowCanvas,
+                    showSpotifyCanvasLogs = showSpotifyCanvasLogs,
+                    screenWidth = screenWidth,
+                    modifier = Modifier
                            .fillMaxSize()
                            .zIndex(0f) // ✅ NOW THIS WILL WORK
                    )
-               }
  if (!shouldShowCanvas) {
                if (playerBackgroundColors == PlayerBackgroundColors.BlurredCoverColor && playerType == PlayerType.Modern && (!showthumbnail || albumCoverRotation)) {
                     val fling = PagerDefaults.flingBehavior(
@@ -2620,24 +2431,17 @@ Column(
                 )
             }
     ) {
-        if (!showlyricsthumbnail)
-            Lyrics(
-                mediaId = mediaItem.mediaId,
-                isDisplayed = isShowingLyrics,
-                onDismiss = {
-                        isShowingLyrics = false
-                },
-                ensureSongInserted = { Database.insertIgnore( mediaItem ) },
-                size = 1000.dp,
-                mediaMetadataProvider = mediaItem::mediaMetadata,
-                durationProvider = player::getDuration,
-                isLandscape = isLandscape,
-                clickLyricsText = clickLyricsText,
-            )
-        if (!showvisthumbnail)
-            NextVisualizer(
-                isDisplayed = isShowingVisualizer
-            )
+        PlayerLyricsAndVisualizerOverlay(
+            mediaItem = mediaItem,
+            player = player,
+            isShowingLyrics = isShowingLyrics,
+            onDismissLyrics = { isShowingLyrics = false },
+            isLandscape = isLandscape,
+            clickLyricsText = clickLyricsText,
+            showLyricsThumbnail = showlyricsthumbnail,
+            isShowingVisualizer = isShowingVisualizer,
+            showVisualizerThumbnail = showvisthumbnail,
+        )
     }
 }
                 Column(
@@ -2748,6 +2552,7 @@ Column(
             }
            }
         }
+        }
 
         CustomModalBottomSheet(
             showSheet = showQueue,
@@ -2821,6 +2626,78 @@ Column(
     }
 }
 
+
+@Composable
+private fun PlayerLyricsAndVisualizerOverlay(
+    mediaItem: MediaItem,
+    player: Player,
+    isShowingLyrics: Boolean,
+    onDismissLyrics: () -> Unit,
+    isLandscape: Boolean,
+    clickLyricsText: Boolean,
+    showLyricsThumbnail: Boolean,
+    isShowingVisualizer: Boolean,
+    showVisualizerThumbnail: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Box(modifier = modifier) {
+        if (!showLyricsThumbnail) {
+            Lyrics(
+                mediaId = mediaItem.mediaId,
+                isDisplayed = isShowingLyrics,
+                onDismiss = onDismissLyrics,
+                ensureSongInserted = { insertIgnore(mediaItem) },
+                size = 1000.dp,
+                mediaMetadataProvider = mediaItem::mediaMetadata,
+                durationProvider = player::getDuration,
+                isLandscape = isLandscape,
+                clickLyricsText = clickLyricsText,
+            )
+        }
+        if (!showVisualizerThumbnail) {
+            NextVisualizer(
+                isDisplayed = isShowingVisualizer
+            )
+        }
+    }
+}
+
+@Composable
+private fun rememberShouldShowPlayerCanvas(
+    spotifyCanvasEnabled: Boolean,
+    mediaItem: MediaItem,
+    isShowingLyrics: Boolean,
+    isShowingVisualizer: Boolean,
+    showthumbnail: Boolean,
+): Boolean {
+    val currentMediaItemId = mediaItem.mediaId
+    val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
+    return spotifyCanvasEnabled &&
+        SpotifyCanvasState.currentCanvasUrl != null &&
+        isCanvasForCurrentSong &&
+        !isShowingLyrics &&
+        !isShowingVisualizer &&
+        showthumbnail
+}
+
+@Composable
+private fun PlayerCanvasLayer(
+    shouldShowCanvas: Boolean,
+    showSpotifyCanvasLogs: Boolean,
+    screenWidth: Dp,
+    modifier: Modifier = Modifier,
+) {
+    if (!shouldShowCanvas) return
+
+    OptimizedSpotifyCanvasPlayer(
+        canvasUrl = SpotifyCanvasState.currentCanvasUrl!!,
+        mediaItemId = SpotifyCanvasState.currentMediaItemId,
+        isPlaying = SpotifyCanvasState.isPlaying,
+        showLogs = showSpotifyCanvasLogs,
+        maxWidth = screenWidth,
+        modifier = modifier
+    )
+}
 
 @Composable
 private fun OptimizedSpotifyCanvasPlayer(

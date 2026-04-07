@@ -78,7 +78,8 @@ data class YtmSong(
     val artist: String = "",
     val album: String = "",
     val thumbnail: String = "",
-    val duration: String = ""
+    val duration: String = "",
+    val setVideoId: String = ""
 )
 
 data class YtmArtist(
