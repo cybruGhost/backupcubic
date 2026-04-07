@@ -881,6 +881,7 @@ private fun fetchSpotifyCanvas(
 ): String? {
     val cacheDir = File(context.cacheDir, "spotify_canvas").also { it.mkdirs() }
     val sessionCookie = getSpotifyCookieHeader(context)
+        ?: renewSpotifySession(context).takeIf { it }?.let { getSpotifyCookieHeader(context) }
     val spDc = getSpDc(context)
     if (sessionCookie.isNullOrBlank()) {
         if (showLogs) {

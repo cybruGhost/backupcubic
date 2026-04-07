@@ -2,6 +2,8 @@ package app.it.fast4x.rimusic.ui.screens.cubicjam
 
 import android.content.Context
 import androidx.media3.common.MediaItem
+import app.it.fast4x.rimusic.appRunningInBackground
+import app.it.fast4x.rimusic.appVisibilityInBackground
 import kotlinx.coroutines.*
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -9,6 +11,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collectLatest
 import app.kreate.android.me.knighthat.utils.isNetworkAvailable
 import timber.log.Timber
 import it.fast4x.innertube.Innertube
@@ -32,8 +35,20 @@ class CubicJamManager(
     private var lastMediaItem: MediaItem? = null
     private var isStopped = false
     private var refreshJob: Job? = null
+    private val visibilityJob: Job
     private var lastUpdateTime = 0L
     private val UPDATE_INTERVAL = 15000L // 15 seconds
+
+    init {
+        visibilityJob = externalScope.launch {
+            appVisibilityInBackground.collectLatest { isInBackground ->
+                if (isInBackground) {
+                    refreshJob?.cancel()
+                    Timber.tag("CubicJam").d("App backgrounded, pausing Cubic Jam network updates")
+                }
+            }
+        }
+    }
 
     // Token refresh helper for manager
     private suspend fun ensureValidTokenForManager(): String? {
@@ -133,7 +148,10 @@ class CubicJamManager(
         getCurrentPosition: (() -> Long)? = null,
         isPlayingProvider: (() -> Boolean)? = null
     ) {
-        if (isStopped) return
+        if (isStopped || appRunningInBackground) {
+            refreshJob?.cancel()
+            return
+        }
         
         if (!isNetworkAvailable(context)) {
             Timber.tag("CubicJam").d("No network available")
@@ -159,6 +177,7 @@ class CubicJamManager(
     }
 
     private fun sendActivityUpdate(mediaItem: MediaItem, position: Long, duration: Long, isPlaying: Boolean) {
+        if (appRunningInBackground || isStopped) return
         val currentTime = System.currentTimeMillis()
         
         // Throttle updates
@@ -235,6 +254,7 @@ class CubicJamManager(
     }
 
     private fun sendStoppedActivity() {
+        if (appRunningInBackground) return
         externalScope.launch {
             Timber.tag("CubicJam").d("Media stopped, sending clear activity")
             
@@ -283,6 +303,7 @@ class CubicJamManager(
     fun onStop() {
         isStopped = true
         refreshJob?.cancel()
+        visibilityJob.cancel()
         externalScope.launch {
             sendStoppedActivity()
         }

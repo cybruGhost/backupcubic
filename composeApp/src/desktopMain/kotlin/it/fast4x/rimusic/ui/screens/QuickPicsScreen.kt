@@ -4,6 +4,8 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.ScrollableDefaults
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -18,6 +20,8 @@ import androidx.compose.foundation.lazy.grid.LazyHorizontalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerDefaults.windowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -87,6 +91,7 @@ fun QuickPicsScreen(
 ) {
     val quickPicksLazyGridState = rememberLazyGridState()
     val moodAngGenresLazyGridState = rememberLazyGridState()
+    val scrollState = rememberScrollState()
     val endPaddingValues = windowInsets.only(WindowInsetsSides.End).asPaddingValues()
     val related = remember { mutableStateOf(DesktopQuickPicksCache.relatedPage) }
     var relatedPageResult by remember { mutableStateOf<Result<Innertube.RelatedPage?>?>(null) }
@@ -98,95 +103,119 @@ fun QuickPicsScreen(
     val compactArtistSize = artistThumbnailSize - 10.dp
     val compactPlaylistSize = playlistThumbnailSize - 12.dp
 
-    Title2Actions(
-        title = "For You",
-        onClick1 = {
-            DesktopQuickPicksCache.clearHome()
-            related.value = null
-            discover.value = null
-            relatedPageResult = null
-            discoverPageResult = null
-            refreshNonce++
-        },
-        icon2 = Res.drawable.play,
-        onClick2 = {}
-    )
-
-    LaunchedEffect(refreshNonce) {
-        if (DesktopQuickPicksCache.relatedPage == null) {
-            relatedPageResult = Innertube.relatedPage(
-                NextBody(
-                    videoId = "HZnNt9nnEhw"
-                )
-            )
-            DesktopQuickPicksCache.relatedPage = relatedPageResult?.getOrNull()
-        }
-        if (DesktopQuickPicksCache.discoverPage == null) {
-            discoverPageResult = Innertube.discoverPage()
-            DesktopQuickPicksCache.discoverPage = discoverPageResult?.getOrNull()
-        }
-        related.value = DesktopQuickPicksCache.relatedPage
-        discover.value = DesktopQuickPicksCache.discoverPage
-    }
-    relatedPageResult?.getOrNull().also { related.value = it }
-    discoverPageResult?.getOrNull().also { discover.value = it }
-
-    Title(
-        title = "Your Daily Discover",
-        onClick = {}
-    )
-
-    LazyHorizontalGrid(
-        state = quickPicksLazyGridState,
-        rows = GridCells.Fixed(if (related.value != null) 3 else 1),
-        flingBehavior = ScrollableDefaults.flingBehavior(),
-        contentPadding = endPaddingValues,
+    Column(
         modifier = Modifier
             .fillMaxWidth()
-            .height(if (related.value != null) itemsVerticalPadding * 3 * 9 else itemsVerticalPadding * 9)
+            .verticalScroll(scrollState)
     ) {
-        related.value?.let{
-            items(
-                items = related.value!!.songs?.distinctBy { it.key }
-                //?.dropLast(if (trending == null) 0 else 1)
-                    ?: emptyList(),
-                key = Innertube.SongItem::key
-            ) { song ->
+        Title2Actions(
+            title = "For You",
+            onClick1 = {
+                DesktopQuickPicksCache.clearHome()
+                related.value = null
+                discover.value = null
+                relatedPageResult = null
+                discoverPageResult = null
+                refreshNonce++
+            },
+            icon2 = Res.drawable.play,
+            onClick2 = {}
+        )
 
-                SongItem(
-                    song = song,
-                    isDownloaded = false,
-                    onDownloadClick = {},
-                    //thumbnailSizeDp = 50.dp,
-                    modifier = Modifier
-                        .combinedClickable(
-                            onLongClick = {},
-                            onClick = {
-                                onSongClick(song.asSong)
-                            }
-                        )
-                        .width(songGridItemWidth)
+        LaunchedEffect(refreshNonce) {
+            if (DesktopQuickPicksCache.relatedPage == null) {
+                relatedPageResult = Innertube.relatedPage(
+                    NextBody(
+                        videoId = "HZnNt9nnEhw"
+                    )
                 )
+                DesktopQuickPicksCache.relatedPage = relatedPageResult?.getOrNull()
             }
-        } ?:
-        item(span = { GridItemSpan(maxLineSpan) }){
-            Loader()
+            if (DesktopQuickPicksCache.discoverPage == null) {
+                discoverPageResult = Innertube.discoverPage()
+                DesktopQuickPicksCache.discoverPage = discoverPageResult?.getOrNull()
+            }
+            related.value = DesktopQuickPicksCache.relatedPage
+            discover.value = DesktopQuickPicksCache.discoverPage
+        }
+        relatedPageResult?.getOrNull().also { related.value = it }
+        discoverPageResult?.getOrNull().also { discover.value = it }
+
+        Title(
+            title = "Your Daily Discover",
+            onClick = {}
+        )
+
+        LazyHorizontalGrid(
+            state = quickPicksLazyGridState,
+            rows = GridCells.Fixed(if (related.value != null) 3 else 1),
+            flingBehavior = ScrollableDefaults.flingBehavior(),
+            contentPadding = endPaddingValues,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(if (related.value != null) itemsVerticalPadding * 3 * 9 else itemsVerticalPadding * 9)
+        ) {
+            related.value?.let {
+                items(
+                    items = related.value!!.songs?.distinctBy { it.key } ?: emptyList(),
+                    key = Innertube.SongItem::key
+                ) { song ->
+                    SongItem(
+                        song = song,
+                        isDownloaded = false,
+                        onDownloadClick = {},
+                        modifier = Modifier
+                            .combinedClickable(
+                                onLongClick = {},
+                                onClick = {
+                                    onSongClick(song.asSong)
+                                }
+                            )
+                            .width(songGridItemWidth)
+                    )
+                }
+            } ?:
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Loader()
+            }
         }
 
-    }
+        discover.let { page ->
+            val showNewAlbums = true
+            if (showNewAlbums) {
+                Title(
+                    title = stringResource(Res.string.new_albums),
+                    onClick = {},
+                )
 
-    discover.let { page ->
-        val showNewAlbums = true
-        if (showNewAlbums) {
-            Title(
-                title = stringResource(Res.string.new_albums),
-                onClick = {},
-                //modifier = Modifier.fillMaxWidth(0.7f)
-            )
+                LazyRow(contentPadding = endPaddingValues) {
+                    page.value?.newReleaseAlbums?.let {
+                        items(items = it.distinctBy { it.key }, key = { it.key }) {
+                            AlbumItem(
+                                album = it,
+                                thumbnailSizeDp = compactAlbumSize,
+                                alternative = true,
+                                showAuthors = true,
+                                modifier = Modifier.clickable(onClick = {
+                                    onAlbumClick(it.key)
+                                })
+                            )
+                        }
+                    }
+                }
+            }
+        }
 
-            LazyRow(contentPadding = endPaddingValues) {
-                page.value?.newReleaseAlbums?.let {
-                    items(items = it.distinctBy { it.key }, key = { it.key }) {
+        related.value?.albums?.let { albums ->
+            val showRelatedAlbums = true
+            if (showRelatedAlbums) {
+                Title(
+                    title = stringResource(Res.string.related_albums),
+                    onClick = {},
+                )
+
+                LazyRow(contentPadding = endPaddingValues) {
+                    items(items = albums.distinctBy { it.key }, key = { it.key }) {
                         AlbumItem(
                             album = it,
                             thumbnailSizeDp = compactAlbumSize,
@@ -200,121 +229,87 @@ fun QuickPicsScreen(
                 }
             }
         }
-    }
 
-    related.value?.albums?.let { albums ->
-        val showRelatedAlbums = true
-        if (showRelatedAlbums) {
-            Title(
-                title = stringResource(Res.string.related_albums),
-                onClick = {},
-                //modifier = Modifier.fillMaxWidth(0.7f)
-            )
+        related.value?.artists?.let { artists ->
+            val showSimilarArtists = true
+            if (showSimilarArtists) {
+                Title(
+                    title = stringResource(Res.string.similar_artists),
+                    onClick = {},
+                )
 
-            LazyRow(contentPadding = endPaddingValues) {
-                items(items = albums.distinctBy { it.key }, key = { it.key }) {
-                    AlbumItem(
-                        album = it,
-                        thumbnailSizeDp = compactAlbumSize,
-                        alternative = true,
-                        showAuthors = true,
-                        modifier = Modifier.clickable(onClick = {
-                            onAlbumClick(it.key)
-                        })
-                    )
-                }
-            }
-        }
-    }
-
-    related.value?.artists?.let { artists ->
-        val showSimilarArtists = true
-        if (showSimilarArtists) {
-            Title(
-                title = stringResource(Res.string.similar_artists),
-                onClick = {},
-                //modifier = Modifier.fillMaxWidth(0.7f)
-            )
-
-            LazyRow(contentPadding = endPaddingValues) {
-                items(items = artists.distinctBy { it.key }, key = { it.key }) {
-                    ArtistItem(
-                        artist = it,
-                        thumbnailSizeDp = compactArtistSize,
-                        alternative = true,
-                        modifier = Modifier.clickable(onClick = {
-                            onArtistClick(it.key)
-                        })
-                    )
-
-                }
-            }
-        }
-    }
-
-    related.value?.playlists?.let { playlists ->
-        val showPlaylistMightLike = true
-        if (showPlaylistMightLike) {
-            Title(
-                title = stringResource(Res.string.playlists_you_might_like),
-                onClick = {},
-                //modifier = Modifier.fillMaxWidth(0.7f)
-            )
-
-            LazyRow(contentPadding = endPaddingValues) {
-                items(items = playlists.distinctBy { it.key }, key = { it.key }) {
-                    PlaylistItem(
-                        playlist = it,
-                        thumbnailSizeDp = compactPlaylistSize,
-                        alternative = true,
-                        showSongsCount = false,
-                        modifier = Modifier.clickable(onClick = {
-                            onPlaylistClick(it.key)
-                        })
-                    )
-
-                }
-            }
-        }
-    }
-
-    discover.let { page ->
-        val showNewAlbums = true
-        if (showNewAlbums) {
-            Title(
-                title = stringResource(Res.string.moods_and_genres),
-                onClick = {},
-                //modifier = Modifier.fillMaxWidth(0.7f)
-            )
-
-            LazyHorizontalGrid(
-                state = moodAngGenresLazyGridState,
-                rows = GridCells.Fixed(4),
-                flingBehavior = ScrollableDefaults.flingBehavior(),
-                contentPadding = endPaddingValues,
-                modifier = Modifier
-                    //.fillMaxWidth()
-                    .height(itemsVerticalPadding * 4 * 8)
-            ) {
-                page.value?.moods?.let {
-                    items(
-                        items = it.sortedBy { it.title },
-                        key = { it.endpoint.params ?: it.title }
-                    ) {
-                        MoodItemColored(
-                            mood = it,
-                            onClick = {
-                                onMoodClick(it)
-                            },
-                            modifier = Modifier
-                                //.width(itemWidth)
-                                .padding(4.dp)
+                LazyRow(contentPadding = endPaddingValues) {
+                    items(items = artists.distinctBy { it.key }, key = { it.key }) {
+                        ArtistItem(
+                            artist = it,
+                            thumbnailSizeDp = compactArtistSize,
+                            alternative = true,
+                            modifier = Modifier.clickable(onClick = {
+                                onArtistClick(it.key)
+                            })
                         )
                     }
                 }
             }
-
         }
-    }
 
+        related.value?.playlists?.let { playlists ->
+            val showPlaylistMightLike = true
+            if (showPlaylistMightLike) {
+                Title(
+                    title = stringResource(Res.string.playlists_you_might_like),
+                    onClick = {},
+                )
+
+                LazyRow(contentPadding = endPaddingValues) {
+                    items(items = playlists.distinctBy { it.key }, key = { it.key }) {
+                        PlaylistItem(
+                            playlist = it,
+                            thumbnailSizeDp = compactPlaylistSize,
+                            alternative = true,
+                            showSongsCount = false,
+                            modifier = Modifier.clickable(onClick = {
+                                onPlaylistClick(it.key)
+                            })
+                        )
+                    }
+                }
+            }
+        }
+
+        discover.let { page ->
+            val showNewAlbums = true
+            if (showNewAlbums) {
+                Title(
+                    title = stringResource(Res.string.moods_and_genres),
+                    onClick = {},
+                )
+
+                LazyHorizontalGrid(
+                    state = moodAngGenresLazyGridState,
+                    rows = GridCells.Fixed(4),
+                    flingBehavior = ScrollableDefaults.flingBehavior(),
+                    contentPadding = endPaddingValues,
+                    modifier = Modifier
+                        .height(itemsVerticalPadding * 4 * 8)
+                ) {
+                    page.value?.moods?.let {
+                        items(
+                            items = it.sortedBy { it.title },
+                            key = { it.endpoint.params ?: it.title }
+                        ) {
+                            MoodItemColored(
+                                mood = it,
+                                onClick = {
+                                    onMoodClick(it)
+                                },
+                                modifier = Modifier.padding(4.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(18.dp))
+    }
 }

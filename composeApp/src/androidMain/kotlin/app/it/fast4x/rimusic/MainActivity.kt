@@ -227,6 +227,9 @@ import app.it.fast4x.rimusic.utils.transitionEffectKey
 import app.it.fast4x.rimusic.utils.useSystemFontKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -1369,7 +1372,16 @@ class MainActivity :
 
 }
 
-var appRunningInBackground: Boolean = false
+private val _appVisibilityInBackground = MutableStateFlow(false)
+val appVisibilityInBackground: StateFlow<Boolean> = _appVisibilityInBackground.asStateFlow()
+
+private var appRunningInBackgroundState by mutableStateOf(false)
+var appRunningInBackground: Boolean
+    get() = appRunningInBackgroundState
+    set(value) {
+        appRunningInBackgroundState = value
+        _appVisibilityInBackground.value = value
+    }
 
 val LocalPlayerServiceBinder = staticCompositionLocalOf<PlayerServiceModern.Binder?> { null }
 

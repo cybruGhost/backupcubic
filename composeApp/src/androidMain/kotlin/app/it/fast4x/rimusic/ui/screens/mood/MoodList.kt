@@ -46,9 +46,6 @@ import app.it.fast4x.rimusic.LocalPlayerAwareWindowInsets
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.enums.NavRoutes
 import app.it.fast4x.rimusic.enums.NavigationBarPosition
-import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
-import app.it.fast4x.rimusic.extensions.youtubelogin.YtmHomeSection
-import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.models.Mood
 import app.it.fast4x.rimusic.typography
 import app.it.fast4x.rimusic.ui.components.ShimmerHost
@@ -62,7 +59,6 @@ import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.px
 import app.it.fast4x.rimusic.utils.center
 import app.it.fast4x.rimusic.utils.disableScrollingTextKey
-import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.secondary
 import app.it.fast4x.rimusic.utils.semiBold
@@ -92,20 +88,8 @@ fun MoodList(
 
     val browseId = mood.browseId ?: defaultBrowseId
     var moodPage by persist<Result<BrowseResult>>("moods/$browseId${mood.params?.let { "/$it" } ?: ""}")
-    var sessionMoodFeed by persist<Result<List<YtmHomeSection>?>>("moods/$browseId/session_home_feed")
 
     LaunchedEffect(Unit) {
-        if (isYouTubeLoggedIn()) {
-            val session = YouTubeSessionStore.applyCurrentSession(context)
-            val cookie = session?.cookie?.takeIf { it.isNotBlank() }
-            if (!cookie.isNullOrBlank()) {
-                sessionMoodFeed = YtmSessionApi.fetchHomeFeed(
-                    cookies = cookie,
-                    authUser = session.authUser.ifBlank { null },
-                    pageId = session.pageId.ifBlank { null }
-                )
-            }
-        }
         moodPage = Innertube.browse(BrowseBodyWithLocale(browseId = browseId, params = mood.params))
     }
 
@@ -261,90 +245,6 @@ fun MoodList(
                         }
                     }
                 }
-
-                sessionMoodFeed?.getOrNull()
-                    ?.filter { it.items.isNotEmpty() && isWantedMoodHomeSection(it.title) }
-                    ?.forEach { section ->
-                        item {
-                            BasicText(
-                                text = section.title,
-                                style = typography().m.semiBold,
-                                modifier = sectionTextModifier
-                            )
-                        }
-                        item {
-                            LazyRow {
-                                items(items = section.items, key = { "${it.type}|${it.videoId}|${it.playlistId}|${it.browseId}|${it.title}" }) { childItem ->
-                                    when (childItem.type.lowercase()) {
-                                        "album" -> AlbumItem(
-                                            album = app.it.fast4x.rimusic.models.Album(
-                                                id = childItem.browseId.ifBlank { childItem.playlistId.ifBlank { childItem.title } },
-                                                title = childItem.title,
-                                                thumbnailUrl = childItem.thumbnail,
-                                                authorsText = childItem.subtitle,
-                                                isYoutubeAlbum = true
-                                            ),
-                                            thumbnailSizePx = thumbnailSizePx,
-                                            thumbnailSizeDp = thumbnailSizeDp,
-                                            alternative = true,
-                                            modifier = Modifier.clickable {
-                                                childItem.browseId.ifBlank { childItem.playlistId }
-                                                    .takeIf { it.isNotBlank() }
-                                                    ?.let { navController.navigate(route = "${NavRoutes.album.name}/$it") }
-                                            },
-                                            disableScrollingText = disableScrollingText
-                                        )
-
-                                        "artist" -> ArtistItem(
-                                            artist = app.it.fast4x.rimusic.models.Artist(
-                                                id = childItem.browseId.ifBlank { childItem.title },
-                                                name = childItem.title,
-                                                thumbnailUrl = childItem.thumbnail,
-                                                isYoutubeArtist = true
-                                            ),
-                                            thumbnailSizePx = thumbnailSizePx,
-                                            thumbnailSizeDp = thumbnailSizeDp,
-                                            alternative = true,
-                                            modifier = Modifier.clickable {
-                                                childItem.browseId
-                                                    .takeIf { it.isNotBlank() }
-                                                    ?.let { navController.navigate(route = "${NavRoutes.artist.name}/$it") }
-                                            },
-                                            disableScrollingText = disableScrollingText
-                                        )
-
-                                        "playlist" -> PlaylistItem(
-                                            browseId = childItem.playlistId.ifBlank { childItem.browseId },
-                                            thumbnailContent = {
-                                                AsyncImage(
-                                                    model = ImageRequest.Builder(context)
-                                                        .data(childItem.thumbnail)
-                                                        .crossfade(true)
-                                                        .build(),
-                                                    contentDescription = null,
-                                                    contentScale = ContentScale.Crop,
-                                                    modifier = Modifier.fillMaxSize()
-                                                )
-                                            },
-                                            songCount = null,
-                                            name = childItem.title,
-                                            channelName = childItem.subtitle,
-                                            thumbnailSizeDp = thumbnailSizeDp,
-                                            alternative = true,
-                                            showSongsCount = false,
-                                            disableScrollingText = disableScrollingText,
-                                            isYoutubePlaylist = true,
-                                            modifier = Modifier.clickable {
-                                                childItem.playlistId.ifBlank { childItem.browseId }
-                                                    .takeIf { it.isNotBlank() }
-                                                    ?.let { navController.navigate(route = "${NavRoutes.playlist.name}/$it") }
-                                            }
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    }
 
                 item(key = "bottom") {
                     Spacer(modifier = Modifier.height(Dimensions.bottomSpacer))

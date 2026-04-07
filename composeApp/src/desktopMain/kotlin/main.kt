@@ -9,6 +9,7 @@ import app.it.fast4x.rimusic.ui.DesktopApp
 import org.jetbrains.compose.resources.painterResource
 import rimusic.composeapp.generated.resources.Res
 import rimusic.composeapp.generated.resources.app_icon
+import kotlin.system.exitProcess
 
 
 @OptIn(ExperimentalCoilApi::class)
@@ -19,7 +20,10 @@ fun main() = application {
     }
     Window(
        icon = painterResource(Res.drawable.app_icon),
-        onCloseRequest = ::exitApplication,
+        onCloseRequest = {
+            exitApplication()
+            exitProcess(0)
+        },
         state = WindowState(
             placement = WindowPlacement.Maximized,
         ),

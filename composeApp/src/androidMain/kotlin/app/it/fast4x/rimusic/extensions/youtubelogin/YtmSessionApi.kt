@@ -1,15 +1,25 @@
 package app.it.fast4x.rimusic.extensions.youtubelogin
 
+import app.it.fast4x.rimusic.appRunningInBackground
+import app.it.fast4x.rimusic.appVisibilityInBackground
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Response
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONArray
 import org.json.JSONObject
 import timber.log.Timber
 import java.io.IOException
+import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 object YtmSessionApi {
@@ -24,6 +34,18 @@ object YtmSessionApi {
         .readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
+    private val activeCalls = Collections.synchronizedSet(mutableSetOf<Call>())
+    private val visibilityScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    init {
+        visibilityScope.launch {
+            appVisibilityInBackground.collect { isInBackground ->
+                if (isInBackground) {
+                    cancelActiveCalls()
+                }
+            }
+        }
+    }
 
     suspend fun fetchAccountInfo(cookies: String): Result<YtmAccountInfo> = withContext(Dispatchers.IO) {
         runCatching {
@@ -259,10 +281,18 @@ object YtmSessionApi {
         }
     }
 
-    private fun execute(request: Request) =
-        httpClient.newCall(request).execute().also {
-            Timber.d("YtmSessionApi %s %s -> %s", request.method, request.url, it.code)
+    private fun execute(request: Request): Response {
+        ensureForeground("YtmSessionApi")
+        val call = httpClient.newCall(request)
+        activeCalls += call
+        return try {
+            call.execute().also {
+                Timber.d("YtmSessionApi %s %s -> %s", request.method, request.url, it.code)
+            }
+        } finally {
+            activeCalls -= call
         }
+    }
 
     private fun parseLinkedAccount(json: JSONObject): YtmLinkedAccount =
         YtmLinkedAccount(
@@ -347,6 +377,21 @@ object YtmSessionApi {
                 parse(JSONObject(body))
             }
         }
+    }
+
+    private fun ensureForeground(owner: String) {
+        if (appRunningInBackground) {
+            throw CancellationException("$owner skipped while app is in background")
+        }
+    }
+
+    private fun cancelActiveCalls() {
+        val calls = synchronized(activeCalls) { activeCalls.toList() }
+        calls.forEach { call ->
+            runCatching { call.cancel() }
+                .onFailure { Timber.w(it, "YtmSessionApi failed cancelling background call") }
+        }
+        activeCalls.clear()
     }
 
     private fun parseError(body: String, statusCode: Int): String =
