@@ -757,8 +757,6 @@ QuickPicksRepository.refreshIfNeeded()
                         // ✨ ADD THIS CUBIC JAM CLEANUP ✨
             maybeSavePlayerQueue()
             preferences.unregisterOnSharedPreferenceChangeListener(this)
-            stopService(intent<MyDownloadService>())
-            stopService(intent<PlayerServiceModern>())
             player.removeListener(this)
             if (::crossFadeMediaPlayer.isInitialized) {
                 crossFadeMediaPlayer.release()
@@ -2057,11 +2055,6 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
 
     class NotificationDismissReceiver : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            kotlin.runCatching {
-                context.stopService(context.intent<MyDownloadService>())
-            }.onFailure {
-                Timber.e("Failed NotificationDismissReceiver stopService in PlayerServiceModern (MyDownloadService) ${it.stackTraceToString()}")
-            }
             kotlin.runCatching {
                 context.stopService(context.intent<PlayerServiceModern>())
             }.onFailure {

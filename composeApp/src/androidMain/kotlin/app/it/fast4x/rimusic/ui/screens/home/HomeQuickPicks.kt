@@ -34,6 +34,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -42,6 +43,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -91,6 +93,7 @@ import app.it.fast4x.rimusic.extensions.youtubelogin.YtmHomeSectionItem
 import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import app.it.fast4x.rimusic.ui.components.ButtonsRow
+import app.it.fast4x.rimusic.ui.components.CustomModalBottomSheet
 import app.it.fast4x.rimusic.ui.components.LocalMenuState
 import app.it.fast4x.rimusic.ui.components.ShimmerHost
 import app.it.fast4x.rimusic.ui.components.themed.HeaderIconButton
@@ -112,6 +115,7 @@ import app.it.fast4x.rimusic.ui.items.PlaylistItemPlaceholder
 import app.it.fast4x.rimusic.ui.items.SongItem
 import app.it.fast4x.rimusic.ui.items.SongItemPlaceholder
 import app.it.fast4x.rimusic.ui.items.VideoItem
+import app.it.fast4x.rimusic.ui.screens.find.FindScreen
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.px
@@ -356,6 +360,7 @@ fun HomeQuickPicks(
     onMoodClick: (mood: Innertube.Mood.Item) -> Unit,
     onSettingsClick: () -> Unit
 ) {
+    var showFindSheet by rememberSaveable { mutableStateOf(false) }
     val binder = LocalPlayerServiceBinder.current
     val menuState = LocalMenuState.current
     val windowInsets = LocalPlayerAwareWindowInsets.current
@@ -690,7 +695,10 @@ fun HomeQuickPicks(
         clickedItem: YtmHomeSectionItem
     ) {
         val queuedSongs = items.mapNotNull { sectionItem ->
-            sectionItem.asQuickPickSong()?.let { song -> sectionItem to song.asMediaItem }
+            sectionItem.asQuickPickSong()?.let { song ->
+                val resolvedSong = preferredCachedSong(song)
+                sectionItem to resolvedSong.asMediaItem
+            }
         }
         if (queuedSongs.isEmpty()) return
 
@@ -1275,6 +1283,19 @@ fun HomeQuickPicks(
                                         tint = colorPalette().accent
                                     )
                                 }
+                            }
+
+                            IconButton(
+                                onClick = {
+                                    showFindSheet = true
+                                },
+                                modifier = Modifier.size(24.dp)
+                            ) {
+                                Icon(
+                                    painter = painterResource(R.drawable.equalizer),
+                                    contentDescription = "Find song",
+                                    tint = colorPalette().accent
+                                )
                             }
 
                             // Play icon
@@ -2468,6 +2489,25 @@ fun HomeQuickPicks(
                     onClickSettings = onSettingsClick,
                     onClickSearch = onSearchClick
                 )
+
+            if (showFindSheet) {
+                CustomModalBottomSheet(
+                    showSheet = true,
+                    onDismissRequest = { showFindSheet = false },
+                    containerColor = Color.Transparent,
+                    sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp)
+                ) {
+                    FindScreen(
+                        onDismiss = { showFindSheet = false },
+                        onOpenSearch = { query ->
+                            showFindSheet = false
+                            navController.navigate("${NavRoutes.searchResults.name}/${android.net.Uri.encode(query)}")
+                        },
+                        miniPlayer = {}
+                    )
+                }
+            }
         }
     }
 }

@@ -83,6 +83,17 @@ object SpotifyApiConfig {
     }
 }
 
+private fun canvasLog(
+    message: String,
+    type: LogType = LogType.INFO,
+    showLogs: Boolean = false,
+    force: Boolean = false
+) {
+    if (force || showLogs) {
+        SpotifyCanvasState.addLog(message, type)
+    }
+}
+
 private object SpotifySessionApi {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
@@ -126,6 +137,8 @@ private object SpotifySessionApi {
             ?.trim()
             .orEmpty()
     }
+
+    fun extractSpDcFromSessionCookie(sessionCookie: String): String = extractSpDcValue(sessionCookie)
 
     fun clearTokenCache() {
         cachedAccessToken = null
@@ -351,12 +364,12 @@ private object SpotifySessionApi {
         }.toString()
 
         return try {
-            if (showLogs) {
-                SpotifyCanvasState.addLog(
-                    canvasString(R.string.cubic_canvas_matcher_api_url, SpotifyApiConfig.MATCH_API),
-                    LogType.INFO
-                )
-            }
+            canvasLog(
+                message = canvasString(R.string.cubic_canvas_matcher_api_url, SpotifyApiConfig.MATCH_API),
+                type = LogType.INFO,
+                showLogs = showLogs,
+                force = true
+            )
 
             val response = client.newCall(
                 Request.Builder()
@@ -371,21 +384,26 @@ private object SpotifySessionApi {
             ).execute()
 
             if (!response.isSuccessful) {
-                if (showLogs) {
-                    val errorBody = response.body?.use { it.string() }.orEmpty().take(220)
-                    SpotifyCanvasState.addLog(
-                        canvasString(R.string.cubic_canvas_matcher_api_http, response.code, errorBody),
-                        LogType.WARNING
-                    )
-                }
+                val errorBody = response.body?.use { it.string() }.orEmpty().take(220)
+                canvasLog(
+                    message = canvasString(R.string.cubic_canvas_matcher_api_http, response.code, errorBody),
+                    type = LogType.WARNING,
+                    showLogs = showLogs,
+                    force = true
+                )
                 return Pair(null, null)
             }
 
             val json = response.body?.use { it.string() } ?: return Pair(null, null)
             val root = JSONObject(json)
             val searchQuery = root.optString("searchQuery")
-            if (showLogs && searchQuery.isNotBlank()) {
-                SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_search_query, searchQuery), LogType.INFO)
+            if (searchQuery.isNotBlank()) {
+                canvasLog(
+                    message = canvasString(R.string.cubic_canvas_search_query, searchQuery),
+                    type = LogType.INFO,
+                    showLogs = showLogs,
+                    force = true
+                )
             }
 
             val tracks = root.optJSONArray("tracks") ?: return Pair(null, null)
@@ -413,20 +431,22 @@ private object SpotifySessionApi {
                 }
             }
 
-            if (showLogs && !bestTrackId.isNullOrBlank()) {
-                SpotifyCanvasState.addLog(
-                    canvasString(R.string.cubic_canvas_track_id_found_matcher),
-                    LogType.SUCCESS
+            if (!bestTrackId.isNullOrBlank()) {
+                canvasLog(
+                    message = canvasString(R.string.cubic_canvas_track_id_found_matcher),
+                    type = LogType.SUCCESS,
+                    showLogs = showLogs,
+                    force = true
                 )
             }
             Pair(bestTrackId, bestScore.takeIf { it > 0.0 })
         } catch (e: Exception) {
-            if (showLogs) {
-                SpotifyCanvasState.addLog(
-                    canvasString(R.string.cubic_canvas_matcher_api_failed, e.message ?: ""),
-                    LogType.WARNING
-                )
-            }
+            canvasLog(
+                message = canvasString(R.string.cubic_canvas_matcher_api_failed, e.message ?: ""),
+                type = LogType.WARNING,
+                showLogs = showLogs,
+                force = true
+            )
             Pair(null, null)
         }
     }
@@ -701,10 +721,44 @@ fun SpotifyCanvasWorker() {
     }
 
     LaunchedEffect(isCanvasEnabled) {
-        if (!isCanvasEnabled || appRunningInBackground) {
+        if (!isCanvasEnabled) {
             SpotifyCanvasState.clearAll()
             CanvasPlayerManager.stopAndClear()
             SpotifyApiConfig.clearAllCache()
+        }
+    }
+
+    LaunchedEffect(appRunningInBackground, isCanvasEnabled, displayedMediaItem?.mediaId) {
+        if (!isCanvasEnabled) return@LaunchedEffect
+        val mediaItem = displayedMediaItem ?: return@LaunchedEffect
+        val mediaId = mediaItem.mediaId
+
+        if (appRunningInBackground) {
+            SpotifyCanvasState.isPlaying = false
+            CanvasPlayerManager.updatePlayState(false)
+            return@LaunchedEffect
+        }
+
+        val metadata = resolveCanvasMetadata(
+            mediaId = mediaId,
+            title = mediaItem.mediaMetadata.title?.toString().orEmpty(),
+            artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
+        )
+        val title = metadata.first
+        val artist = metadata.second
+        if (title.isBlank() || artist.isBlank()) return@LaunchedEffect
+
+        if (SpotifyCanvasState.currentMediaItemId == mediaId && SpotifyCanvasState.currentCanvasUrl != null) {
+            val shouldPlay = binder.player.playWhenReady && binder.player.playbackState == Player.STATE_READY
+            SpotifyCanvasState.isPlaying = shouldPlay
+            CanvasPlayerManager.updatePlayState(shouldPlay)
+            return@LaunchedEffect
+        }
+
+        SpotifyCanvasState.clearForNewSong(mediaId, title, artist)
+        SpotifyCanvasState.markFetchAttempted()
+        launch(Dispatchers.IO) {
+            fetchCanvasForSong(context, title, artist, showLogs, mediaId)
         }
     }
 
@@ -735,14 +789,14 @@ fun SpotifyCanvasWorker() {
         }
     }
 
-    LaunchedEffect(displayedMediaItem?.mediaId, displayedMediaItem?.mediaMetadata?.title, displayedMediaItem?.mediaMetadata?.artist, isCanvasEnabled, appRunningInBackground) {
+    LaunchedEffect(binder.player, isCanvasEnabled, appRunningInBackground) {
         if (!isCanvasEnabled || appRunningInBackground) return@LaunchedEffect
 
         snapshotFlow {
             Triple(
-                displayedMediaItem?.mediaId,
-                displayedMediaItem?.mediaMetadata?.title?.toString().orEmpty(),
-                displayedMediaItem?.mediaMetadata?.artist?.toString().orEmpty()
+                binder.player.currentMediaItem?.mediaId,
+                binder.player.mediaMetadata.title?.toString().orEmpty(),
+                binder.player.mediaMetadata.artist?.toString().orEmpty()
             )
         }.collect { (mediaId, title, artist) ->
             if (mediaId == null || appRunningInBackground) return@collect
@@ -781,8 +835,8 @@ fun SpotifyCanvasWorker() {
             Pair(binder.player.playbackState, binder.player.playWhenReady)
         }.collect { (playbackState, playWhenReady) ->
             if (appRunningInBackground) {
-                CanvasPlayerManager.stopAndClear()
                 SpotifyCanvasState.isPlaying = false
+                CanvasPlayerManager.updatePlayState(false)
                 return@collect
             }
             val mediaId = displayedMediaItem?.mediaId
@@ -832,12 +886,12 @@ private suspend fun fetchCanvasForSong(
     SpotifyCanvasState.isLoading = true
 
     try {
-        if (showLogs) {
-            SpotifyCanvasState.addLog(
-                canvasString(R.string.cubic_canvas_now_playing_metadata, artist, title),
-                LogType.INFO
-            )
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_now_playing_metadata, artist, title),
+            type = LogType.INFO,
+            showLogs = showLogs,
+            force = true
+        )
 
         val canvasUrl = withTimeoutOrNull(15_000L) {
             withContext(Dispatchers.IO) {
@@ -884,13 +938,17 @@ private fun fetchSpotifyCanvas(
     val cacheDir = File(context.cacheDir, "spotify_canvas").also { it.mkdirs() }
     val sessionCookie = getSpotifyCookieHeader(context)
         ?: renewSpotifySession(context).takeIf { it }?.let { getSpotifyCookieHeader(context) }
-    val spDc = getSpDc(context)
+    val spDc = getSpDc(context)?.takeIf { it.isNotBlank() }
     if (sessionCookie.isNullOrBlank()) {
-        if (showLogs) {
-            SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_cookies_required), LogType.WARNING)
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_cookies_required),
+            type = LogType.WARNING,
+            showLogs = showLogs,
+            force = true
+        )
         return null
     }
+    val resolvedSpDc = spDc ?: SpotifySessionApi.extractSpDcFromSessionCookie(sessionCookie)
 
     val client = OkHttpClient.Builder()
         .cache(Cache(cacheDir, 20 * 1024 * 1024))
@@ -900,9 +958,12 @@ private fun fetchSpotifyCanvas(
         .build()
 
     return try {
-        if (showLogs) {
-            SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_searching_track_id), LogType.LOADING)
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_searching_track_id),
+            type = LogType.LOADING,
+            showLogs = showLogs,
+            force = true
+        )
 
         var authToken: String? = null
         var (trackId, matchScore) = SpotifySessionApi.searchTrackIdViaMatcherApi(
@@ -918,12 +979,12 @@ private fun fetchSpotifyCanvas(
                 (matchScore != null && matchScore < SpotifyApiConfig.MIN_MATCH_SCORE)
 
         if (shouldFallbackToSpotifySearch) {
-            if (showLogs) {
-                SpotifyCanvasState.addLog(
-                    canvasString(R.string.cubic_canvas_searching_track_id),
-                    LogType.INFO
-                )
-            }
+            canvasLog(
+                message = canvasString(R.string.cubic_canvas_searching_track_id),
+                type = LogType.INFO,
+                showLogs = showLogs,
+                force = true
+            )
 
             authToken = SpotifySessionApi.getSpotifyTokenWithTotp(
                 client = client,
@@ -952,9 +1013,12 @@ private fun fetchSpotifyCanvas(
         }
 
         if (trackId == null) {
-            if (showLogs) {
-                SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_no_matching_track), LogType.WARNING)
-            }
+            canvasLog(
+                message = canvasString(R.string.cubic_canvas_no_matching_track),
+                type = LogType.WARNING,
+                showLogs = showLogs,
+                force = true
+            )
             return null
         }
 
@@ -963,9 +1027,12 @@ private fun fetchSpotifyCanvas(
         }
 
         SpotifyCanvasState.currentTrackId = trackId
-        if (showLogs) {
-            SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_using_track_id, trackId), LogType.SUCCESS)
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_using_track_id, trackId),
+            type = LogType.SUCCESS,
+            showLogs = showLogs,
+            force = true
+        )
 
         SpotifyApiConfig.getCanvasFromCache(trackId)?.let { cached ->
             if (showLogs) {
@@ -975,14 +1042,17 @@ private fun fetchSpotifyCanvas(
         }
 
         val encodedTrackId = URLEncoder.encode(trackId, "UTF-8")
-        if (showLogs) {
-            SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_requesting_track, trackId), LogType.LOADING)
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_requesting_track, trackId),
+            type = LogType.LOADING,
+            showLogs = showLogs,
+            force = true
+        )
         val canvasResponse = client.newCall(
             Request.Builder()
                 .url("${SpotifyApiConfig.CANVAS_API}?trackId=$encodedTrackId")
                 .header("Accept", "application/json")
-                .header("X-Sp-Dc", spDc.orEmpty())
+                .header("X-Sp-Dc", resolvedSpDc)
                 .header("Cookie", SpotifySessionApi.buildSessionCookieHeader(sessionCookie))
                 .apply {
                     authToken?.takeIf { it.isNotBlank() }?.let {
@@ -993,9 +1063,12 @@ private fun fetchSpotifyCanvas(
         ).execute()
 
         if (!canvasResponse.isSuccessful) {
-            if (showLogs) {
-                SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_api_error, canvasResponse.code), LogType.WARNING)
-            }
+            canvasLog(
+                message = canvasString(R.string.cubic_canvas_api_error, canvasResponse.code),
+                type = LogType.WARNING,
+                showLogs = showLogs,
+                force = true
+            )
             return null
         }
 
@@ -1003,20 +1076,29 @@ private fun fetchSpotifyCanvas(
         val canvasUrl = parseCanvasUrl(canvasJson)
         if (canvasUrl != null) {
             SpotifyApiConfig.cacheCanvas(trackId, canvasUrl)
-            if (showLogs) {
-                SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_found_track, trackId.take(8)), LogType.SUCCESS)
-            }
+            canvasLog(
+                message = canvasString(R.string.cubic_canvas_found_track, trackId.take(8)),
+                type = LogType.SUCCESS,
+                showLogs = showLogs,
+                force = true
+            )
         }
         canvasUrl
     } catch (e: IOException) {
-        if (showLogs) {
-            SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_network_error, e.message ?: ""), LogType.ERROR)
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_network_error, e.message ?: ""),
+            type = LogType.ERROR,
+            showLogs = showLogs,
+            force = true
+        )
         null
     } catch (e: Exception) {
-        if (showLogs) {
-            SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_unexpected_error, e.message ?: ""), LogType.ERROR)
-        }
+        canvasLog(
+            message = canvasString(R.string.cubic_canvas_unexpected_error, e.message ?: ""),
+            type = LogType.ERROR,
+            showLogs = showLogs,
+            force = true
+        )
         null
     }
 }

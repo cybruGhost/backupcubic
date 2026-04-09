@@ -65,6 +65,7 @@ import app.it.fast4x.rimusic.ui.screens.playlist.PlaylistScreen
 import app.it.fast4x.rimusic.ui.screens.podcast.PodcastScreen
 import app.it.fast4x.rimusic.ui.screens.rewind.RewindScreen
 import app.it.fast4x.rimusic.ui.screens.donate.DonateScreen
+import app.it.fast4x.rimusic.ui.screens.find.FindScreen
 import app.it.fast4x.rimusic.ui.screens.search.SearchScreen
 import app.it.fast4x.rimusic.ui.screens.searchresult.SearchResultScreen
 import app.it.fast4x.rimusic.ui.screens.settings.SettingsScreen
@@ -300,6 +301,18 @@ fun AppNavigation(
                 },
                 onDismiss = { navController.popBackStack() }
             )
+        }
+
+        composable(route = NavRoutes.find.name) {
+            modalBottomSheetPage {
+                FindScreen(
+                    onDismiss = { navController.popBackStack() },
+                    onOpenSearch = { query ->
+                        navController.navigate("${NavRoutes.searchResults.name}/${Uri.encode(query)}")
+                    },
+                    miniPlayer = {}
+                )
+            }
         }
 
         composable(route = NavRoutes.statistics.name) {
