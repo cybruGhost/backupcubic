@@ -19,16 +19,18 @@ import kotlin.coroutines.coroutineContext
 import kotlin.math.max
 
 class AudioRecorder(private val scope: CoroutineScope) {
+
     private var instance: AudioRecord? = null
     private var job: Job? = null
     private val mutex = Mutex()
-    private val _active = MutableStateFlow(false)
-    private val _duration = MutableStateFlow(0)
-    private val _buffer = MutableStateFlow(ByteArray(0))
 
-    val active = _active.asStateFlow()
+    private val _active   = MutableStateFlow(false)
+    private val _duration = MutableStateFlow(0)
+    private val _buffer   = MutableStateFlow(ByteArray(0))
+
+    val active   = _active.asStateFlow()
     val duration = _duration.asStateFlow()
-    val buffer = _buffer.asStateFlow()
+    val buffer   = _buffer.asStateFlow()
 
     fun start() {
         scope.launch {
@@ -41,13 +43,10 @@ class AudioRecorder(private val scope: CoroutineScope) {
                         CHANNEL_CONFIG,
                         AUDIO_FORMAT,
                         BUFFER_SIZE
-                    )
-                    instance?.startRecording()
+                    ).also { it.startRecording() }
                     reset(true)
                     job = scope.launch(Dispatchers.IO) { loop() }
-                }.onFailure {
-                    stop()
-                }
+                }.onFailure { stop() }
             }
         }
     }
@@ -57,10 +56,7 @@ class AudioRecorder(private val scope: CoroutineScope) {
             mutex.withLock {
                 if (!_active.value) return@launch
                 job?.cancelAndJoin()
-                runCatching {
-                    instance?.stop()
-                    instance?.release()
-                }
+                runCatching { instance?.stop(); instance?.release() }
                 instance = null
                 reset(false)
             }
@@ -70,20 +66,18 @@ class AudioRecorder(private val scope: CoroutineScope) {
     private suspend fun loop() {
         Process.setThreadPriority(Process.THREAD_PRIORITY_AUDIO)
         runCatching {
-            val result = ByteArrayOutputStream()
+            val out = ByteArrayOutputStream()
             while (coroutineContext.isActive) {
                 val chunk = ByteArray(BUFFER_SIZE)
-                val read = instance?.read(chunk, 0, chunk.size) ?: 0
+                val read  = instance?.read(chunk, 0, chunk.size) ?: 0
                 if (read > 0) {
-                    result.write(chunk, 0, read)
-                    val bytes = result.toByteArray()
+                    out.write(chunk, 0, read)
+                    val bytes = out.toByteArray()
                     _buffer.emit(bytes)
                     _duration.emit(bytes.size / (SAMPLE_RATE * SAMPLE_WIDTH * CHANNEL_COUNT))
                 }
             }
-        }.onFailure {
-            reset(false)
-        }
+        }.onFailure { reset(false) }
     }
 
     private suspend fun reset(active: Boolean) {
@@ -94,13 +88,12 @@ class AudioRecorder(private val scope: CoroutineScope) {
 
     companion object {
         const val SAMPLE_RATE = 16_000
-        private const val CHANNEL_CONFIG = AudioFormat.CHANNEL_IN_MONO
-        private const val AUDIO_FORMAT = AudioFormat.ENCODING_PCM_16BIT
-        private const val CHANNEL_COUNT = 1
-        private const val SAMPLE_WIDTH = 2
-        private const val BUFFER_SIZE_MULTIPLIER = 2
+        private const val CHANNEL_CONFIG  = AudioFormat.CHANNEL_IN_MONO
+        private const val AUDIO_FORMAT    = AudioFormat.ENCODING_PCM_16BIT
+        private const val CHANNEL_COUNT   = 1
+        private const val SAMPLE_WIDTH    = 2  // bytes per 16-bit sample
         private val BUFFER_SIZE = max(
-            AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT) * BUFFER_SIZE_MULTIPLIER,
+            AudioRecord.getMinBufferSize(SAMPLE_RATE, CHANNEL_CONFIG, AUDIO_FORMAT) * 2,
             SAMPLE_RATE * SAMPLE_WIDTH * CHANNEL_COUNT
         )
     }

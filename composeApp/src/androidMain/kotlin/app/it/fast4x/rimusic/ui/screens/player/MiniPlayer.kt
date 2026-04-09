@@ -53,9 +53,11 @@ import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -423,11 +425,43 @@ fun MiniPlayer(
                 contentAlignment = Alignment.Center,
                 modifier = Modifier.height(Dimensions.miniPlayerHeight)
             ) {
-                ImageCacheFactory.Thumbnail(
-                    thumbnailUrl = mediaItem.mediaMetadata.artworkUri?.toString(),
-                    contentScale = ContentScale.FillHeight,
-                    modifier     = Modifier.clip(thumbnailShape()).size(48.dp)
-                )
+                val currentArtwork = mediaItem.mediaMetadata.artworkUri?.toString()
+                val incomingArtwork = crossfadeUiState.incomingMediaItem?.mediaMetadata?.artworkUri?.toString()
+                val crossfadeArtProgress = crossfadeUiState.progress.coerceIn(0f, 1f)
+                val thumbnailShape = thumbnailShape()
+
+                Box(
+                    modifier = Modifier
+                        .clip(thumbnailShape)
+                        .size(48.dp)
+                ) {
+                    ImageCacheFactory.Thumbnail(
+                        thumbnailUrl = currentArtwork,
+                        contentScale = ContentScale.FillHeight,
+                        modifier = Modifier.fillMaxSize()  // Changed from matchParentSize()
+                    )
+                    if (isCrossfading && !incomingArtwork.isNullOrBlank()) {
+                        ImageCacheFactory.Thumbnail(
+                            thumbnailUrl = incomingArtwork,
+                            contentScale = ContentScale.FillHeight,
+                            modifier = Modifier
+                                 .fillMaxSize()  // Changed from matchParentSize()
+                                .drawWithContent {
+                                    val split = size.width * crossfadeArtProgress
+                                    val path = Path().apply {
+                                        moveTo(0f, 0f)
+                                        lineTo(split, 0f)
+                                        lineTo(size.width, size.height)
+                                        lineTo(0f, size.height)
+                                        close()
+                                    }
+                                    clipPath(path) {
+                                        this@drawWithContent.drawContent()
+                                    }
+                                }
+                        )
+                    }
+                }
                 NowPlayingSongIndicator(mediaItem.mediaId, binder.player)
             }
 
