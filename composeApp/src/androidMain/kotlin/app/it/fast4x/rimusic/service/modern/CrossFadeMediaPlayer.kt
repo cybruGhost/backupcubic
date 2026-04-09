@@ -19,9 +19,11 @@ data class CrossfadeUiState(
     val isEnabled: Boolean = false,
     val isActive: Boolean = false,
     val isHighlightActive: Boolean = false,
+    val progress: Float = 0f,
     val displayPosition: Long = 0L,
     val displayDuration: Long = 0L,
     val displayMediaItem: MediaItem? = null,
+    val incomingMediaItem: MediaItem? = null,
 )
 
 @UnstableApi
@@ -34,12 +36,12 @@ class CrossFadeMediaPlayer(
     private val handler = Handler(Looper.getMainLooper())
     private val monitorIntervalMs = 100L
     private val preloadThreshold = 0.72f
-    private val readyTimeoutMs = 2_000L
-    private val crossfadeCompletionGraceMs = 250L
-    private val earlyStartLeadInMs = 1_800L
+    private val readyTimeoutMs = 3_500L
+    private val crossfadeCompletionGraceMs = 400L
+    private val earlyStartLeadInMs = 0L
     private val incomingStartVolumeRatio = 0.05f
     private val outgoingHoldPortion = 0f
-    private val minimumCrossfadeDurationMs = 18_000L
+    private val minimumCrossfadeDurationMs = 2_500L
 
     private var enabled = false
     private var crossfadeDurationMs = 0L
@@ -447,18 +449,33 @@ class CrossFadeMediaPlayer(
             return
         }
 
-        val displayPlayer = if (isCrossfading) nextPlayer else currentPlayer
-        val fallbackPlayer = if (isCrossfading) currentPlayer else nextPlayer
-        val rawDisplayMediaItem = displayPlayer.currentMediaItem ?: fallbackPlayer.currentMediaItem
-        val normalizedDisplayMediaItem = normalizeDisplayMediaItem(rawDisplayMediaItem)
+        val previousDisplayItem = _uiState.value.displayMediaItem
+        val normalizedCurrentMediaItem = normalizeDisplayMediaItem(currentPlayer.currentMediaItem)
+        val normalizedIncomingMediaItem = if (isCrossfading) {
+            normalizeDisplayMediaItem(nextPlayer.currentMediaItem)
+        } else {
+            null
+        }
+
+        val displayPlayer = when {
+            isCrossfading && normalizedIncomingMediaItem != null -> nextPlayer
+            else -> currentPlayer
+        }
+        val fallbackPlayer = if (displayPlayer === currentPlayer) nextPlayer else currentPlayer
+
+        val normalizedDisplayMediaItem = when {
+            isCrossfading -> normalizedIncomingMediaItem
+                ?: previousDisplayItem
+                ?: normalizedCurrentMediaItem
+            else -> normalizedCurrentMediaItem ?: previousDisplayItem
+        }
+
         val duration = (displayPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L }
             ?: fallbackPlayer.duration.takeIf { it != C.TIME_UNSET && it > 0L }
             ?: if (normalizedDisplayMediaItem != null) 1L else 0L)
         val position = displayPlayer.currentPosition
             .coerceAtLeast(0L)
             .coerceIn(0L, duration.coerceAtLeast(1L))
-
-        val previousDisplayItem = _uiState.value.displayMediaItem
         val stableDisplayMediaItem = if (
             previousDisplayItem != null &&
             normalizedDisplayMediaItem != null &&
@@ -472,9 +489,15 @@ class CrossFadeMediaPlayer(
             isEnabled = true,
             isActive = isCrossfading,
             isHighlightActive = isCrossfading && crossfadeElapsedMs <= activeCrossfadeDurationMs.coerceAtMost(10_000L),
+            progress = if (isCrossfading && activeCrossfadeDurationMs > 0L) {
+                (crossfadeElapsedMs.toFloat() / activeCrossfadeDurationMs.toFloat()).coerceIn(0f, 1f)
+            } else {
+                0f
+            },
             displayPosition = position,
             displayDuration = duration,
             displayMediaItem = stableDisplayMediaItem,
+            incomingMediaItem = normalizedIncomingMediaItem,
         )
         if (previousDisplayItem?.mediaId != stableDisplayMediaItem?.mediaId) {
             onDisplayItemChanged?.invoke(stableDisplayMediaItem)

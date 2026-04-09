@@ -1,13 +1,14 @@
 package app.it.fast4x.rimusic.recognition
 
+import android.util.Log
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
-import java.security.MessageDigest
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.security.MessageDigest
 import java.util.Calendar
 import java.util.Locale
 import java.util.UUID
@@ -23,6 +24,7 @@ data class RecognizedTrack(
 )
 
 class ShazamRepository {
+
     private val client by lazy {
         OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
@@ -34,72 +36,137 @@ class ShazamRepository {
     private val signature by lazy { ShazamSignature() }
 
     suspend fun identify(duration: Int, data: ByteArray): RecognizedTrack? {
-        val timestamp = Calendar.getInstance().timeInMillis.toInt()
-        val requestName = Random(timestamp).nextLong().toString()
-        val signatureValue = runCatching {
-            signature.safeCreate(data.toShortArray())
+        if (data.isEmpty()) return null
+
+        val shorts = data.toShortArray()
+        val signatureUri = runCatching {
+            signature.safeCreate(shorts)
+        }.onFailure {
+            Log.e(TAG, "Signature generation failed", it)
         }.getOrNull() ?: return null
 
-        val requestBody = JSONObject().apply {
-            put(
-                "geolocation",
-                JSONObject().apply {
-                    put("altitude", Random(timestamp).nextDouble() * 400 + 100)
-                    put("latitude", Random(timestamp).nextDouble() * 180 - 90)
-                    put("longitude", Random(timestamp).nextDouble() * 360 - 180)
-                }
-            )
-            put(
-                "signature",
-                JSONObject().apply {
-                    put("samplems", duration * 1000)
-                    put("timestamp", timestamp)
-                    put("uri", signatureValue)
-                }
-            )
-            put("timestamp", timestamp)
-            put("timezone", TIMEZONES.random())
-        }.toString()
+        val sampleMs = duration * 1000
 
-        val url =
-            "${BASE_URL}discovery/v5/en/US/android/-/tag/${uuidFromNamespace(NAMESPACE_DNS, requestName)}/${uuidFromNamespace(NAMESPACE_URL, requestName)}" +
+        // Try proxy first (rate-limited to 10 req/min, but faster and no CORS)
+        identifyViaProxy(sampleMs, signatureUri)?.let { return it }
+        // Fallback to direct Shazam endpoint
+        return identifyDirect(sampleMs, signatureUri)
+    }
+
+    // ── Proxy (preferred) ────────────────────────────────────────────────────
+    private fun identifyViaProxy(sampleMs: Int, signatureUri: String): RecognizedTrack? =
+        runCatching {
+            val body = JSONObject().apply {
+                put("signatureUri", signatureUri)
+                put("sampleMs", sampleMs)
+            }.toString()
+
+            val response = client.newCall(
+                Request.Builder()
+                    .url(PROXY_URL)
+                    .post(body.toRequestBody(JSON))
+                    .header("Accept", "application/json")
+                    .header("Content-Type", "application/json")
+                    .header("apikey", PROXY_API_KEY)
+                    .build()
+            ).execute()
+
+            when (response.code) {
+                429 -> {
+                    Log.w(TAG, "Proxy rate-limited — trying direct")
+                    return null
+                }
+                !in 200..299 -> {
+                    Log.w(TAG, "Proxy failed code=${response.code}")
+                    return null
+                }
+            }
+
+            val responseBody = response.body?.use { it.string() } ?: return null
+            parseTrack(responseBody)
+        }.onFailure {
+            Log.w(TAG, "Proxy request exception", it)
+        }.getOrNull()
+
+    // ── Direct Shazam endpoint (fallback) ────────────────────────────────────
+    private fun identifyDirect(sampleMs: Int, signatureUri: String): RecognizedTrack? =
+        runCatching {
+            val timestamp = Calendar.getInstance().timeInMillis.toInt()
+            val reqName   = Random(timestamp).nextLong().toString()
+
+            val body = JSONObject().apply {
+                put("geolocation", JSONObject().apply {
+                    put("altitude",  Random(timestamp).nextDouble() * 400 + 100)
+                    put("latitude",  Random(timestamp).nextDouble() * 180 - 90)
+                    put("longitude", Random(timestamp).nextDouble() * 360 - 180)
+                })
+                put("signature", JSONObject().apply {
+                    put("samplems",  sampleMs)
+                    put("timestamp", timestamp)
+                    put("uri",       signatureUri)
+                })
+                put("timestamp", timestamp)
+                put("timezone",  TIMEZONES.random())
+            }.toString()
+
+            val uuid1 = uuidFromNamespace(NS_DNS, reqName)
+            val uuid2 = uuidFromNamespace(NS_URL, reqName)
+            val url = "${BASE_URL}discovery/v5/en/US/android/-/tag/$uuid1/$uuid2" +
                 "?sync=true&webv3=true&sampling=true&connected=&shazamapiversion=v3&sharehub=true&video=v3"
 
-        val response = client.newCall(
-            Request.Builder()
-                .url(url)
-                .post(requestBody.toRequestBody("application/json".toMediaType()))
-                .header("User-Agent", USER_AGENTS.random())
-                .header("Content-Language", "en_US")
-                .header("Content-Type", "application/json")
-                .build()
-        ).execute()
+            val response = client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .post(body.toRequestBody(JSON))
+                    .header("User-Agent", USER_AGENTS.random())
+                    .header("Content-Language", "en_US")
+                    .header("Content-Type", "application/json")
+                    .build()
+            ).execute()
 
-        if (!response.isSuccessful) return null
+            if (!response.isSuccessful) {
+                Log.w(TAG, "Direct request failed code=${response.code}")
+                return null
+            }
 
-        val body = response.body?.use { it.string() } ?: return null
-        return parseTrack(body)
-    }
+            val responseBody = response.body?.use { it.string() } ?: return null
+            parseTrack(responseBody)
+        }.onFailure {
+            Log.w(TAG, "Direct request exception", it)
+        }.getOrNull()
 
+    // ── Response parser ───────────────────────────────────────────────────────
     private fun parseTrack(json: String): RecognizedTrack? {
-        val root = JSONObject(json)
-        val track = root.optJSONObject("track") ?: return null
-        val title = track.optString("title").trim()
-        val subtitle = track.optString("subtitle").trim()
-        if (title.isBlank() || subtitle.isBlank()) return null
+        return try {
+            val root    = JSONObject(json)
+            val matches = root.optJSONArray("matches")
+            if (matches != null && matches.length() == 0) return null
 
-        val images = track.optJSONObject("images")
-        val genres = track.optJSONObject("genres")
-        return RecognizedTrack(
-            title = title,
-            subtitle = subtitle,
-            coverUrl = images?.optString("coverarthq").takeUnless { it.isNullOrBlank() }
-                ?: images?.optString("coverart").takeUnless { it.isNullOrBlank() },
-            backgroundUrl = images?.optString("background").takeUnless { it.isNullOrBlank() },
-            genre = genres?.optString("primary").takeUnless { it.isNullOrBlank() }
-        )
+            val track = root.optJSONObject("track") ?: return null
+            if (track.length() == 0) return null
+
+            val title    = track.optString("title").trim()
+            val subtitle = track.optString("subtitle").trim()
+            if (title.isBlank() || subtitle.isBlank()) return null
+
+            val images = track.optJSONObject("images")
+            val genres = track.optJSONObject("genres")
+
+            RecognizedTrack(
+                title    = title,
+                subtitle = subtitle,
+                coverUrl = images?.optString("coverarthq").takeUnless { it.isNullOrBlank() }
+                    ?: images?.optString("coverart").takeUnless { it.isNullOrBlank() },
+                backgroundUrl = images?.optString("background").takeUnless { it.isNullOrBlank() },
+                genre    = genres?.optString("primary").takeUnless { it.isNullOrBlank() }
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to parse track JSON", e)
+            null
+        }
     }
 
+    // ── Helpers ───────────────────────────────────────────────────────────────
     private fun ByteArray.toShortArray(): ShortArray {
         val shorts = ShortArray(size / 2)
         ByteBuffer.wrap(this).order(ByteOrder.LITTLE_ENDIAN).asShortBuffer().get(shorts)
@@ -107,26 +174,32 @@ class ShazamRepository {
     }
 
     private fun uuidFromNamespace(namespace: UUID, value: String): String {
-        val namespaceBytes = ByteBuffer.allocate(16)
+        val nsBytes = ByteBuffer.allocate(16)
             .putLong(namespace.mostSignificantBits)
             .putLong(namespace.leastSignificantBits)
             .array()
         val digest = MessageDigest.getInstance("SHA-1").apply {
-            update(namespaceBytes)
+            update(nsBytes)
             update(value.toByteArray())
         }.digest().copyOf(16)
-
         digest[6] = ((digest[6].toInt() and 0x0F) or 0x50).toByte()
         digest[8] = ((digest[8].toInt() and 0x3F) or 0x80).toByte()
-
-        val buffer = ByteBuffer.wrap(digest)
-        return UUID(buffer.long, buffer.long).toString()
+        val buf = ByteBuffer.wrap(digest)
+        return UUID(buf.long, buf.long).toString()
     }
 
     companion object {
+        private const val TAG      = "ShazamRepository"
         private const val BASE_URL = "https://amp.shazam.com/"
-        private val NAMESPACE_DNS = UUID.fromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
-        private val NAMESPACE_URL = UUID.fromString("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
+        private const val PROXY_URL =
+            "https://xxfvagzucmiinlydcnhd.supabase.co/functions/v1/shazam-proxy"
+        private const val PROXY_API_KEY =
+            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4ZnZhZ3p1Y21paW5seWRjbmhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MzQ2MjAsImV4cCI6MjA5MTMxMDYyMH0.-MOJ_ygNoiiYDXXR-J9c-HsH5GLw49aJG6rb12QxIUU"
+
+        private val JSON      = "application/json".toMediaType()
+        private val NS_DNS    = UUID.fromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+        private val NS_URL    = UUID.fromString("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
+
         private val USER_AGENTS = listOf(
             "Dalvik/2.1.0 (Linux; U; Android 6.0.1; SM-G920F Build/MMB29K)",
             "Dalvik/2.1.0 (Linux; U; Android 5.0.2; VS980 4G Build/LRX22G)"
