@@ -974,12 +974,12 @@ fun Lyrics(
 
         if (showShareCardPreview) {
             val configuration = LocalConfiguration.current
-            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.78f else 0.84f)
-            val previewCardScale = if (isLandscape) 0.76f else 0.82f
+            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.80f else 0.86f)
+            val previewCardScale = if (isLandscape) 0.9f else 0.96f
             DefaultDialog(
                 onDismiss = { showShareCardPreview = false },
                 modifier = Modifier
-                    .fillMaxWidth(if (isLandscape) 0.74f else 0.90f)
+                    .fillMaxWidth(if (isLandscape) 0.86f else 0.95f)
                     .heightIn(max = previewMaxHeight)
                     .verticalScroll(rememberScrollState()),
                 horizontalAlignment = Alignment.Start
@@ -1005,8 +1005,8 @@ fun Lyrics(
                         artworkUrl = mediaMetadata.artworkUri?.toString(),
                         deeplinkUrl = shareDeeplink,
                         modifier = Modifier
-                            .fillMaxWidth(if (isLandscape) 0.78f else 0.86f)
-                            .heightIn(max = if (isLandscape) 255.dp else 330.dp)
+                            .fillMaxWidth(if (isLandscape) 0.92f else 0.97f)
+                            .heightIn(max = if (isLandscape) 286.dp else 356.dp)
                             .graphicsLayer {
                                 scaleX = previewCardScale
                                 scaleY = previewCardScale

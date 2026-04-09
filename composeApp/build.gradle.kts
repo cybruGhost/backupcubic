@@ -241,6 +241,8 @@ android {
         kotlin.srcDir("src/$name/kotlin")
     }
 
+    sourceSets.getByName("main").jniLibs.srcDir("src/androidMain/jniLibs")
+
     compileOptions {
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_21

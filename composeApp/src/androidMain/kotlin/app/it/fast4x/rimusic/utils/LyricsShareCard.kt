@@ -159,10 +159,11 @@ suspend fun shareLyricsCard(
         canvas.translate(textStartX, artworkTop + 6f)
         titleLayout.draw(canvas)
         canvas.restore()
+        val artistBaseline = artworkTop + 6f + titleLayout.height + 22f
         canvas.drawText(
             cleanPrefix(artist).ifBlank { "Unknown artist" },
             textStartX,
-            artworkTop + 114f,
+            artistBaseline,
             subMetaPaint
         )
 
