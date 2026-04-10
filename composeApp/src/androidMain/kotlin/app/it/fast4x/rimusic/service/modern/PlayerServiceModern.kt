@@ -217,7 +217,8 @@ import app.it.fast4x.rimusic.repository.QuickPicksRepository
 import android.os.Binder as AndroidBinder
 import androidx.compose.ui.util.fastMap
 import app.it.fast4x.rimusic.utils.isDiscordPresenceEnabledKey
-
+import android.app.Notification
+import android.app.NotificationChannel
 
 const val LOCAL_KEY_PREFIX = "local:"
 
@@ -263,6 +264,8 @@ class PlayerServiceModern : MediaLibraryService(),
     private var lastSmartMessageMs = 0L
     private var lastAutoSourceRecoveryMediaId: String? = null
     private var lastAutoSourceRecoveryMs = 0L
+    private var lastExtractorRecoveryMediaId: String? = null
+    private var lastExtractorRecoveryMs = 0L
     private var lastEndedRecoveryMediaId: String? = null
     private var lastEndedRecoveryMs = 0L
     private var lastWidgetUpdateMs = 0L
@@ -311,6 +314,31 @@ class PlayerServiceModern : MediaLibraryService(),
         super.onCreate()
 
         notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+
+            // ✅ ADD THIS RIGHT HERE AFTER notificationManager initialization
+    if (isAtLeastAndroid8) {
+        val channel = NotificationChannel(
+            NotificationChannelId,
+            "Music Playback",
+            NotificationManager.IMPORTANCE_LOW
+        ).apply {
+            description = "Shows currently playing music"
+            setShowBadge(false)
+            lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+        }
+        notificationManager?.createNotificationChannel(channel)
+        
+        // Also create sleep timer channel
+        val sleepChannel = NotificationChannel(
+            SleepTimerNotificationChannelId,
+            "Sleep Timer",
+            NotificationManager.IMPORTANCE_DEFAULT
+        ).apply {
+            description = "Sleep timer notifications"
+            setShowBadge(false)
+        }
+        notificationManager?.createNotificationChannel(sleepChannel)
+    }
 
         // Enable Android Auto if disabled, REQUIRE ENABLING DEV MODE IN ANDROID AUTO
         try {
@@ -498,7 +526,13 @@ class PlayerServiceModern : MediaLibraryService(),
                         "Recovered from secondary crossfade player error for mediaId=%s",
                         crossfadeOverlayPlayer.currentMediaItem?.mediaId
                     )
-                    Toaster.e("Crossfade hit a playback issue. Retrying on the current song.")
+                    val fallbackMediaItem = displayedMediaItem() ?: player.currentMediaItem
+                    currentMediaItem.value = fallbackMediaItem
+                    requestArtworkPlaybackSurfaceRefresh(fallbackMediaItem, minIntervalMs = 0L)
+                    if (::stablePlayerBridge.isInitialized) {
+                        stablePlayerBridge.refreshState()
+                    }
+                    showSmartMessage("Incoming song had a source issue. Finishing the current song smoothly.")
                 }
             }
         })
@@ -955,6 +989,7 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             error.errorCode == PlaybackException.ERROR_CODE_DECODING_FAILED ||
                 error.errorCodeName.contains("DECOD", ignoreCase = true) ||
                 deepestCause?.javaClass?.simpleName?.contains("Codec", ignoreCase = true) == true
+        val isExtractorDriftIssue = isExtractorDriftError(error, deepestCause)
 
         Timber.e(
             error,
@@ -989,6 +1024,48 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
             } else {
                 player.stop()
                 Toaster.e("Playback codec failed. Try retrying with another source.")
+            }
+            return
+        }
+
+        if (isExtractorDriftIssue) {
+            waitingForNetwork.value = false
+            val now = SystemClock.elapsedRealtime()
+            if (
+                currentMediaId.isNotBlank() &&
+                lastExtractorRecoveryMediaId != currentMediaId &&
+                now - lastExtractorRecoveryMs > 5_000L
+            ) {
+                lastExtractorRecoveryMediaId = currentMediaId
+                lastExtractorRecoveryMs = now
+                Timber.w(
+                    error,
+                    "Extractor/source drift detected for mediaId=%s. Performing one gentle retry.",
+                    currentMediaId
+                )
+                showSmartMessage("Source changed for this song. Retrying once.")
+                player.pause()
+                player.prepare()
+                handler.postDelayed(
+                    {
+                        if (player.currentMediaItem?.mediaId == currentMediaId) {
+                            player.play()
+                        }
+                    },
+                    500L
+                )
+                return
+            }
+
+            if (player.hasNextMediaItem()) {
+                val prev = player.currentMediaItem
+                player.playNext()
+                showSmartMessage(
+                    "Source failed for ${prev?.mediaMetadata?.title ?: "this song"}. Skipped to the next track."
+                )
+            } else {
+                player.pause()
+                Toaster.e("This song source failed. It looks like an extractor/source issue, not your internet.")
             }
             return
         }
@@ -1727,6 +1804,34 @@ override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
         if (now - lastSmartMessageMs < 1_500L) return
         lastSmartMessageMs = now
         Toaster.i(message)
+    }
+
+    private fun isExtractorDriftError(
+        error: PlaybackException,
+        deepestCause: Throwable?
+    ): Boolean {
+        val errorText = buildString {
+            append(error.errorCodeName)
+            append(' ')
+            append(error.message.orEmpty())
+            append(' ')
+            append(error.cause?.javaClass?.name.orEmpty())
+            append(' ')
+            append(error.cause?.message.orEmpty())
+            append(' ')
+            append(deepestCause?.javaClass?.name.orEmpty())
+            append(' ')
+            append(deepestCause?.message.orEmpty())
+        }
+
+        return error.errorCodeName.contains("PARSING", ignoreCase = true) ||
+            error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_MALFORMED ||
+            error.errorCode == PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED ||
+            errorText.contains("JSON response is too short", ignoreCase = true) ||
+            errorText.contains("ParsingException", ignoreCase = true) ||
+            errorText.contains("NewPipe", ignoreCase = true) ||
+            errorText.contains("extractor", ignoreCase = true) ||
+            errorText.contains("Unable to connect to the server", ignoreCase = true)
     }
 
     @MainThread

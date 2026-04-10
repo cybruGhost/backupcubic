@@ -1,5 +1,8 @@
 package app.it.fast4x.rimusic.extensions.youtubelogin
 
+import app.cubic.android.core.network.NetworkQualityHelper
+import app.cubic.android.core.network.enum.NetworkQuality
+import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.appVisibilityInBackground
 import kotlinx.coroutines.CancellationException
@@ -31,7 +34,7 @@ object YtmSessionApi {
     private val httpClient = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
         .connectTimeout(15, TimeUnit.SECONDS)
-        .readTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS)
         .build()
     private val activeCalls = Collections.synchronizedSet(mutableSetOf<Call>())
@@ -159,8 +162,12 @@ object YtmSessionApi {
             val subtitle = item.optString("subtitle")
             YtmPlaylist(
                 playlistId = item.optString("playlistId"),
+                browseId = item.optString("browseId"),
+                rawPlaylistId = item.optString("rawPlaylistId"),
                 title = item.optString("title"),
+                name = item.optString("name"),
                 thumbnail = item.optString("thumbnail"),
+                thumbnailUrl = item.optString("thumbnailUrl"),
                 songCount = item.optString("songCount").ifBlank { extractSongCount(subtitle) },
                 subtitle = subtitle
             )
@@ -178,18 +185,30 @@ object YtmSessionApi {
             val items = section.optJSONArray("items") ?: JSONArray()
             YtmHomeSection(
                 title = section.optString("title"),
+                subtitle = section.optString("subtitle"),
                 browseId = section.optString("browseId"),
                 params = section.optString("params"),
                 type = section.optString("type"),
+                itemCount = section.optInt("itemCount"),
+                hasMore = section.optBoolean("hasMore"),
                 items = List(items.length()) { itemIndex ->
                     val item = items.optJSONObject(itemIndex) ?: JSONObject()
                     YtmHomeSectionItem(
+                        id = item.optString("id"),
                         videoId = item.optString("videoId"),
                         playlistId = item.optString("playlistId"),
                         browseId = item.optString("browseId"),
                         title = item.optString("title"),
                         subtitle = item.optString("subtitle"),
+                        artistsText = item.optString("artistsText"),
+                        artistId = item.optString("artistId"),
+                        artistIds = item.optJSONArray("artistIds")?.let { artistIds ->
+                            List(artistIds.length()) { artistIndex -> artistIds.optString(artistIndex) }
+                        } ?: emptyList(),
+                        album = item.optString("album"),
+                        albumId = item.optString("albumId"),
                         thumbnail = item.optString("thumbnail"),
+                        thumbnailUrl = item.optString("thumbnailUrl"),
                         type = item.optString("type")
                     )
                 }
@@ -289,6 +308,8 @@ object YtmSessionApi {
             call.execute().also {
                 Timber.d("YtmSessionApi %s %s -> %s", request.method, request.url, it.code)
             }
+        } catch (e: IOException) {
+            throw IOException(describeConnectivityFailure(e.message), e)
         } finally {
             activeCalls -= call
         }
@@ -327,13 +348,34 @@ object YtmSessionApi {
         return List(songs.length()) { index ->
             val item = songs.optJSONObject(index) ?: JSONObject()
             YtmSong(
+                id = item.optString("id").ifBlank { item.optString("videoId") },
                 videoId = item.optString("videoId"),
                 title = item.optString("title"),
                 artist = item.optString("artist"),
+                artistsText = item.optString("artistsText"),
+                artistId = item.optString("artistId"),
+                artistIds = item.optJSONArray("artistIds")?.let { artistIds ->
+                    List(artistIds.length()) { artistIndex -> artistIds.optString(artistIndex) }
+                } ?: emptyList(),
+                artists = item.optJSONArray("artists")?.let { artists ->
+                    List(artists.length()) { artistIndex ->
+                        val artist = artists.optJSONObject(artistIndex) ?: JSONObject()
+                        YtmArtistRef(
+                            id = artist.optString("id"),
+                            name = artist.optString("name")
+                        )
+                    }
+                } ?: emptyList(),
                 album = item.optString("album"),
+                albumId = item.optString("albumId"),
                 thumbnail = item.optString("thumbnail"),
+                thumbnailUrl = item.optString("thumbnailUrl"),
                 duration = item.optString("duration"),
-                setVideoId = item.optString("setVideoId")
+                durationText = item.optString("durationText"),
+                setVideoId = item.optString("setVideoId"),
+                position = item.optInt("position", -1),
+                dateAdded = item.optString("dateAdded"),
+                isAvailable = item.optBoolean("isAvailable", true)
             )
         }
     }
@@ -398,8 +440,31 @@ object YtmSessionApi {
         runCatching {
             JSONObject(body).optString("error").ifBlank {
                 JSONObject(body).optString("message").ifBlank {
-                    "Request failed with status $statusCode"
+                    describeHttpFailure(statusCode)
                 }
             }
-        }.getOrDefault("Request failed with status $statusCode")
+        }.getOrDefault(describeHttpFailure(statusCode))
+
+    private fun describeConnectivityFailure(originalMessage: String?): String {
+        val context = appContext()
+        val isAvailable = NetworkQualityHelper.isNetworkAvailable(context)
+        val isConnected = NetworkQualityHelper.isNetworkConnected(context)
+        val quality = NetworkQualityHelper.getCurrentNetworkQuality(context)
+
+        return when {
+            !isAvailable -> "No internet connection available."
+            !isConnected -> "Internet connection is present but not validated yet."
+            quality == NetworkQuality.LOW -> "Connection is weak. Loading may buffer or fail temporarily."
+            !originalMessage.isNullOrBlank() -> originalMessage
+            else -> "Network request failed."
+        }
+    }
+
+    private fun describeHttpFailure(statusCode: Int): String =
+        when (statusCode) {
+            401, 403 -> "Session expired or account access was denied."
+            404 -> "Requested YouTube Music resource was not found."
+            in 500..599 -> "YouTube Music session service is having trouble right now."
+            else -> "Request failed with status $statusCode"
+        }
 }

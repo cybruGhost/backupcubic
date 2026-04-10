@@ -102,6 +102,24 @@ class MediaLibrarySessionCallback(
 
     private val searchCache = mutableMapOf<String, List<MediaItem>>()
 
+    private fun clearSearchCacheIfNeeded() {
+    if (searchCache.size > 50) {
+        searchCache.clear()
+    }
+}
+
+override fun onSearch(
+    session: MediaLibrarySession,
+    browser: MediaSession.ControllerInfo,
+    query: String,
+    params: MediaLibraryService.LibraryParams?
+): ListenableFuture<LibraryResult<Void>> {
+    println("PlayerServiceModern MediaLibrarySessionCallback.onSearch: $query")
+    clearSearchCacheIfNeeded()  // ← THIS IS THE FIX
+    searchCache.clear()
+    session.notifySearchResultChanged(browser, query, 0, params)
+    return Futures.immediateFuture(LibraryResult.ofVoid(params))
+}
     private fun isCached(songId: String, contentLength: Long?): Boolean {
         if (!::binder.isInitialized || contentLength == null) return false
 
@@ -213,44 +231,46 @@ class MediaLibrarySessionCallback(
         scope.cancel()
     }
 
-    override fun onConnect(
-        session: MediaSession,
-        controller: MediaSession.ControllerInfo
-    ): MediaSession.ConnectionResult {
-        Timber.d(
-            "MediaLibrarySessionCallback.onConnect package=%s maxCommands=%s",
-            controller.packageName,
-            controller.maxCommandsForMediaItems
-        )
-        val connectionResult = super.onConnect(session, controller)
-        return MediaSession.ConnectionResult.accept(
-            connectionResult.availableSessionCommands.buildUpon()
-                .add(MediaSessionConstants.CommandToggleDownload)
-                .add(MediaSessionConstants.CommandToggleLike)
-                .add(MediaSessionConstants.CommandToggleShuffle)
-                .add(MediaSessionConstants.CommandToggleRepeatMode)
-                .add(MediaSessionConstants.CommandStartRadio)
-                .add(MediaSessionConstants.CommandSearch)
-                .build(),
-            connectionResult.availablePlayerCommands.buildUpon()
-                .add(androidx.media3.common.Player.COMMAND_PLAY_PAUSE)
-                .add(androidx.media3.common.Player.COMMAND_PREPARE)
-                .add(androidx.media3.common.Player.COMMAND_STOP)
-                .build()
-        )
+override fun onConnect(
+    session: MediaSession,
+    controller: MediaSession.ControllerInfo
+): MediaSession.ConnectionResult {
+    val packageName = controller.packageName ?: "unknown"
+    Timber.d("MediaLibrarySessionCallback.onConnect package=$packageName")
+    
+    // Get the default connection result first
+    val defaultResult = super.onConnect(session, controller)
+    
+    // Build available commands - only add if the controller supports them
+    val sessionCommandsBuilder = defaultResult.availableSessionCommands.buildUpon()
+    
+    // Check if controller can handle custom commands before adding
+    if (controller.controllerVersion >= 1) {
+        sessionCommandsBuilder
+            .add(MediaSessionConstants.CommandToggleDownload)
+            .add(MediaSessionConstants.CommandToggleLike)
+            .add(MediaSessionConstants.CommandToggleShuffle)
+            .add(MediaSessionConstants.CommandToggleRepeatMode)
+            .add(MediaSessionConstants.CommandStartRadio)
+            .add(MediaSessionConstants.CommandSearch)
     }
+    
+    val playerCommandsBuilder = defaultResult.availablePlayerCommands.buildUpon()
+    
+    // Only add player commands if the controller can actually use them
+    if (controller.controllerVersion >= 1) {
+        playerCommandsBuilder
+            .add(androidx.media3.common.Player.COMMAND_PLAY_PAUSE)
+            .add(androidx.media3.common.Player.COMMAND_PREPARE)
+            .add(androidx.media3.common.Player.COMMAND_STOP)
+    }
+    
+    return MediaSession.ConnectionResult.accept(
+        sessionCommandsBuilder.build(),
+        playerCommandsBuilder.build()
+    )
+}
 
-    override fun onSearch(
-        session: MediaLibrarySession,
-        browser: MediaSession.ControllerInfo,
-        query: String,
-        params: MediaLibraryService.LibraryParams?
-    ): ListenableFuture<LibraryResult<Void>> {
-        println("PlayerServiceModern MediaLibrarySessionCallback.onSearch: $query")
-        searchCache.clear()
-        session.notifySearchResultChanged(browser, query, 0, params)
-        return Futures.immediateFuture(LibraryResult.ofVoid(params))
-    }
 
     override fun onGetSearchResult(
         session: MediaLibrarySession,
