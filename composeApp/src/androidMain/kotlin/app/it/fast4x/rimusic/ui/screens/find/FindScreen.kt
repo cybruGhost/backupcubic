@@ -82,6 +82,7 @@ import app.it.fast4x.rimusic.utils.getDownloadState
 import app.it.fast4x.rimusic.utils.isDownloadedSong
 import app.it.fast4x.rimusic.utils.manageDownload
 import app.kreate.android.R
+import androidx.compose.foundation.layout.fillMaxSize
 import coil.compose.AsyncImage
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.models.bodies.SearchBody
@@ -468,7 +469,7 @@ private fun FindHeroCard(
                 }
             }
 
-            // Circular findsong.png button — glassy with depth
+            // Circular button with blended image
             Box(contentAlignment = Alignment.Center) {
 
                 // ── Pulsing glow rings (listening only) ──────────────────────
@@ -487,8 +488,7 @@ private fun FindHeroCard(
                     )
                 }
 
-                // ── Depth layer 3 — outermost shadow well ────────────────────
-                // Dark sunken ring that gives the "pressed into the surface" look
+                // ── Main button container ────────────────────────────────────
                 Box(
                     modifier = Modifier
                         .size(108.dp)
@@ -513,7 +513,7 @@ private fun FindHeroCard(
                         )
                 )
 
-                // ── Depth layer 2 — glass mid ring ───────────────────────────
+                // ── Glass mid ring ───────────────────────────────────────────
                 Box(
                     modifier = Modifier
                         .size(100.dp)
@@ -539,7 +539,7 @@ private fun FindHeroCard(
                         )
                 )
 
-                // ── Depth layer 1 — inner glassy button face ─────────────────
+                // ── Inner glassy button with blended image ───────────────────
                 Box(
                     modifier = Modifier
                         .size(90.dp)
@@ -570,7 +570,35 @@ private fun FindHeroCard(
                         ) { if (isListening) onStop() else onStart() },
                     contentAlignment = Alignment.Center
                 ) {
-                    // Top-left specular highlight — the "glass shine"
+                    // Image fills entire button - no padding, no visible edges
+                    AsyncImage(
+                        model = R.drawable.findsong,
+                        contentDescription = if (isListening) "Stop" else "Start listening",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                    )
+                    
+                    // Glass shine overlay on top of image
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .clip(CircleShape)
+                            .background(
+                                Brush.radialGradient(
+                                    listOf(
+                                        Color.White.copy(alpha = 0.15f),
+                                        Color.Transparent,
+                                        Color.Transparent
+                                    ),
+                                    center = androidx.compose.ui.geometry.Offset(0.3f, 0.3f),
+                                    radius = 0.7f
+                                )
+                            )
+                    )
+                    
+                    // Top-left specular highlight
                     Box(
                         modifier = Modifier
                             .size(38.dp)
@@ -580,21 +608,11 @@ private fun FindHeroCard(
                             .background(
                                 Brush.radialGradient(
                                     listOf(
-                                        Color.White.copy(alpha = 0.18f),
+                                        Color.White.copy(alpha = 0.25f),
                                         Color.Transparent
                                     )
                                 )
                             )
-                    )
-
-                    // The image — padded nicely inside the glass well
-                    AsyncImage(
-                        model = R.drawable.findsong,
-                        contentDescription = if (isListening) "Stop" else "Start listening",
-                        contentScale = ContentScale.Fit,
-                        modifier = Modifier
-                            .size(52.dp)
-                            .padding(4.dp)
                     )
                 }
             }
