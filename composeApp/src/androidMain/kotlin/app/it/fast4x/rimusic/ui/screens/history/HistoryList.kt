@@ -177,11 +177,11 @@ fun HistoryList(
                     .filter { it.videoId.isNotBlank() && it.title.isNotBlank() }
                     .map { remoteSong ->
                         app.it.fast4x.rimusic.models.Song(
-                            id = remoteSong.videoId,
+                            id = remoteSong.id.ifBlank { remoteSong.videoId },
                             title = remoteSong.title,
-                            artistsText = remoteSong.artist,
-                            thumbnailUrl = remoteSong.thumbnail,
-                            durationText = remoteSong.duration
+                            artistsText = remoteSong.artistsText.ifBlank { remoteSong.artist },
+                            thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail },
+                            durationText = remoteSong.durationText.ifBlank { remoteSong.duration }
                         ).asMediaItem
                     }
                     .filter { it.mediaId.isNotBlank() }

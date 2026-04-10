@@ -1,0 +1,12 @@
+New:
+- Refreshed Find screen with a more polished glassy result layout and the `findsong.png` action button restored
+
+Improved:
+- Find suggestions now show live download progress instead of a static download button while a song is being saved
+- Crossfade metadata handoff is smoother across the player UI, mini-player, and notification surfaces
+- Crossfade fallback now keeps the current song stable if the incoming source fails during the transition
+
+Fixed:
+- Better distinction between no-internet playback failures and source/extractor failures
+- Source drift errors such as parsing/extractor issues now retry more safely instead of being treated like random connection loss
+- Reduced abrupt playback exits caused by crossfade secondary-player failures

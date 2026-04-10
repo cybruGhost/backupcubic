@@ -246,11 +246,11 @@ private suspend fun fetchRemotePlaylistSongs(
         directSongs?.map { remoteSong ->
             PlaylistSyncSong(
                 song = app.it.fast4x.rimusic.models.Song(
-                    id = remoteSong.videoId,
+                    id = remoteSong.id.ifBlank { remoteSong.videoId },
                     title = cleanPrefix(remoteSong.title),
-                    artistsText = remoteSong.artist.ifBlank { null },
-                    durationText = remoteSong.duration.ifBlank { null },
-                    thumbnailUrl = remoteSong.thumbnail.ifBlank { null },
+                    artistsText = remoteSong.artistsText.ifBlank { remoteSong.artist.ifBlank { null } },
+                    durationText = remoteSong.durationText.ifBlank { remoteSong.duration.ifBlank { null } },
+                    thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail.ifBlank { null } },
                     totalPlayTimeMs = 1L,
                 ),
                 setVideoId = remoteSong.setVideoId.ifBlank { null }
@@ -610,13 +610,14 @@ suspend fun importYTMLikedSongs(): Boolean = withContext(Dispatchers.IO) {
                 val localSong = Database.songTable.findById(remoteSong.videoId).first()
                 val normalizedSong = (localSong ?: app.it.fast4x.rimusic.models.Song(
                     id = remoteSong.videoId, title = cleanPrefix(remoteSong.title),
-                    artistsText = remoteSong.artist.ifBlank { null }, durationText = remoteSong.duration.ifBlank { null },
-                    thumbnailUrl = remoteSong.thumbnail.ifBlank { null },
+                    artistsText = remoteSong.artistsText.ifBlank { remoteSong.artist.ifBlank { null } },
+                    durationText = remoteSong.durationText.ifBlank { remoteSong.duration.ifBlank { null } },
+                    thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail.ifBlank { null } },
                 )).copy(
                     title = cleanPrefix(remoteSong.title),
-                    artistsText = remoteSong.artist.ifBlank { localSong?.artistsText },
-                    durationText = remoteSong.duration.ifBlank { localSong?.durationText },
-                    thumbnailUrl = remoteSong.thumbnail.ifBlank { localSong?.thumbnailUrl },
+                    artistsText = remoteSong.artistsText.ifBlank { remoteSong.artist.ifBlank { localSong?.artistsText } },
+                    durationText = remoteSong.durationText.ifBlank { remoteSong.duration.ifBlank { localSong?.durationText } },
+                    thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail.ifBlank { localSong?.thumbnailUrl } },
                     likedAt = localSong?.likedAt?.takeIf { it > 0 } ?: System.currentTimeMillis(),
                 )
                 Database.songTable.upsert(normalizedSong)

@@ -326,15 +326,15 @@ private fun homeQuickAlbumKey(album: Innertube.AlbumItem?): String =
         ?: "quick_album_${album?.info?.name.orEmpty()}_${album?.authors?.joinToString(",") { it.name.orEmpty() }.orEmpty()}"
 
 private fun YtmHomeSectionItem.asQuickPickSong(): Song? {
-    val mediaId = videoId.trim()
+    val mediaId = videoId.trim().ifBlank { id.trim() }
     val cleanedTitle = cleanPrefix(title).trim()
     if (mediaId.isBlank() || cleanedTitle.isBlank()) return null
     return Song(
         id = mediaId,
         title = cleanedTitle,
-        artistsText = subtitle.trim().ifBlank { null },
+        artistsText = artistsText.trim().ifBlank { subtitle.trim().ifBlank { null } },
         durationText = null,
-        thumbnailUrl = thumbnail.trim().ifBlank { null },
+        thumbnailUrl = thumbnailUrl.trim().ifBlank { thumbnail.trim().ifBlank { null } },
         totalPlayTimeMs = 1L
     )
 }
@@ -611,11 +611,11 @@ fun HomeQuickPicks(
         return sessionSongs
             .map { remoteSong ->
                 Song(
-                    id = remoteSong.videoId,
+                    id = remoteSong.id.ifBlank { remoteSong.videoId },
                     title = cleanPrefix(remoteSong.title),
-                    artistsText = remoteSong.artist.ifBlank { null },
-                    durationText = remoteSong.duration.ifBlank { null },
-                    thumbnailUrl = remoteSong.thumbnail.ifBlank { null }
+                    artistsText = remoteSong.artistsText.ifBlank { remoteSong.artist.ifBlank { null } },
+                    durationText = remoteSong.durationText.ifBlank { remoteSong.duration.ifBlank { null } },
+                    thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail.ifBlank { null } }
                 )
             }
             .filter { it.id.isNotBlank() && it.title.isNotBlank() }
@@ -2205,6 +2205,16 @@ fun HomeQuickPicks(
                                 .padding(top = 14.dp, bottom = 4.dp)
                         )
 
+                        if (section.subtitle.isNotBlank()) {
+                            BasicText(
+                                text = section.subtitle,
+                                style = typography().xs.secondary,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
+                        }
+
                         LazyRow(contentPadding = endPaddingValues) {
                             items(
                                 items = section.items,
@@ -2222,8 +2232,8 @@ fun HomeQuickPicks(
                                     "song", "video" -> {
                                         YtmHomeCard(
                                             title = item.title,
-                                            subtitle = item.subtitle,
-                                            thumbnailUrl = item.thumbnail,
+                                            subtitle = item.artistsText.ifBlank { item.subtitle },
+                                            thumbnailUrl = item.thumbnailUrl.ifBlank { item.thumbnail },
                                             modifier = Modifier.clickable(onClick = {
                                                 refreshScope.launch {
                                                     playSessionHomeSectionItems(section.items, item)
@@ -2236,7 +2246,7 @@ fun HomeQuickPicks(
                                         YtmHomeCard(
                                             title = item.title,
                                             subtitle = item.subtitle,
-                                            thumbnailUrl = item.thumbnail,
+                                            thumbnailUrl = item.thumbnailUrl.ifBlank { item.thumbnail },
                                             modifier = Modifier.clickable(onClick = {
                                                 item.browseId.ifBlank { item.playlistId }
                                                     .takeIf { it.isNotBlank() }
@@ -2248,8 +2258,8 @@ fun HomeQuickPicks(
                                     "artist" -> {
                                         YtmHomeCard(
                                             title = item.title,
-                                            subtitle = item.subtitle,
-                                            thumbnailUrl = item.thumbnail,
+                                            subtitle = item.subtitle.ifBlank { item.artistsText },
+                                            thumbnailUrl = item.thumbnailUrl.ifBlank { item.thumbnail },
                                             imageWidth = 104.dp,
                                             imageHeight = 104.dp,
                                             rounded = false,
@@ -2265,7 +2275,7 @@ fun HomeQuickPicks(
                                         YtmHomeCard(
                                             title = item.title,
                                             subtitle = item.subtitle,
-                                            thumbnailUrl = item.thumbnail,
+                                            thumbnailUrl = item.thumbnailUrl.ifBlank { item.thumbnail },
                                             modifier = Modifier.clickable(onClick = {
                                                 item.playlistId.ifBlank { item.browseId }
                                                     .takeIf { it.isNotBlank() }
