@@ -28,6 +28,7 @@ import kotlin.math.min
 private const val LYRICS_SHARE_WIDTH = 1080
 private const val LYRICS_SHARE_HEIGHT = 1920
 private const val MAX_SHARE_LINES = 6
+private const val MAX_SHARE_VISUAL_LINES = 8
 private const val SHARE_BASE_URL = "https://thecub.netlify.app/cubicmusic"
 
 suspend fun shareLyricsCard(
@@ -398,11 +399,23 @@ private fun buildShareLyricsLayout(
     basePaint: TextPaint
 ): StaticLayout {
     var textSize = basePaint.textSize
-    var layout = createShareLayout(text, width, basePaint, textSize)
+    var layout = createShareLayout(
+        text = text,
+        width = width,
+        paint = basePaint,
+        textSize = textSize,
+        maxLines = MAX_SHARE_VISUAL_LINES
+    )
 
     while (layout.height > availableHeight && textSize > 46f) {
         textSize -= 2f
-        layout = createShareLayout(text, width, basePaint, textSize)
+        layout = createShareLayout(
+            text = text,
+            width = width,
+            paint = basePaint,
+            textSize = textSize,
+            maxLines = MAX_SHARE_VISUAL_LINES
+        )
     }
 
     return layout

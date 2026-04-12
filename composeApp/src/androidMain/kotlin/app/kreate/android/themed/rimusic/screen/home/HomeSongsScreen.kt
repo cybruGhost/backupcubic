@@ -307,13 +307,17 @@ fun HomeSongsScreen(navController: NavController ) {
             MultiFloatingActionsContainer(
                 iconId = R.drawable.search,
                 onClick = {
-                    navController.navigate(NavRoutes.search.name)
+                    search.onShortClick()
                 },
                 onClickSettings = {
                     navController.navigate(NavRoutes.settings.name)
                 },
                 onClickSearch = {
-                    navController.navigate(NavRoutes.search.name)
+                    if (!search.isVisible) {
+                        search.onShortClick()
+                    } else {
+                        search.isFocused = true
+                    }
                 }
             )
     }

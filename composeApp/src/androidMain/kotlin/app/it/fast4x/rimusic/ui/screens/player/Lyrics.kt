@@ -3289,8 +3289,6 @@ private fun LyricsSharePreviewCard(
                         blurRadius = 10f
                     )
                 ),
-                maxLines = 6,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.padding(top = 18.dp)
             )
 

@@ -73,6 +73,7 @@ import app.it.fast4x.rimusic.ui.components.SeekBarWaved
 import app.it.fast4x.rimusic.ui.components.SeekBarOcean
 import app.it.fast4x.rimusic.ui.styling.collapsedPlayerProgressBar
 import app.it.fast4x.rimusic.ui.styling.favoritesIcon
+import app.it.fast4x.rimusic.utils.safeSeekTo
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
@@ -167,6 +168,7 @@ fun GetSeekBar(
     val scope = rememberCoroutineScope()
     val animatedPosition = remember { Animatable(position.toFloat()) }
     var isSeeking by remember { mutableStateOf(false) }
+    val safeDuration = duration.coerceAtLeast(1L)
 
     val compositionLaunched = isCompositionLaunched()
     LaunchedEffect(mediaId) {
@@ -228,7 +230,7 @@ fun GetSeekBar(
                     }
                 },
                 onDragEnd = {
-                    scrubbingPosition?.let(binder.player::seekTo)
+                    scrubbingPosition?.let { binder.player.safeSeekTo(it) }
                     scrubbingPosition = null
                 },
                 color = Color.Transparent,
@@ -262,7 +264,7 @@ fun GetSeekBar(
                     }
                 },
                 onDragEnd = {
-                    scrubbingPosition?.let(binder.player::seekTo)
+                    scrubbingPosition?.let { binder.player.safeSeekTo(it) }
                     scrubbingPosition = null
                 },
                 color = colorPalette().collapsedPlayerProgressBar,
@@ -287,7 +289,7 @@ fun GetSeekBar(
                     }
                 },
                 onDragEnd = {
-                    scrubbingPosition?.let(binder.player::seekTo)
+                    scrubbingPosition?.let { binder.player.safeSeekTo(it) }
                     scrubbingPosition = null
                 },
                 color = colorPalette().collapsedPlayerProgressBar,
@@ -312,7 +314,7 @@ fun GetSeekBar(
                     }
                 },
                 onDragEnd = {
-                    scrubbingPosition?.let(binder.player::seekTo)
+                    scrubbingPosition?.let { binder.player.safeSeekTo(it) }
                     scrubbingPosition = null
                 },
                 color = colorPalette().collapsedPlayerProgressBar,
@@ -338,7 +340,7 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
             }
         },
         onDragEnd = {
-            scrubbingPosition?.let(binder.player::seekTo)
+            scrubbingPosition?.let { binder.player.safeSeekTo(it) }
             scrubbingPosition = null
         },
         color = colorPalette().collapsedPlayerProgressBar,
@@ -364,7 +366,7 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                     }
                 },
                 onDragEnd = {
-                    scrubbingPosition?.let(binder.player::seekTo)
+                    scrubbingPosition?.let { binder.player.safeSeekTo(it) }
                     scrubbingPosition = null
                 },
                 color = colorPalette().collapsedPlayerProgressBar,
@@ -374,12 +376,12 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
         }
         if (playerTimelineType == PlayerTimelineType.FakeAudioBar)
             SeekBarAudioWaves(
-                progressPercentage = ProgressPercentage((position.toFloat() / duration.toFloat()).coerceIn(0f,1f)),
+                progressPercentage = ProgressPercentage((position.toFloat() / safeDuration.toFloat()).coerceIn(0f,1f)),
                 playedColor = colorPalette().accent,
                 notPlayedColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 waveInteraction = {
-                    scrubbingPosition = (it.value * duration.toFloat()).toLong()
-                    binder.player.seekTo(scrubbingPosition!!)
+                    scrubbingPosition = (it.value * safeDuration.toFloat()).toLong()
+                    scrubbingPosition?.let { target -> binder.player.safeSeekTo(target) }
                     scrubbingPosition = null
                 },
                 modifier = Modifier
@@ -404,7 +406,7 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                     }
                 },
                 onDragEnd = {
-                    scrubbingPosition?.let(binder.player::seekTo)
+                    scrubbingPosition?.let { binder.player.safeSeekTo(it) }
                     scrubbingPosition = null
                 },
                 color = colorPalette().collapsedPlayerProgressBar,

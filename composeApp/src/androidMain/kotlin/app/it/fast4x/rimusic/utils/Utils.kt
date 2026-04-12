@@ -245,12 +245,20 @@ fun sanitizePlaybackUri(raw: String): Uri {
     val originalUri = runCatching { trimmed.toUri() }.getOrNull()
     if (
         originalUri != null &&
-        !originalUri.scheme.isNullOrBlank() &&
-        !originalUri.path.isNullOrBlank()
+        !originalUri.scheme.isNullOrBlank()
     ) {
-        return originalUri.buildUpon()
+        val sanitized = originalUri.buildUpon()
+            .clearQuery()
             .fragment(null)
             .build()
+        if (
+            (sanitized.scheme.equals("file", ignoreCase = true) ||
+                sanitized.scheme.equals("content", ignoreCase = true)) &&
+            sanitized.path.isNullOrBlank()
+        ) {
+            return Uri.EMPTY
+        }
+        return sanitized
     }
 
     val cleaned = trimmed

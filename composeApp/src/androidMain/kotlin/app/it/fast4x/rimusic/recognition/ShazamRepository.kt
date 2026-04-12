@@ -1,6 +1,7 @@
 package app.it.fast4x.rimusic.recognition
 
 import android.util.Log
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -63,11 +64,11 @@ class ShazamRepository {
 
             val response = client.newCall(
                 Request.Builder()
-                    .url(PROXY_URL)
+                    .url(proxyUrl)
                     .post(body.toRequestBody(JSON))
                     .header("Accept", "application/json")
                     .header("Content-Type", "application/json")
-                    .header("apikey", PROXY_API_KEY)
+                    .header("apikey", proxyApiKey)
                     .build()
             ).execute()
 
@@ -111,7 +112,7 @@ class ShazamRepository {
 
             val uuid1 = uuidFromNamespace(NS_DNS, reqName)
             val uuid2 = uuidFromNamespace(NS_URL, reqName)
-            val url = "${BASE_URL}discovery/v5/en/US/android/-/tag/$uuid1/$uuid2" +
+            val url = "${baseUrl}discovery/v5/en/US/android/-/tag/$uuid1/$uuid2" +
                 "?sync=true&webv3=true&sampling=true&connected=&shazamapiversion=v3&sharehub=true&video=v3"
 
             val response = client.newCall(
@@ -190,15 +191,15 @@ class ShazamRepository {
 
     companion object {
         private const val TAG      = "ShazamRepository"
-        private const val BASE_URL = "https://amp.shazam.com/"
-        private const val PROXY_URL =
-            "https://xxfvagzucmiinlydcnhd.supabase.co/functions/v1/shazam-proxy"
-        private const val PROXY_API_KEY =
-            "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4ZnZhZ3p1Y21paW5seWRjbmhkIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU3MzQ2MjAsImV4cCI6MjA5MTMxMDYyMH0.-MOJ_ygNoiiYDXXR-J9c-HsH5GLw49aJG6rb12QxIUU"
-
         private val JSON      = "application/json".toMediaType()
         private val NS_DNS    = UUID.fromString("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
         private val NS_URL    = UUID.fromString("6ba7b811-9dad-11d1-80b4-00c04fd430c8")
+        private val baseUrl: String
+            get() = SecureApiConfig.shazamBaseUrl
+        private val proxyUrl: String
+            get() = SecureApiConfig.shazamProxyUrl
+        private val proxyApiKey: String
+            get() = SecureApiConfig.shazamProxyApiKey
 
         private val USER_AGENTS = listOf(
             "Dalvik/2.1.0 (Linux; U; Android 6.0.1; SM-G920F Build/MMB29K)",

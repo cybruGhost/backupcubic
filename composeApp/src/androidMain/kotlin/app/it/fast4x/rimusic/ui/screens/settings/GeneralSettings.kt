@@ -356,6 +356,17 @@ fun GeneralSettings(
                             onDismiss       = { showLanguageDialog = false }
                         )
                     }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    DebugRescueCenterLauncher(
+                        onOpenDebugSettings = {
+                            navController.currentBackStackEntry
+                                ?.savedStateHandle
+                                ?.set("settings_tab_index", 7)
+                            navController.navigate(app.it.fast4x.rimusic.enums.NavRoutes.settings.name)
+                        }
+                    )
                 }
             )
         }

@@ -62,6 +62,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -149,7 +150,7 @@ fun FindScreen(
             delay(12_000L)
             if (state is FindUiState.Listening) {
                 recorder.stop(); isMatching = false
-                state = FindUiState.Error("Couldn't identify that song. Try a louder or cleaner sample.")
+                state = FindUiState.Error(context.getString(R.string.find_error_could_not_identify))
             }
         }
     }
@@ -158,7 +159,7 @@ fun FindScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         if (granted) startListening()
-        else state = FindUiState.Error("Microphone permission is needed for Find.")
+        else state = FindUiState.Error(context.getString(R.string.find_error_microphone_permission))
     }
 
     LaunchedEffect(duration, recordedBuffer, state) {
@@ -188,7 +189,7 @@ fun FindScreen(
         }
         val matchedSongs = result?.getOrNull()?.items?.distinctBy { it.key }?.take(5).orEmpty()
         suggestions.clear(); suggestions.addAll(matchedSongs)
-        if (matchedSongs.isEmpty()) suggestionsError = "No playable Cubic matches for this song yet."
+        if (matchedSongs.isEmpty()) suggestionsError = context.getString(R.string.find_no_playable_matches)
         isLoadingSuggestions = false
     }
 
@@ -258,7 +259,7 @@ fun FindScreen(
                         }
                     )
 
-                    SectionDivider(label = "Cubic Matches")
+                    SectionDivider(label = stringResource(R.string.find_cubic_matches))
 
                     when {
                         isLoadingSuggestions -> SuggestionsLoading()
@@ -284,7 +285,7 @@ fun FindScreen(
                         }
                         else -> {
                             Text(
-                                suggestionsError ?: "No suggestions available yet.",
+                                suggestionsError ?: stringResource(R.string.find_no_suggestions_available),
                                 style = typography().xs,
                                 color = colorPalette().textSecondary,
                                 modifier = Modifier.padding(horizontal = 4.dp, vertical = 8.dp)
@@ -297,7 +298,7 @@ fun FindScreen(
 
         AnimatedVisibility(visible = state is FindUiState.Listening) {
             Text(
-                "Microphone is active only while this sheet is listening.",
+                stringResource(R.string.find_microphone_active_hint),
                 style = typography().xxs,
                 color = colorPalette().textDisabled,
                 modifier = Modifier.padding(horizontal = 4.dp)
@@ -337,13 +338,13 @@ private fun FindHeader(onDismiss: () -> Unit) {
 
         Column(modifier = Modifier.weight(1f)) {
             Text(
-                "Find",
+                stringResource(R.string.find_title),
                 style = typography().l,
                 color = colorPalette().text,
                 fontWeight = FontWeight.Bold
             )
             Text(
-                "Identify any song and play or save it instantly",
+                stringResource(R.string.find_subtitle),
                 style = typography().xxs,
                 color = colorPalette().textSecondary
             )
@@ -363,7 +364,7 @@ private fun FindHeader(onDismiss: () -> Unit) {
         ) {
             Icon(
                 painter = painterResource(R.drawable.close),
-                contentDescription = "Close",
+                contentDescription = stringResource(R.string.close),
                 tint = colorPalette().textSecondary,
                 modifier = Modifier.size(15.dp)
             )
@@ -443,13 +444,13 @@ private fun FindHeroCard(
                 ) {
                     val (title, subtitle) = when (currentState) {
                         FindUiState.Idle ->
-                            "Ready to Listen" to "Hold your phone near the music"
+                            stringResource(R.string.find_status_ready_title) to stringResource(R.string.find_status_ready_subtitle)
                         FindUiState.Listening ->
-                            "Listening…" to "Analysing ${duration}s of audio"
+                            stringResource(R.string.find_status_listening_title) to stringResource(R.string.find_status_listening_subtitle, duration)
                         is FindUiState.Success ->
-                            "Song Identified" to "Finding the best Cubic matches"
+                            stringResource(R.string.find_status_success_title) to stringResource(R.string.find_status_success_subtitle)
                         is FindUiState.Error ->
-                            "No Match Yet" to currentState.message
+                            stringResource(R.string.find_status_error_title) to currentState.message
                     }
                     Text(
                         title,
@@ -573,7 +574,7 @@ private fun FindHeroCard(
                     // Image fills entire button - no padding, no visible edges
                     AsyncImage(
                         model = R.drawable.findsong,
-                        contentDescription = if (isListening) "Stop" else "Start listening",
+                        contentDescription = if (isListening) stringResource(R.string.stop) else stringResource(R.string.find_start_listening),
                         contentScale = ContentScale.Crop,
                         modifier = Modifier
                             .fillMaxSize()
@@ -635,7 +636,7 @@ private fun FindHeroCard(
                         strokeCap   = StrokeCap.Round
                     )
                     Text(
-                        "Tap the button to stop early",
+                        stringResource(R.string.find_stop_early_hint),
                         style = typography().xxs,
                         color = colorPalette().textDisabled
                     )
@@ -646,9 +647,9 @@ private fun FindHeroCard(
             if (state is FindUiState.Error || state is FindUiState.Success) {
                 Text(
                     if (state is FindUiState.Error)
-                        "Tap the button to try again"
+                        stringResource(R.string.find_try_again_hint)
                     else
-                        "Tap the button to identify another song",
+                        stringResource(R.string.find_identify_another_hint),
                     style = typography().xxs,
                     color = colorPalette().textDisabled
                 )
@@ -728,7 +729,7 @@ private fun RecognizedTrackCard(
                     .padding(horizontal = 14.dp, vertical = 7.dp)
             ) {
                 Text(
-                    "More details",
+                    stringResource(R.string.find_more_details),
                     style = typography().xxs,
                     color = colorPalette().onAccent,
                     fontWeight = FontWeight.SemiBold
@@ -801,7 +802,7 @@ private fun SuggestionsLoading() {
         )
         Spacer(Modifier.width(14.dp))
         Text(
-            "Finding Cubic matches…",
+            stringResource(R.string.find_loading_matches),
             style = typography().xs,
             color = colorPalette().textSecondary
         )
@@ -828,10 +829,10 @@ private fun SuggestionCard(
         downloadState == Download.STATE_RESTARTING
     val progressValue = downloadProgress.coerceIn(0f, 1f)
     val progressLabel = when {
-        isDownloaded -> "Saved offline"
-        isDownloading && progressValue > 0f -> "${(progressValue * 100).toInt()}% downloaded"
-        isDownloading -> "Preparing download..."
-        else -> song.durationText?.takeIf { it.isNotBlank() } ?: "Tap to download"
+        isDownloaded -> stringResource(R.string.find_saved_offline)
+        isDownloading && progressValue > 0f -> stringResource(R.string.find_download_percent, (progressValue * 100).toInt())
+        isDownloading -> stringResource(R.string.find_preparing_download)
+        else -> song.durationText?.takeIf { it.isNotBlank() } ?: stringResource(R.string.find_tap_to_download)
     }
 
     // staggered entrance
@@ -932,7 +933,7 @@ private fun SuggestionCard(
         ) {
             Icon(
                 painter = painterResource(R.drawable.play),
-                contentDescription = "Play",
+                contentDescription = stringResource(R.string.play),
                 tint = colorPalette().onAccent,
                 modifier = Modifier.size(15.dp)
             )
@@ -979,7 +980,7 @@ private fun SuggestionCard(
                     )
                     Icon(
                         painter = painterResource(R.drawable.download),
-                        contentDescription = "Downloading",
+                        contentDescription = stringResource(R.string.find_downloading),
                         tint = colorPalette().accent,
                         modifier = Modifier.size(12.dp)
                     )
@@ -989,7 +990,7 @@ private fun SuggestionCard(
                     painter = painterResource(
                         if (isDownloaded) R.drawable.trash else R.drawable.download
                     ),
-                    contentDescription = if (isDownloaded) "Remove" else "Download",
+                    contentDescription = if (isDownloaded) stringResource(R.string.delete) else stringResource(R.string.download),
                     tint = if (isDownloaded) colorPalette().red else colorPalette().text,
                     modifier = Modifier.size(15.dp)
                 )

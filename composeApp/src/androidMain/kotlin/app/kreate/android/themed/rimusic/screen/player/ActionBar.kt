@@ -274,7 +274,7 @@ fun BoxScope.ActionBar(
 
                     // Smooth slide when only the track skips
                     LaunchedEffect( nextIndex ) {
-                        if (pagerStateQueue.pageCount > 0) {
+                        if (mediaItems.isNotEmpty() && pagerStateQueue.pageCount > 0) {
                             val targetPage = nextIndex.coerceIn(0, pagerStateQueue.pageCount - 1)
                             pagerStateQueue.animateScrollToPage(targetPage)
                         }
@@ -305,7 +305,11 @@ fun BoxScope.ActionBar(
                                                    indication = null,
                                                ) {
                                                    coroutine.launch {
-                                                       pagerStateQueue.animateScrollToPage( currentIndex )
+                                                       if (mediaItems.isNotEmpty() && pagerStateQueue.pageCount > 0) {
+                                                           pagerStateQueue.animateScrollToPage(
+                                                               currentIndex.coerceIn(0, pagerStateQueue.pageCount - 1)
+                                                           )
+                                                       }
                                                    }
                                                },
                             tint = colorPalette().accent

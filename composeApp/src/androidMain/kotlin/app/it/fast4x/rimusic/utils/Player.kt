@@ -3,6 +3,7 @@ package app.it.fast4x.rimusic.utils
 
 import android.annotation.SuppressLint
 import android.content.Context
+import android.net.Uri
 import androidx.compose.ui.util.fastDistinctBy
 import androidx.compose.ui.util.fastMap
 import androidx.media3.common.C
@@ -15,7 +16,9 @@ import androidx.media3.common.Timeline
 import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
+import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.enums.DurationInMinutes
+import app.it.fast4x.rimusic.service.MyDownloadHelper
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -25,6 +28,74 @@ import timber.log.Timber
 import java.util.ArrayDeque
 
 var GlobalVolume: Float = 0.5f
+
+private fun MediaItem.hasOfflinePlayableSource(context: Context): Boolean {
+    val rawUri = localConfiguration?.uri?.toString().orEmpty()
+    if (mediaId.isBlank() && rawUri.isBlank()) return false
+    val parsedUri = runCatching { Uri.parse(rawUri) }.getOrNull()
+    val scheme = parsedUri?.scheme.orEmpty()
+    if (
+        scheme.equals("file", ignoreCase = true) ||
+        scheme.equals("content", ignoreCase = true) ||
+        mediaId.startsWith("/") ||
+        mediaId.startsWith("content://", ignoreCase = true) ||
+        mediaId.startsWith("file://", ignoreCase = true)
+    ) {
+        return true
+    }
+
+    val songId = mediaId.substringAfterLast("/").ifBlank {
+        rawUri.substringAfter("v=", "").substringBefore("&").ifBlank { mediaId }
+    }
+
+    if (songId.isBlank()) return false
+
+    val isDownloaded = MyDownloadHelper.isSongDownloaded(songId)
+    val cachedBytes = runCatching {
+        MyDownloadHelper.getDownloadCache(context).getCachedBytes(songId, 0, -1)
+    }.getOrDefault(0L)
+
+    return isDownloaded || cachedBytes > 0L
+}
+
+private fun ensurePlayableOrNotify(mediaItem: MediaItem): Boolean {
+    val context = appContext()
+    if (mediaItem.mediaId.isBlank() && mediaItem.localConfiguration?.uri == null) {
+        Toaster.w("This song has an invalid source")
+        Timber.w("Blocked playback for invalid media item with empty mediaId and URI")
+        return false
+    }
+    if (isNetworkConnected(context)) return true
+    if (mediaItem.hasOfflinePlayableSource(context)) return true
+    Toaster.w("No internet and this song is not cached yet")
+    Timber.w("Blocked playback for uncached media item while offline: ${mediaItem.mediaId}")
+    return false
+}
+
+fun Player.safePrepare(): Boolean =
+    runCatching { prepare() }
+        .onFailure { Timber.e(it, "safePrepare failed for mediaId=%s", currentMediaItem?.mediaId) }
+        .isSuccess
+
+fun Player.safeSetMediaItem(mediaItem: MediaItem, resetPosition: Boolean = true): Boolean =
+    runCatching { setMediaItem(mediaItem, resetPosition) }
+        .onFailure { Timber.e(it, "safeSetMediaItem failed for mediaId=%s", mediaItem.mediaId) }
+        .isSuccess
+
+fun Player.safeSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): Boolean =
+    runCatching { setMediaItems(mediaItems, startIndex, startPositionMs) }
+        .onFailure { Timber.e(it, "safeSetMediaItems failed at index=%s size=%s", startIndex, mediaItems.size) }
+        .isSuccess
+
+fun Player.safeSeekTo(positionMs: Long): Boolean =
+    runCatching { seekTo(positionMs.coerceAtLeast(0L)) }
+        .onFailure { Timber.e(it, "safeSeekTo failed for mediaId=%s position=%s", currentMediaItem?.mediaId, positionMs) }
+        .isSuccess
+
+fun Player.safeRelease(): Boolean =
+    runCatching { release() }
+        .onFailure { Timber.e(it, "safeRelease failed") }
+        .isSuccess
 
 fun Player.restoreGlobalVolume() {
     volume = GlobalVolume
@@ -99,14 +170,15 @@ fun Player.playAtMedia(mediaItems: List<MediaItem>, mediaId: String) {
     val itemIndex = findMediaItemIndexById(mediaId)
 
     Log.d("mediaItem-playAtMedia",itemIndex.toString())
-    setMediaItems(mediaItems, itemIndex, C.TIME_UNSET)
-    prepare()
+    if (!safeSetMediaItems(mediaItems, itemIndex, C.TIME_UNSET)) return
+    if (!safePrepare()) return
     restoreGlobalVolume()
     playWhenReady = true
 
 }
 
 fun Player.forcePlay(mediaItem: MediaItem) {
+    if (!ensurePlayableOrNotify(mediaItem)) return
     val cleanedMediaItem = mediaItem.cleaned
     val safeMediaItem = cleanedMediaItem.buildUpon()
         .setUri(
@@ -135,12 +207,12 @@ fun Player.forcePlay(mediaItem: MediaItem) {
             }
             .fastDistinctBy(MediaItem::mediaId)
 
-        setMediaItems(remainingQueue, 0, C.TIME_UNSET)
+        if (!safeSetMediaItems(remainingQueue, 0, C.TIME_UNSET)) return
     } else {
-        setMediaItem(safeMediaItem, true)
+        if (!safeSetMediaItem(safeMediaItem, true)) return
     }
 
-    prepare()
+    if (!safePrepare()) return
     restoreGlobalVolume()
     playWhenReady = true
 }
@@ -155,13 +227,15 @@ fun Player.playVideo(mediaItem: MediaItem) {
             )
         )
         .build()
-    setMediaItem(safeMediaItem, true)
+    if (!safeSetMediaItem(safeMediaItem, true)) return
     pause()
 }
 
 fun Player.playAtIndex(mediaItemIndex: Int) {
-    seekTo(mediaItemIndex, C.TIME_UNSET)
-    prepare()
+    runCatching { seekTo(mediaItemIndex, C.TIME_UNSET) }
+        .onFailure { Timber.e(it, "playAtIndex seek failed at index=%s", mediaItemIndex) }
+        .getOrElse { return }
+    if (!safePrepare()) return
     restoreGlobalVolume()
     playWhenReady = true
 }
@@ -170,6 +244,8 @@ fun Player.playAtIndex(mediaItemIndex: Int) {
 @UnstableApi
 fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
     if ( mediaItems.isEmpty() ) return
+    val selectedItem = mediaItems.getOrNull(mediaItemIndex) ?: return
+    if (!ensurePlayableOrNotify(selectedItem)) return
 
     // This will prevent UI from freezing up during conversion
     CoroutineScope( Dispatchers.Default ).launch {
@@ -186,8 +262,8 @@ fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
         }.fastDistinctBy( MediaItem::mediaId )
 
         runBlocking( Dispatchers.Main ) {
-            setMediaItems( cleanedMediaItems, mediaItemIndex, C.TIME_UNSET )
-            prepare()
+            if (!safeSetMediaItems( cleanedMediaItems, mediaItemIndex, C.TIME_UNSET )) return@runBlocking
+            if (!safePrepare()) return@runBlocking
             restoreGlobalVolume()
             playWhenReady = true
         }

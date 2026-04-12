@@ -2,6 +2,7 @@
 <resources>
 <string name="cancel">Cancel</string>
 <string name="done">Done</string>
+<string name="play">Play</string>
 <string name="hidesong">Do you really want to hide this song? Its playback time and cache will be wiped. This action is irreversible.</string>
 <string name="new_playlist">New playlist</string>
 <string name="start_radio">Start radio</string>
@@ -1296,5 +1297,31 @@
 <string name="ytm_playlists_synced">Playlists refreshed</string>
 <string name="ytm_playlists_sync_failed">Playlist refresh failed</string>
 <string name="ytm_likes_title">From your YT Music likes</string>
+<string name="find_title">Find</string>
+<string name="find_subtitle">Identify any song and play or save it instantly</string>
+<string name="find_error_could_not_identify">Couldn\'t identify that song. Try a louder or cleaner sample.</string>
+<string name="find_error_microphone_permission">Microphone permission is needed for Find.</string>
+<string name="find_no_playable_matches">No playable Cubic matches for this song yet.</string>
+<string name="find_no_suggestions_available">No suggestions available yet.</string>
+<string name="find_microphone_active_hint">Microphone is active only while this sheet is listening.</string>
+<string name="find_cubic_matches">Cubic Matches</string>
+<string name="find_status_ready_title">Ready to Listen</string>
+<string name="find_status_ready_subtitle">Hold your phone near the music</string>
+<string name="find_status_listening_title">Listening...</string>
+<string name="find_status_listening_subtitle">Analysing %1$ds of audio</string>
+<string name="find_status_success_title">Song Identified</string>
+<string name="find_status_success_subtitle">Finding the best Cubic matches</string>
+<string name="find_status_error_title">No Match Yet</string>
+<string name="find_more_details">More details</string>
+<string name="find_loading_matches">Finding Cubic matches...</string>
+<string name="find_saved_offline">Saved offline</string>
+<string name="find_download_percent">%1$d%% downloaded</string>
+<string name="find_preparing_download">Preparing download...</string>
+<string name="find_tap_to_download">Tap to download</string>
+<string name="find_downloading">Downloading</string>
+<string name="find_start_listening">Start listening</string>
+<string name="find_stop_early_hint">Tap the button to stop early</string>
+<string name="find_try_again_hint">Tap the button to try again</string>
+<string name="find_identify_another_hint">Tap the button to identify another song</string>
 
 </resources>

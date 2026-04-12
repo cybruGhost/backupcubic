@@ -22,6 +22,8 @@ class DelegatingExoPlayer(
     private var delegate: ExoPlayer = initialDelegate
     @Volatile
     private var displayStateProvider: (() -> CrossfadeUiState?)? = null
+    @Volatile
+    private var crossfadeEnabledProvider: (() -> Boolean)? = null
 
     private val playerListeners = CopyOnWriteArraySet<Player.Listener>()
     private val analyticsListeners = CopyOnWriteArraySet<AnalyticsListener>()
@@ -48,6 +50,10 @@ class DelegatingExoPlayer(
 
     fun setDisplayStateProvider(provider: () -> CrossfadeUiState?) {
         displayStateProvider = provider
+    }
+
+    fun setCrossfadeEnabledProvider(provider: () -> Boolean) {
+        crossfadeEnabledProvider = provider
     }
 
     fun refreshState() {
@@ -125,10 +131,11 @@ class DelegatingExoPlayer(
     }
 
     private fun currentDisplayState(): CrossfadeUiState? = displayStateProvider?.invoke()
+    private fun isCrossfadeEnabled(): Boolean = crossfadeEnabledProvider?.invoke() == true
 
     private fun shouldUseDisplayState(): Boolean {
         val state = currentDisplayState()
-        return state?.isEnabled == true && state.isActive && state.displayMediaItem != null
+        return isCrossfadeEnabled() && state?.isEnabled == true && state.isActive && state.displayMediaItem != null
     }
 
     private fun activeDisplayState(): CrossfadeUiState? =
