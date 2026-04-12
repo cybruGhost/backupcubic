@@ -167,17 +167,18 @@
         </receiver>
 
         <!-- NEW PLAYER SERVICE -->
-        <service
-            android:name="app.it.fast4x.rimusic.service.modern.PlayerServiceModern"
-            android:exported="true"
-            android:foregroundServiceType="mediaPlayback"
-            tools:ignore="ExportedService">
-            <intent-filter>
-                <action android:name="androidx.media3.session.MediaSessionService" />
-                <action android:name="androidx.media3.session.MediaLibraryService" />
-                <action android:name="android.media.browse.MediaBrowserService" />
-            </intent-filter>
-        </service>
+   <service
+    android:name="app.it.fast4x.rimusic.service.modern.PlayerServiceModern"
+    android:exported="true"
+    android:foregroundServiceType="mediaPlayback"
+    android:stopWithTask="false"
+    tools:ignore="ExportedService">
+    <intent-filter>
+        <action android:name="androidx.media3.session.MediaSessionService" />
+        <action android:name="androidx.media3.session.MediaLibraryService" />
+        <action android:name="android.media.browse.MediaBrowserService" />
+    </intent-filter>
+</service>
 
         <receiver android:name="androidx.media3.session.MediaButtonReceiver"
             android:exported="true">
@@ -225,5 +226,6 @@
 
         <meta-data android:name="com.google.android.gms.car.notification.SmallIcon"
             android:resource="@drawable/ic_launcher" />
+
     </application>
 </manifest>

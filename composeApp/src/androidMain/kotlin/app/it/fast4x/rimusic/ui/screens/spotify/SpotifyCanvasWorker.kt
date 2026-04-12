@@ -14,6 +14,7 @@ import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.appContext
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.kreate.android.R
 import kotlinx.coroutines.Dispatchers
@@ -50,15 +51,9 @@ enum class LogType {
 private fun canvasString(resId: Int, vararg args: Any): String = appContext().getString(resId, *args)
 
 object SpotifyApiConfig {
-    private const val DEFAULT_CANVAS_API = "https://spotifyapi-gamma.vercel.app/api/canvas"
-    private const val DEFAULT_MATCH_API =
-        "https://shnydojovtlzpeofztgq.supabase.co/functions/v1/spotify-match"
-    private const val DEFAULT_MATCH_API_KEY =
-        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNobnlkb2pvdnRsenBlb2Z6dGdxIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Njk2NzYwNzQsImV4cCI6MjA4NTI1MjA3NH0.LzbV-bA7YLpGAG-LYvrBKmnkVe-__NDluSHSXcgt0OE"
-
-    var CANVAS_API: String = DEFAULT_CANVAS_API
-    var MATCH_API: String = DEFAULT_MATCH_API
-    var MATCH_API_KEY: String = DEFAULT_MATCH_API_KEY
+    var CANVAS_API: String = SecureApiConfig.spotifyCanvasApi
+    var MATCH_API: String = SecureApiConfig.spotifyMatchApi
+    var MATCH_API_KEY: String = SecureApiConfig.spotifyMatchApiKey
 
     const val MIN_MATCH_SCORE = 80.0
     const val RETRY_DELAY_MS = 5000L
@@ -98,12 +93,16 @@ private object SpotifySessionApi {
     private const val USER_AGENT =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
             "(KHTML, like Gecko) Chrome/127.0.0.0 Safari/537.36"
-    private const val SECRETS_URL =
-        "https://raw.githubusercontent.com/xyloflake/spot-secrets-go/refs/heads/main/secrets/secretDict.json"
-    private const val SERVER_TIME_URL = "https://open.spotify.com/api/server-time"
-    private const val TOKEN_URL = "https://open.spotify.com/api/token"
-    private const val WEB_ACCESS_TOKEN_URL = "https://open.spotify.com/get_access_token"
-    private const val SEARCH_URL = "https://api.spotify.com/v1/search"
+    private val secretsUrl: String
+        get() = SecureApiConfig.spotifySecretsUrl
+    private val serverTimeUrl: String
+        get() = SecureApiConfig.spotifyServerTimeUrl
+    private val tokenUrl: String
+        get() = SecureApiConfig.spotifyTokenUrl
+    private val webAccessTokenUrl: String
+        get() = SecureApiConfig.spotifyWebAccessTokenUrl
+    private val searchUrl: String
+        get() = SecureApiConfig.spotifySearchUrl
     private const val FETCH_INTERVAL_MS = 60L * 60L * 1000L
 
     private val fallbackSecret = listOf(
@@ -152,7 +151,7 @@ private object SpotifySessionApi {
         try {
             val response = client.newCall(
                 Request.Builder()
-                    .url(SECRETS_URL)
+                    .url(secretsUrl)
                     .header("User-Agent", USER_AGENT)
                     .build()
             ).execute()
@@ -229,7 +228,7 @@ private object SpotifySessionApi {
         return try {
             val response = client.newCall(
                 Request.Builder()
-                    .url(SERVER_TIME_URL)
+                    .url(serverTimeUrl)
                     .header("User-Agent", USER_AGENT)
                     .header("Origin", "https://open.spotify.com/")
                     .header("Referer", "https://open.spotify.com/")
@@ -255,7 +254,7 @@ private object SpotifySessionApi {
         showLogs: Boolean
     ): String? {
         val otpValue = generateTotp(serverTime)
-        val url = TOKEN_URL.toHttpUrlOrNull()
+        val url = tokenUrl.toHttpUrlOrNull()
             ?.newBuilder()
             ?.addQueryParameter("reason", reason)
             ?.addQueryParameter("productType", "mobile-web-player")
@@ -298,7 +297,7 @@ private object SpotifySessionApi {
         sessionCookie: String,
         showLogs: Boolean
     ): String? {
-        val url = WEB_ACCESS_TOKEN_URL.toHttpUrlOrNull()
+        val url = webAccessTokenUrl.toHttpUrlOrNull()
             ?.newBuilder()
             ?.addQueryParameter("reason", "transport")
             ?.addQueryParameter("productType", "web_player")
@@ -468,7 +467,7 @@ private object SpotifySessionApi {
             if (showLogs) {
                 SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_search_query, query), LogType.INFO)
             }
-            val url = SEARCH_URL.toHttpUrlOrNull()
+            val url = searchUrl.toHttpUrlOrNull()
                 ?.newBuilder()
                 ?.addQueryParameter("q", query)
                 ?.addQueryParameter("type", "track")
@@ -735,7 +734,7 @@ fun SpotifyCanvasWorker() {
 
         if (appRunningInBackground) {
             SpotifyCanvasState.isPlaying = false
-            CanvasPlayerManager.updatePlayState(false)
+            CanvasPlayerManager.stopAndClear()
             return@LaunchedEffect
         }
 
@@ -836,7 +835,7 @@ fun SpotifyCanvasWorker() {
         }.collect { (playbackState, playWhenReady) ->
             if (appRunningInBackground) {
                 SpotifyCanvasState.isPlaying = false
-                CanvasPlayerManager.updatePlayState(false)
+                CanvasPlayerManager.stopAndClear()
                 return@collect
             }
             val mediaId = displayedMediaItem?.mediaId

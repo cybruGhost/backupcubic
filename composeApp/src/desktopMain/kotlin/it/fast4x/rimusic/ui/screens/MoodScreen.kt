@@ -17,6 +17,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.DrawerDefaults.windowInsets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -60,6 +62,7 @@ fun MoodScreen(
     onArtistClick: (String) -> Unit,
     onPlaylistClick: (String) -> Unit
 ) {
+    val scrollState = rememberScrollState()
 
     val browseId = mood.endpoint.browseId ?: defaultBrowseId
     val params = mood.endpoint.params
@@ -93,10 +96,8 @@ fun MoodScreen(
                 verticalArrangement = Arrangement.Top,
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
-                    .fillMaxHeight()
-                    //.fillMaxWidth(0.5f)
                     .fillMaxWidth()
-                //.verticalScroll(leftScrollState)
+                    .verticalScroll(scrollState)
             ) {
                 moodPage?.let { moodResult ->
                     /*

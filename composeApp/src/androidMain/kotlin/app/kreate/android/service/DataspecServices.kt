@@ -69,6 +69,7 @@ import java.net.URLEncoder
 import java.net.UnknownHostException
 import it.fast4x.innertube.requests.player
 import it.fast4x.innertube.utils.from
+import timber.log.Timber
 
 private const val CHUNK_LENGTH = 512 * 1024L     // 512Kb
 
@@ -617,6 +618,14 @@ fun DataSpec.process(
     withUri( formatUri ).subrange( uriPositionOffset )
 }
 
+private fun fallbackPlaybackDataSpec(
+    original: DataSpec,
+    videoId: String,
+): DataSpec = original.buildUpon()
+    .setUri("https://music.youtube.com/watch?v=$videoId")
+    .setKey(videoId)
+    .build()
+
 //<editor-fold defaultstate="collapsed" desc="Data source factories">
 @UnstableApi
 fun PlayerServiceModern.createDataSourceFactory(): DataSource.Factory {
@@ -637,10 +646,16 @@ fun PlayerServiceModern.createDataSourceFactory(): DataSource.Factory {
 
         // Always resolve URL for non-local files and ensure key is set to videoId
         // This ensures CacheDataSource uses the correct key even if URI changes
-        dataSpec.process(videoId, audioQualityFormat, applicationContext.isConnectionMetered())
-            .buildUpon()
-            .setKey(videoId)
-            .build()
+        runCatching {
+            dataSpec.process(videoId, audioQualityFormat, applicationContext.isConnectionMetered())
+                .buildUpon()
+                .setKey(videoId)
+                .build()
+        }.onFailure {
+            Timber.e(it, "Failed to resolve playback DataSpec for %s. Falling back to safe source.", videoId)
+        }.getOrElse {
+            fallbackPlaybackDataSpec(dataSpec, videoId)
+        }
     }
 
     // LRU Cache (Writable) - Upstream is the Resolver
@@ -665,10 +680,16 @@ fun MyDownloadHelper.createDataSourceFactory(): DataSource.Factory {
         
         CoroutineScope(Threads.DATASPEC_DISPATCHER).launch { upsertSongInfo(videoId) }
 
-        dataSpec.process(videoId, audioQualityFormat, appContext().isConnectionMetered())
-            .buildUpon()
-            .setKey(videoId)
-            .build()
+        runCatching {
+            dataSpec.process(videoId, audioQualityFormat, appContext().isConnectionMetered())
+                .buildUpon()
+                .setKey(videoId)
+                .build()
+        }.onFailure {
+            Timber.e(it, "Failed to resolve download DataSpec for %s. Falling back to safe source.", videoId)
+        }.getOrElse {
+            fallbackPlaybackDataSpec(dataSpec, videoId)
+        }
     }
 
     // Download Cache (Writable for downloads? No, CacheWriter handles writing)

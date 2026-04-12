@@ -1,6 +1,7 @@
 package app.it.fast4x.rimusic.ui.screens.home
 
 import android.annotation.SuppressLint
+import android.content.Intent
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
@@ -120,6 +121,7 @@ import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.px
 import app.it.fast4x.rimusic.utils.WelcomeMessage
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import app.it.fast4x.rimusic.utils.asMediaItem
 import app.it.fast4x.rimusic.utils.asSong
 import app.it.fast4x.rimusic.utils.bold
@@ -202,8 +204,11 @@ data class NotificationData(
     val is_force: Boolean,
     val force_update: Boolean,
     val isUpdate: Boolean,
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val showImage: Boolean = true,
+    val showText: Boolean = true
 )
+
 // ===== END NOTIFICATION DATA CLASS =====
 
 // ===== VERSION COMPARISON =====
@@ -547,7 +552,6 @@ fun HomeQuickPicks(
     )
     val showTips by rememberPreference(showTipsKey, true)
     val showCharts by rememberPreference(showChartsKey, true)
-
     // ===== NOTIFICATION MESSAGE =====
     var notificationResult by remember { mutableStateOf<Result<NotificationData?>?>(null) }
     var notificationInit by remember { mutableStateOf<NotificationData?>(null) }
@@ -598,7 +602,7 @@ fun HomeQuickPicks(
 
     var sessionLikedSongsPreview by persistList<Song>("home/quickpicks/sessionLikedSongsPreview")
 
-    suspend fun currentAccountLikedSongs(limit: Int = 30): List<Song> {
+    suspend fun currentAccountLikedSongs(limit: Int = 120): List<Song> {
         val session = YouTubeSessionStore.applyCurrentSession(context) ?: return localLikedSongs(limit)
         if (!YouTubeSessionStore.hasAuthCookies(session.cookie)) return localLikedSongs(limit)
 
@@ -738,7 +742,7 @@ fun HomeQuickPicks(
             val notificationDeferred = async(Dispatchers.IO) {
                 if (notificationResult == null || forceReload) {
                     runCatching {
-                        val url = "https://raw.githubusercontent.com/cybruGhost/Waigwe/main/storex/notification.json"
+                        val url = SecureApiConfig.cubicNotificationConfigUrl
                         val connection = java.net.URL(url).openConnection() as java.net.HttpURLConnection
                         connection.requestMethod = "GET"
                         connection.connectTimeout = 2500
@@ -760,7 +764,9 @@ fun HomeQuickPicks(
                                 isUpdate = notificationJson.getBoolean("isUpdate"),
                                 imageUrl = notificationJson.optString("imageUrl").takeUnless {
                                     it.isBlank() || it.equals("null", ignoreCase = true)
-                                }
+                                },
+                                showImage = notificationJson.optBoolean("show_image", true),
+                                showText = notificationJson.optBoolean("show_text", true)
                             )
                         } else {
                             null
@@ -1456,129 +1462,41 @@ fun HomeQuickPicks(
                     }
                 }
 
-                // ===== NOTIFICATION MESSAGE SECTION =====
                 notificationInit?.let { notification ->
-                    // Get current app version
-                    val currentVersion = BuildConfig.VERSION_NAME  // e.g., "v1.7.4"
-
-                    // DEBUG: Print versions to log
-                    Timber.d("JSON Version: ${notification.version}, App Version: $currentVersion")
-
-                    // Check if JSON version is NEWER than app version
+                    val currentVersion = BuildConfig.VERSION_NAME
                     val hasNewUpdate = isNewerVersion(notification.version, currentVersion)
-
-                    // DEBUG: Print comparison result
-                    Timber.d("isNewerVersion result: $hasNewUpdate")
-
-                    // ONLY show emergency emoji if force_update is true
                     val showEmergency = notification.force_update && hasNewUpdate
 
-                    if (notification.show) {
-                        Spacer(modifier = Modifier.height(16.dp))
-
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 16.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(
-                                    // Use accent color ONLY for emergency force updates
-                                    if (showEmergency)
-                                        colorPalette().accent.copy(alpha = 0.1f)
-                                    else
-                                        colorPalette().background1
-                                )
-                                .clickable {
-                                    val intent = android.content.Intent(
-                                        android.content.Intent.ACTION_VIEW,
-                                        android.net.Uri.parse(notification.url)
-                                    )
-                                    context.startActivity(intent)
-                                }
-                        ) {
-                            Column(modifier = Modifier.padding(16.dp)) {
-                                // IMAGE (only if exists and not blank)
-                                notification.imageUrl?.takeIf { it.isNotBlank() }?.let { imageUrl ->
-                                    AsyncImage(
-                                        model = ImageRequest.Builder(context)
-                                            .data(imageUrl)
-                                            .crossfade(true)
-                                            .build(),
-                                        contentDescription = notification.title,
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .height(120.dp)
-                                            .clip(RoundedCornerShape(8.dp))
-                                    )
-                                    Spacer(modifier = Modifier.height(12.dp))
-                                }
-
-                                // TITLE
-                                BasicText(
-                                    text = notification.title,
-                                    style = typography().m.bold.color(
-                                        // Red color ONLY for emergency updates
-                                        if (showEmergency)
-                                            Color(0xFFD32F2F)  // Red color
-                                        else
-                                            colorPalette().text
-                                    ),
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                // MESSAGE
-                                BasicText(
-                                    text = notification.contents,
-                                    style = typography().s.color(
-                                        if (showEmergency)
-                                            Color(0xFFD32F2F)  // Red color
-                                        else
-                                            colorPalette().text
-                                    ),
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis
-                                )
-
-                                // VERSION INFO (SMALL TEXT at bottom)
-                                Spacer(modifier = Modifier.height(8.dp))
-
-                                if (hasNewUpdate) {
-                                    // NEW UPDATE AVAILABLE
-                                    BasicText(
-                                        text = "Update available: ${notification.version} (You have: $currentVersion)",
-                                        style = typography().xs.secondary,
-                                        maxLines = 1
-                                    )
-
-                                    // EMERGENCY WARNING (only if force_update = true)
-                                    if (showEmergency) {
-                                        Spacer(modifier = Modifier.height(4.dp))
-                                        BasicText(
-                                            text = "⚠️ URGENT: This update fixes critical issues",
-                                            style = typography().xxs.bold.color(Color(0xFFD32F2F)),
-                                            maxLines = 1
-                                        )
-                                    }
-                                } else {
-                                    // YOU HAVE LATEST VERSION
-                                    BasicText(
-                                        text = "Latest version: $currentVersion",
-                                        style = typography().xs.secondary.copy(
-                                            color = Color(0xFF4CAF50) // Material Green
-                                        ),
-                                        maxLines = 1
-                                    )
-                                }
-                            }
+                    fun openExternalUrl(targetUrl: String) {
+                        runCatching {
+                            context.startActivity(
+                                Intent(
+                                    Intent.ACTION_VIEW,
+                                    android.net.Uri.parse(targetUrl)
+                                ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
+                            )
+                        }.onFailure { error ->
+                            Timber.w(error, "HomeQuickPicks failed to open external url")
                         }
+                    }
 
+                    if (notification.show || hasNewUpdate) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        RemoteConfigQuickPicksCard(
+                            notification = notification,
+                            hasNewUpdate = hasNewUpdate,
+                            showEmergency = showEmergency,
+                            onOpenUrl = ::openExternalUrl,
+                            onOpenAboutUpdate = {
+                                navController.currentBackStackEntry
+                                    ?.savedStateHandle
+                                    ?.set("settings_tab_index", 8)
+                                navController.navigate(NavRoutes.settings.name)
+                            }
+                        )
                         Spacer(modifier = Modifier.height(16.dp))
                     }
-                }
-                // ===== END NOTIFICATION MESSAGE SECTION =====
+                }                // ===== END NOTIFICATION MESSAGE SECTION =====
 
                 if (isYouTubeLoggedIn()) {
                     if (sessionLikedSongsPreview.isNotEmpty()) {
@@ -2516,6 +2434,148 @@ fun HomeQuickPicks(
                         },
                         miniPlayer = {}
                     )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RemoteConfigQuickPicksCard(
+    notification: NotificationData,
+    hasNewUpdate: Boolean,
+    showEmergency: Boolean,
+    onOpenUrl: (String) -> Unit,
+    onOpenAboutUpdate: () -> Unit,
+) {
+    val context = LocalContext.current
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp)
+            .clip(RoundedCornerShape(24.dp))
+            .clickable(enabled = notification.url.isNotBlank()) { onOpenUrl(notification.url) }
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.linearGradient(
+                    listOf(
+                        if (showEmergency) Color(0x33FF6B6B) else colorPalette().accent.copy(alpha = 0.16f),
+                        colorPalette().background1.copy(alpha = 0.96f),
+                        colorPalette().background0.copy(alpha = 0.98f)
+                    )
+                )
+            )
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            if (notification.showImage) {
+                notification.imageUrl?.takeIf { it.isNotBlank() }?.let { imageUrl ->
+                    AsyncImage(
+                        model = ImageRequest.Builder(context)
+                            .data(imageUrl)
+                            .crossfade(true)
+                            .build(),
+                        contentDescription = notification.title,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(if (notification.showText) 156.dp else 196.dp)
+                            .clip(RoundedCornerShape(32.dp))
+                    )
+                    Spacer(modifier = Modifier.height(14.dp))
+                }
+            }
+
+            if (notification.showText) {
+                BasicText(
+                    text = notification.title,
+                    style = typography().m.bold.color(
+                        if (showEmergency) Color(0xFFFFD5D5) else colorPalette().text
+                    ),
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                BasicText(
+                    text = notification.contents,
+                    style = typography().s.color(colorPalette().textSecondary),
+                    maxLines = if (notification.showImage) 4 else 6,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            BasicText(
+                text = if (hasNewUpdate) {
+                    "Available: ${notification.version} - Installed: ${BuildConfig.VERSION_NAME}"
+                } else {
+                    "Installed version: ${BuildConfig.VERSION_NAME}"
+                },
+                style = typography().xs.secondary,
+                maxLines = 1
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+            BasicText(
+                text = if (showEmergency) {
+                    "Critical fixes are ready in this release."
+                } else {
+                    "Tap this card to open the linked announcement."
+                },
+                style = typography().xs.semiBold.color(
+                    if (showEmergency) Color(0xFFFF8C8C) else colorPalette().accent
+                ),
+                maxLines = 2
+            )
+
+            Spacer(modifier = Modifier.height(14.dp))
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            if (hasNewUpdate) colorPalette().accent
+                            else colorPalette().background2.copy(alpha = 0.7f)
+                        )
+                        .clickable {
+                            if (hasNewUpdate) onOpenAboutUpdate()
+                            else if (notification.url.isNotBlank()) onOpenUrl(notification.url)
+                        }
+                        .padding(horizontal = 16.dp, vertical = 12.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    BasicText(
+                        text = if (hasNewUpdate) "Update Now" else "Open Notice",
+                        style = typography().s.semiBold.color(
+                            if (hasNewUpdate) colorPalette().background0 else colorPalette().text
+                        ),
+                        maxLines = 1
+                    )
+                }
+
+                if (hasNewUpdate && notification.url.isNotBlank()) {
+                    Box(
+                        modifier = Modifier
+                            .clip(RoundedCornerShape(16.dp))
+                            .background(colorPalette().background2.copy(alpha = 0.72f))
+                            .clickable { onOpenUrl(notification.url) }
+                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        BasicText(
+                            text = "Open Link",
+                            style = typography().s.semiBold.color(colorPalette().text)
+                        )
+                    }
                 }
             }
         }

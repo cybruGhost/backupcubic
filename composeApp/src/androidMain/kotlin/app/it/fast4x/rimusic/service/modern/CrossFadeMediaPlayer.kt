@@ -35,7 +35,7 @@ class CrossFadeMediaPlayer(
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val monitorIntervalMs = 100L
-    private val preloadThreshold = 0.72f
+    private val preloadThreshold = 0.9f
     private val readyTimeoutMs = 3_500L
     private val crossfadeCompletionGraceMs = 400L
     private val earlyStartLeadInMs = 0L
@@ -232,7 +232,8 @@ class CrossFadeMediaPlayer(
 
         val currentPosition = currentPlayer.currentPosition.coerceAtLeast(0L)
         val remaining = (duration - currentPosition).coerceAtLeast(0L)
-        val preloadStartPosition = (duration * preloadThreshold).toLong()
+        val preloadLeadInMs = (crossfadeDurationMs * 2).coerceIn(6_000L, 18_000L)
+        val preloadStartPosition = maxOf((duration * preloadThreshold).toLong(), duration - preloadLeadInMs)
 
         val shouldPreload = currentPosition >= preloadStartPosition
         if (shouldPreload) {
@@ -248,9 +249,9 @@ class CrossFadeMediaPlayer(
             return
         }
 
-        ensureSecondaryPrepared(nextIndex)
+        val nextReadyForCrossfade = ensureSecondaryPrepared(nextIndex)
 
-        if (nextPlayer.playbackState == Player.STATE_READY) {
+        if (nextReadyForCrossfade && nextPlayer.playbackState == Player.STATE_READY) {
             startCrossfade(effectiveCrossfadeWindowMs)
             return
         }
@@ -266,30 +267,51 @@ class CrossFadeMediaPlayer(
         }
     }
 
-    private fun ensureSecondaryPrepared(nextIndex: Int) {
+    private fun ensureSecondaryPrepared(nextIndex: Int): Boolean {
+        if (!enabled || crossfadeDurationMs <= 0L) return false
+        if (nextIndex == C.INDEX_UNSET || nextIndex >= currentPlayer.mediaItemCount) {
+            resetNextPlayer()
+            return false
+        }
+
         val mediaItem = currentPlayer.getMediaItemAt(nextIndex)
-        if (preloadedIndex == nextIndex && preloadedMediaId == mediaItem.mediaId) return
+        val nextMediaId = mediaItem.mediaId.trim()
+        if (nextMediaId.isBlank()) {
+            skippedMediaId = currentPlayer.currentMediaItem?.mediaId
+            resetNextPlayer()
+            return false
+        }
+        if (preloadedIndex == nextIndex && preloadedMediaId == nextMediaId) return true
 
         isCrossfading = false
         waitingReadySinceMs = 0L
 
         val queue = buildQueueSnapshot(currentPlayer)
-        nextPlayer.stop()
-        nextPlayer.clearMediaItems()
-        nextPlayer.setMediaItems(queue, nextIndex, 0L)
-        nextPlayer.prepare()
-        nextPlayer.playWhenReady = false
-        nextPlayer.volume = 0f
-        nextPlayer.playbackParameters = currentPlayer.playbackParameters
-        nextPlayer.repeatMode = currentPlayer.repeatMode
-        nextPlayer.shuffleModeEnabled = currentPlayer.shuffleModeEnabled
+        return runCatching {
+            nextPlayer.stop()
+            nextPlayer.clearMediaItems()
+            nextPlayer.setMediaItems(queue, nextIndex, 0L)
+            nextPlayer.prepare()
+            nextPlayer.playWhenReady = false
+            nextPlayer.volume = 0f
+            nextPlayer.playbackParameters = currentPlayer.playbackParameters
+            nextPlayer.repeatMode = currentPlayer.repeatMode
+            nextPlayer.shuffleModeEnabled = currentPlayer.shuffleModeEnabled
 
-        preloadedIndex = nextIndex
-        preloadedMediaId = mediaItem.mediaId
+            preloadedIndex = nextIndex
+            preloadedMediaId = nextMediaId
+            true
+        }.getOrElse {
+            skippedMediaId = currentPlayer.currentMediaItem?.mediaId
+            resetNextPlayer()
+            false
+        }
     }
 
     private fun startCrossfade(durationMs: Long) {
         if (isCrossfading) return
+        if (preloadedIndex == C.INDEX_UNSET || preloadedMediaId.isNullOrBlank()) return
+        if (nextPlayer.playbackState == Player.STATE_IDLE) return
 
         waitingReadySinceMs = 0L
         isCrossfading = true
@@ -306,7 +328,12 @@ class CrossFadeMediaPlayer(
         currentPlayer.volume = baseVolume
         setPauseAtEndOfMediaItems(currentPlayer, true)
 
-        nextPlayer.seekTo(preloadedIndex, 0L)
+        runCatching {
+            nextPlayer.seekTo(preloadedIndex, 0L)
+        }.onFailure {
+            recoverFromSecondaryError()
+            return
+        }
         nextPlayer.volume = 0f
         nextPlayer.playbackParameters = currentPlayer.playbackParameters
 

@@ -5,6 +5,7 @@ import app.cubic.android.core.network.enum.NetworkQuality
 import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.appVisibilityInBackground
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,9 +28,9 @@ import java.util.concurrent.TimeUnit
 
 object YtmSessionApi {
 
-    // Replace with your deployed public cookie-inspection endpoint.
-    private const val SESSION_ENDPOINT = "https://ytm-session-hero.lovable.app/api/ytm-session"
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
+    private val sessionEndpoint: String
+        get() = SecureApiConfig.ytmSessionEndpoint
 
     private val httpClient = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
@@ -56,7 +57,7 @@ object YtmSessionApi {
             require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
 
             val request = Request.Builder()
-                .url("$SESSION_ENDPOINT?action=fetch")
+                .url("$sessionEndpoint?action=fetch")
                 .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
                 .header("Content-Type", "application/json")
                 .build()
@@ -85,7 +86,7 @@ object YtmSessionApi {
             require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
 
             val request = Request.Builder()
-                .url("$SESSION_ENDPOINT?action=list_accounts")
+                .url("$sessionEndpoint?action=list_accounts")
                 .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
                 .header("Content-Type", "application/json")
                 .build()
@@ -129,7 +130,7 @@ object YtmSessionApi {
                 }
 
             val url = buildString {
-                append(SESSION_ENDPOINT)
+                append(sessionEndpoint)
                 append("?action=switch_account&authuser=").append(authUser)
                 if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
             }
@@ -228,7 +229,7 @@ object YtmSessionApi {
             require(playlistId.isNotBlank()) { "Missing playlistId" }
 
             val url = buildString {
-                append(SESSION_ENDPOINT)
+                append(sessionEndpoint)
                 append("?action=playlist_songs")
                 append("&playlistId=").append(playlistId)
                 if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
@@ -399,7 +400,7 @@ object YtmSessionApi {
             require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
 
             val url = buildString {
-                append(SESSION_ENDPOINT)
+                append(sessionEndpoint)
                 append("?action=").append(action)
                 if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
                 if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
