@@ -10,6 +10,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.ExoPlayer
 import app.it.fast4x.rimusic.cleanPrefix
 import app.it.fast4x.rimusic.utils.mediaItems
+import app.it.fast4x.rimusic.utils.isPlayable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import java.lang.reflect.Method
@@ -27,7 +28,7 @@ data class CrossfadeUiState(
 )
 
 @UnstableApi
-class CrossFadeMediaPlayer(
+class CrossFadeManager(
     private var currentPlayer: ExoPlayer,
     private var nextPlayer: ExoPlayer,
     private val targetVolumeProvider: () -> Float,
@@ -35,13 +36,13 @@ class CrossFadeMediaPlayer(
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val monitorIntervalMs = 100L
-    private val preloadThreshold = 0.9f
+    private val preloadThreshold = 0.94f
     private val readyTimeoutMs = 3_500L
     private val crossfadeCompletionGraceMs = 400L
     private val earlyStartLeadInMs = 0L
     private val incomingStartVolumeRatio = 0.05f
     private val outgoingHoldPortion = 0f
-    private val minimumCrossfadeDurationMs = 2_500L
+    private val minimumCrossfadeDurationMs = 750L
 
     private var enabled = false
     private var crossfadeDurationMs = 0L
@@ -232,7 +233,7 @@ class CrossFadeMediaPlayer(
 
         val currentPosition = currentPlayer.currentPosition.coerceAtLeast(0L)
         val remaining = (duration - currentPosition).coerceAtLeast(0L)
-        val preloadLeadInMs = (crossfadeDurationMs * 2).coerceIn(6_000L, 18_000L)
+        val preloadLeadInMs = (crossfadeDurationMs + 1_500L).coerceIn(2_000L, 8_000L)
         val preloadStartPosition = maxOf((duration * preloadThreshold).toLong(), duration - preloadLeadInMs)
 
         val shouldPreload = currentPosition >= preloadStartPosition
@@ -275,6 +276,11 @@ class CrossFadeMediaPlayer(
         }
 
         val mediaItem = currentPlayer.getMediaItemAt(nextIndex)
+        if (!mediaItem.isPlayable()) {
+            skippedMediaId = currentPlayer.currentMediaItem?.mediaId
+            resetNextPlayer()
+            return false
+        }
         val nextMediaId = mediaItem.mediaId.trim()
         if (nextMediaId.isBlank()) {
             skippedMediaId = currentPlayer.currentMediaItem?.mediaId

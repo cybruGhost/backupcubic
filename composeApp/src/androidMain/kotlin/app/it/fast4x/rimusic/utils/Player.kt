@@ -17,17 +17,35 @@ import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import app.it.fast4x.rimusic.appContext
+import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.enums.DurationInMinutes
 import app.it.fast4x.rimusic.service.MyDownloadHelper
+import app.it.fast4x.rimusic.service.modern.LOCAL_KEY_PREFIX
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.flow.first
 import app.kreate.android.me.knighthat.utils.Toaster
 import timber.log.Timber
 import java.util.ArrayDeque
 
 var GlobalVolume: Float = 0.5f
+
+private val youtubeIdRegex = Regex("^[A-Za-z0-9_-]{11}$")
+
+fun MediaItem.isPlayable(): Boolean {
+    val id = mediaId.trim()
+    val uri = localConfiguration?.uri
+    if (id.isBlank() && uri == null) return false
+    if (id.startsWith(LOCAL_KEY_PREFIX, ignoreCase = true)) {
+        return uri != null
+    }
+    if (uri != null) return true
+    if (id.startsWith("http", ignoreCase = true)) return true
+    if (id.contains("/", ignoreCase = true)) return true
+    return youtubeIdRegex.matches(id)
+}
 
 private fun MediaItem.hasOfflinePlayableSource(context: Context): Boolean {
     val rawUri = localConfiguration?.uri?.toString().orEmpty()
@@ -54,8 +72,13 @@ private fun MediaItem.hasOfflinePlayableSource(context: Context): Boolean {
     val cachedBytes = runCatching {
         MyDownloadHelper.getDownloadCache(context).getCachedBytes(songId, 0, -1)
     }.getOrDefault(0L)
+    val hasStoredFormat = runCatching {
+        runBlocking(Dispatchers.IO) {
+            Database.formatTable.findBySongId(songId).first()?.contentLength != null
+        }
+    }.getOrDefault(false)
 
-    return isDownloaded || cachedBytes > 0L
+    return isDownloaded || cachedBytes > 0L || hasStoredFormat
 }
 
 private fun ensurePlayableOrNotify(mediaItem: MediaItem): Boolean {

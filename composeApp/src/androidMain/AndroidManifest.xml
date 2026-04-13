@@ -147,6 +147,13 @@
                 android:resource="@xml/shortcuts" />
         </activity>
 
+        <activity
+            android:name="app.it.fast4x.rimusic.RescueCenterActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTop"
+            android:theme="@style/Theme.RiMusic" />
+
         <receiver android:name=".widget.VerticalWidgetReceiver"
             android:exported="true">
             <intent-filter>
@@ -164,6 +171,15 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/player_horizontal_widget_info" />
+        </receiver>
+        <receiver android:name=".widget.RescueWidgetReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/rescue_widget_info" />
         </receiver>
 
         <!-- NEW PLAYER SERVICE -->

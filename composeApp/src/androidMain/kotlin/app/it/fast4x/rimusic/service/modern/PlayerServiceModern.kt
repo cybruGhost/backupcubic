@@ -27,7 +27,6 @@ import android.media.audiofx.PresetReverb
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.PowerManager
 import android.os.SystemClock
 import androidx.annotation.MainThread
 import androidx.compose.runtime.getValue
@@ -150,6 +149,7 @@ import androidx.media3.common.Player.STATE_ENDED
 import app.it.fast4x.rimusic.utils.forcePlay
 import app.it.fast4x.rimusic.utils.getEnum
 import app.it.fast4x.rimusic.utils.intent
+import app.it.fast4x.rimusic.utils.isPlayable
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid10
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid6
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid7
@@ -229,6 +229,7 @@ import androidx.compose.ui.util.fastMap
 import app.it.fast4x.rimusic.utils.isDiscordPresenceEnabledKey
 import android.app.Notification
 import android.app.NotificationChannel
+import app.it.fast4x.rimusic.utils.safeSetMediaItems
 
 const val LOCAL_KEY_PREFIX = "local:"
 
@@ -252,7 +253,7 @@ class PlayerServiceModern : MediaLibraryService(),
     private lateinit var crossfadeOverlayPlayer: ExoPlayer
     private lateinit var stablePlayerBridge: DelegatingExoPlayer
     private lateinit var sessionPlayer: ExoPlayer
-    private lateinit var crossFadeMediaPlayer: CrossFadeMediaPlayer
+    private lateinit var crossFadeMediaPlayer: CrossFadeManager
     lateinit var cache: Cache
     lateinit var downloadCache: Cache
     private lateinit var audioVolumeObserver: AudioVolumeObserver
@@ -264,7 +265,7 @@ class PlayerServiceModern : MediaLibraryService(),
     private var audioFocusRequest: AudioFocusRequest? = null
     private var wasPlayingBeforeFocusLoss = false
     private var volumeBeforeDuck = 1f
-    private var playbackWakeLock: PowerManager.WakeLock? = null
+    private lateinit var wakeLockManager: WakeLockManager
     private var audioDeviceCallback: AudioDeviceCallback? = null
     private lateinit var downloadListener: DownloadManager.Listener
 
@@ -318,6 +319,7 @@ class PlayerServiceModern : MediaLibraryService(),
     private var reverbPreset: PresetReverb? = null
     private var showLikeButton = true
     private var showDownloadButton = true
+
 
     lateinit var audioQualityFormat: AudioQualityFormat
     lateinit var sleepTimer: SleepTimer
@@ -489,24 +491,14 @@ class PlayerServiceModern : MediaLibraryService(),
         // Previously, ExoPlayer was internally requesting focus AND we were requesting it manually,
         // which caused the OS to immediately fire AUDIOFOCUS_LOSS back to the old instance,
         // which then propagated as a spurious loss to us.
-        player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(createMediaSourceFactory())
-            .setRenderersFactory(createRendersFactory())
-            .setTrackSelector(createTrackSelector())
-            .setHandleAudioBecomingNoisy(true)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                // false = we manage audio focus ourselves (single request below)
-                false
-            )
-            .setUsePlatformDiagnostics(false)
-            .setSeekBackIncrementMs(5000)
-            .setSeekForwardIncrementMs(5000)
-            .build()
+        wakeLockManager = WakeLockManager(this, "CubicMusic::Playback")
+
+        val playerSet = PlayerInitializer.createPlayers(
+            context = this,
+            mediaSourceFactory = createMediaSourceFactory(),
+            renderersFactory = createRendersFactory(),
+        )
+        player = playerSet.player
 
         // FIX: Request audio focus ONCE. Abandon any stale focus from previous crashed
         // instance before requesting to prevent the OS immediately sending AUDIOFOCUS_LOSS.
@@ -534,23 +526,9 @@ class PlayerServiceModern : MediaLibraryService(),
             Timber.d("PlayerServiceModern audio focus request result=%s granted=%s", focusRequestResult, audioFocusGranted)
         }
 
-        crossfadeOverlayPlayer = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(createMediaSourceFactory())
-            .setRenderersFactory(createRendersFactory())
-            .setTrackSelector(createTrackSelector())
-            .setHandleAudioBecomingNoisy(false)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(C.USAGE_MEDIA)
-                    .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
-                    .build(),
-                false
-            )
-            .setUsePlatformDiagnostics(false)
-            .build()
+        crossfadeOverlayPlayer = playerSet.crossfadeOverlayPlayer
 
-        crossFadeMediaPlayer = CrossFadeMediaPlayer(
+        crossFadeMediaPlayer = CrossFadeManager(
             currentPlayer = player,
             nextPlayer = crossfadeOverlayPlayer,
             targetVolumeProvider = { preferences.getFloat(playbackVolumeKey, 1f) },
@@ -849,7 +827,7 @@ class PlayerServiceModern : MediaLibraryService(),
 
 @UnstableApi
 override fun onDestroy() {
-    // Release wake lock FIRST before anything else
+    isServiceReady = false
     try {
         releasePlaybackWakeLock()
     } catch (e: Exception) {
@@ -864,10 +842,6 @@ override fun onDestroy() {
         if (isServiceReady) player.currentMediaItem?.mediaId else null,
         if (isServiceReady) player.mediaItemCount else 0
     )
-
-    // Mark as not ready immediately to prevent callbacks from firing during teardown
-    isServiceReady = false
-
         runCatching {
             if (preferences.getBoolean(isDiscordPresenceEnabledKey, false)) {
                 Toaster.i("[DiscordPresence] onStop: call the manager (close discord presence)")
@@ -904,7 +878,6 @@ override fun onDestroy() {
                 MyDownloadHelper.getDownloadManager(this).removeListener(downloadListener)
             }
             loudnessEnhancer?.release()
-            releasePlaybackWakeLock()
             audioFocusRequest?.let { request ->
                 audioManager?.abandonAudioFocusRequest(request)
             }
@@ -973,45 +946,14 @@ override fun onDestroy() {
         }
     }
 
- private fun acquirePlaybackWakeLock() {
+private fun acquirePlaybackWakeLock() {
     if (!isServiceReady) return
-    try {
-        val powerManager = getSystemService(POWER_SERVICE) as? PowerManager ?: return
-        if (playbackWakeLock == null) {
-            playbackWakeLock = powerManager.newWakeLock(
-                PowerManager.PARTIAL_WAKE_LOCK,
-                "CubicMusic::Playback"
-            ).apply {
-                setReferenceCounted(false)
-            }
-        }
-        val wakeLock = playbackWakeLock ?: return
-        // Check if wake lock is already held before acquiring
-        if (!wakeLock.isHeld) {
-            wakeLock.acquire(10 * 60 * 1000L)
-            Timber.d("PlayerServiceModern wake lock acquired")
-        }
-    } catch (e: Exception) {
-        Timber.e(e, "Failed to acquire wake lock")
-        // Don't crash - just continue without wake lock
-    }
+    wakeLockManager.acquire()
 }
 
 private fun releasePlaybackWakeLock() {
-    try {
-        val wakeLock = playbackWakeLock
-        if (wakeLock != null && wakeLock.isHeld) {
-            runCatching { wakeLock.release() }
-                .onFailure { e -> Timber.e(e, "Failed to release wake lock") }
-            Timber.d("PlayerServiceModern wake lock released")
-        }
-        playbackWakeLock = null // Clear reference after release attempt
-    } catch (e: Exception) {
-        Timber.e(e, "Error releasing wake lock")
-        playbackWakeLock = null
-    }
+    wakeLockManager.release()
 }
-
     override fun onSharedPreferenceChanged(
         sharedPreferences: SharedPreferences?,
         key: String?
@@ -1225,11 +1167,12 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 Timber.w(error, "Extractor/source drift detected for mediaId=%s. Performing one gentle retry.", currentMediaId)
                 showSmartMessage("Source changed for this song. Retrying once.")
                 player.pause()
-                player.prepare()
+                player.safePrepare()
                 handler.postDelayed(
                     {
                         if (isServiceReady && player.currentMediaItem?.mediaId == currentMediaId) {
-                            player.play()
+                            runCatching { player.play() }
+                                .onFailure { Timber.e(it, "Failed to resume extractor recovery for %s", currentMediaId) }
                         }
                     },
                     1000L // FIX: Increased from 800ms for more stability
@@ -1278,9 +1221,10 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         if (error.errorCode in playbackHttpExceptionList) {
             Timber.e("PlayerServiceModern onPlayerError recovered occurred errorCodeName ${error.errorCodeName}")
             player.pause()
-            player.prepare()
+            player.safePrepare()
             if (player.playWhenReady) {
-                player.play()
+                runCatching { player.play() }
+                    .onFailure { Timber.e(it, "Failed to resume playback after HTTP recovery for %s", currentMediaId) }
             }
             return
         }
@@ -1310,11 +1254,12 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 currentMediaId
             )
             player.pause()
-            player.prepare()
+            player.safePrepare()
             handler.postDelayed(
                 {
                     if (isServiceReady && player.currentMediaItem?.mediaId == currentMediaId) {
-                        player.play()
+                        runCatching { player.play() }
+                            .onFailure { Timber.e(it, "Failed to resume Android Auto recovery for %s", currentMediaId) }
                     }
                 },
                 700L // FIX: Slightly increased from 500ms
@@ -1666,7 +1611,8 @@ override fun onPlaybackStateChanged(playbackState: Int) {
 
                 override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
                     if (isServiceReady && !player.isPlaying && addedDevices.any(::canPlayMusic)) {
-                        player.play()
+                        runCatching { player.play() }
+                            .onFailure { Timber.e(it, "Failed to resume playback after device connection") }
                     }
                 }
 
@@ -2352,7 +2298,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
 
             runBlocking(Dispatchers.Main) {
                 if (!isServiceReady) return@runBlocking
-                player.setMediaItems(
+                if (!player.safeSetMediaItems(
                     queuedSong.map { mediaItem ->
                         mediaItem.mediaItem.buildUpon()
                             .setUri(sanitizePlaybackUri(mediaItem.mediaItem.mediaId))
@@ -2363,8 +2309,8 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                     },
                     index,
                     queuedSong[index].position ?: C.TIME_UNSET
-                )
-                player.prepare()
+                )) return@runBlocking
+                player.safePrepare()
             }
         }
     }
@@ -2382,7 +2328,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         }.onSuccess { queue ->
             runBlocking(Dispatchers.Main) {
                 if (!isServiceReady) return@runBlocking
-                player.setMediaItems(
+                if (!player.safeSetMediaItems(
                     queue.songMediaItems.map { song ->
                         song.asMediaItem.buildUpon()
                             .setUri(sanitizePlaybackUri(song.asMediaItem.mediaId))
@@ -2393,8 +2339,8 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                     },
                     queue.mediaItemIndex,
                     queue.position
-                )
-                player.prepare()
+                )) return@runBlocking
+                player.safePrepare()
             }
         }.onFailure {
             Timber.e(it.stackTraceToString())
@@ -2584,6 +2530,11 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             endpoint: NavigationEndpoint.Endpoint.Watch? = null
         ) {
             this.stopRadio()
+            if (!mediaItem.isPlayable()) {
+                Toaster.w("This song source is invalid and cannot be played")
+                Timber.w("startRadio skipped invalid media item: %s", mediaItem.mediaId)
+                return
+            }
             val sanitizedMediaItem = mediaItem.buildUpon()
                 .setUri(
                     sanitizePlaybackUri(
