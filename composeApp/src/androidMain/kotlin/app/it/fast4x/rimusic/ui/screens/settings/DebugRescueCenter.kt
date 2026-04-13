@@ -143,7 +143,7 @@ fun DebugRescueCenterLauncher(
 }
 
 @Composable
-private fun DebugRescueCenterDialog(
+fun DebugRescueCenterDialog(
     context: Context,
     onDismiss: () -> Unit
 ) {

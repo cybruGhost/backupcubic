@@ -2,6 +2,7 @@ package app.kreate.android.widget
 
 import android.content.Context
 import android.graphics.BitmapFactory
+import android.graphics.BitmapFactory.Options
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.booleanPreferencesKey
@@ -37,6 +38,7 @@ import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import app.kreate.android.drawable.APP_ICON_BITMAP
 import app.it.fast4x.rimusic.MainActivity
+import app.it.fast4x.rimusic.RescueCenterActivity
 import app.it.fast4x.rimusic.cleanPrefix
 import java.io.File
 import androidx.compose.ui.graphics.Color
@@ -69,7 +71,7 @@ sealed class Widget : GlanceAppWidget() {
     @Composable
     @GlanceComposable
     protected fun Thumbnail(modifier: GlanceModifier) {
-        val bitmap = currentState(bitmapPath)?.let(BitmapFactory::decodeFile) ?: APP_ICON_BITMAP
+        val bitmap = currentState(bitmapPath)?.let(::decodeWidgetBitmap) ?: APP_ICON_BITMAP
         Image(
             provider = ImageProvider(bitmap),
             contentDescription = "cover",
@@ -295,4 +297,78 @@ sealed class Widget : GlanceAppWidget() {
             }
         }
     }
+
+    data object Rescue : Widget() {
+
+        @Composable
+        override fun Content(context: Context) {
+            Column(
+                modifier = GlanceModifier
+                    .fillMaxWidth()
+                    .background(ColorProvider(widgetBackgroundLight, widgetBackgroundDark))
+                    .padding(12.dp)
+                    .clickable(actionStartActivity<RescueCenterActivity>()),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                Column(
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .background(ColorProvider(widgetSurfaceLight, widgetSurfaceDark))
+                        .padding(horizontal = 14.dp, vertical = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalAlignment = Alignment.CenterHorizontally
+                ) {
+                    Image(
+                        provider = ImageProvider(R.drawable.alert_circle),
+                        contentDescription = "Rescue Center",
+                        modifier = GlanceModifier.size(36.dp)
+                    )
+                    Spacer(modifier = GlanceModifier.height(10.dp))
+                    Text(
+                        text = "RESCUE CENTER",
+                        style = TextStyle(
+                            color = ColorProvider(widgetAccentLight, widgetAccentDark),
+                            fontWeight = FontWeight.Medium
+                        )
+                    )
+                    Spacer(modifier = GlanceModifier.height(4.dp))
+                    Text(
+                        text = "Open crash and playback logs",
+                        style = TextStyle(
+                            color = ColorProvider(widgetTextLight, widgetTextDark),
+                            fontWeight = FontWeight.Bold
+                        )
+                    )
+                    Spacer(modifier = GlanceModifier.height(2.dp))
+                    Text(
+                        text = "Works even when the main player UI is unhappy",
+                        style = TextStyle(
+                            color = ColorProvider(widgetSubtextLight, widgetSubtextDark)
+                        )
+                    )
+                }
+            }
+        }
+    }
+}
+
+private fun decodeWidgetBitmap(path: String): android.graphics.Bitmap? {
+    val bounds = Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return null
+
+    val maxDimension = maxOf(bounds.outWidth, bounds.outHeight)
+    var sampleSize = 1
+    while (maxDimension / sampleSize > 512) {
+        sampleSize *= 2
+    }
+
+    return BitmapFactory.decodeFile(
+        path,
+        Options().apply {
+            inSampleSize = sampleSize.coerceAtLeast(1)
+            inPreferredConfig = android.graphics.Bitmap.Config.RGB_565
+        }
+    )
 }

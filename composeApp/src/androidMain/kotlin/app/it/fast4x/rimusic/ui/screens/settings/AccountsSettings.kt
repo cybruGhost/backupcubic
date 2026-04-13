@@ -214,6 +214,7 @@ AnimatedVisibility(
             var accountEmail by remember { mutableStateOf(storedAccountEmail) }
             var accountChannelHandle by remember { mutableStateOf(storedAccountChannelHandle) }
             var accountThumbnail by remember { mutableStateOf(storedAccountThumbnail) }
+            var isSyncingYtmData by remember { mutableStateOf(false) }
             var currentSessionId by remember {
                 mutableStateOf(YouTubeSessionStore.getCurrentSession(context)?.sessionId.orEmpty())
             }
@@ -327,15 +328,32 @@ AnimatedVisibility(
                     clearAccountScopedUiCaches()
                     linkedAccounts = YtmSessionApi.listAccounts(nextSession.cookie).getOrDefault(emptyList())
                     Toaster.i("${linkedAccount.accountName.ifBlank { "YouTube account" }} is now active")
-                    scope.launch(Dispatchers.IO) {
-                        syncSelectedYtmAccountData()
-                    }
                     restartService = true
                 }.onFailure {
                     Timber.w(it, "AccountsSettings: switch_account failed")
                     Toaster.e(it.message ?: "Failed to switch YouTube Music account")
                 }
                 isRefreshingAccountInfo = false
+            }
+
+            suspend fun syncYtmLibraryManually() {
+                if (!isLoggedIn) {
+                    Toaster.i("Connect YouTube Music first")
+                    return
+                }
+                isSyncingYtmData = true
+                runCatching {
+                    syncSelectedYtmAccountData()
+                }.onSuccess { synced ->
+                    Toaster.i(
+                        if (synced) "YouTube Music library synced"
+                        else "Nothing new to sync right now"
+                    )
+                }.onFailure {
+                    Timber.w(it, "AccountsSettings: manual_ytm_sync failed")
+                    Toaster.e(it.message ?: "Failed to sync YouTube Music library")
+                }
+                isSyncingYtmData = false
             }
 
             LaunchedEffect(Unit) {
@@ -577,6 +595,21 @@ AnimatedVisibility(
                                         )
                                     }
                                 }
+                            }
+
+                            if (isLoggedIn) {
+                                OtherSettingsEntry(
+                                    title = if (isSyncingYtmData) "Syncing YouTube Music library..." else "Sync YouTube Music library",
+                                    text = "Manually sync liked songs, playlists, artists, and albums. Playback stays separate from this sync.",
+                                    icon = R.drawable.sync,
+                                    onClick = {
+                                        if (!isSyncingYtmData) {
+                                            scope.launch {
+                                                syncYtmLibraryManually()
+                                            }
+                                        }
+                                    }
+                                )
                             }
 
                             linkedAccounts.forEach { linkedAccount ->

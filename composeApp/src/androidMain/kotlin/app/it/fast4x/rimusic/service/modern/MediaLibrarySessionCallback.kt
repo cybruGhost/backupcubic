@@ -69,6 +69,7 @@ import app.it.fast4x.rimusic.utils.showOnDevicePlaylistKey
 import app.it.fast4x.rimusic.utils.getEnum
 import app.it.fast4x.rimusic.utils.persistentQueueKey
 import app.it.fast4x.rimusic.utils.preferences
+import app.it.fast4x.rimusic.utils.isPlayable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.guava.future
@@ -725,27 +726,37 @@ override fun onConnect(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future(Dispatchers.IO) {
+        var requestedMediaItems = mediaItems
         PlaybackSourceHints.markControllerPlaybackRequest(
             packageName = controller.packageName,
-            mediaIds = mediaItems.map { it.mediaId }
+            mediaIds = requestedMediaItems.map { it.mediaId }
         )
         Timber.d(
             "MediaLibrarySessionCallback.onSetMediaItems controller=%s items=%s startIndex=%s startPositionMs=%s",
             controller.packageName,
-            mediaItems.joinToString(limit = 3) { it.mediaId },
+            requestedMediaItems.joinToString(limit = 3) { it.mediaId },
             startIndex,
             startPositionMs
         )
-        if (mediaItems.isEmpty()) {
+        if (requestedMediaItems.isEmpty()) {
             return@future MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0)
         }
 
         try {
-            if (mediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_LUCKY_SHUFFLE) {
+            val firstMediaId = requestedMediaItems.firstOrNull()?.mediaId.orEmpty()
+            val shouldFilterInvalidItems = '/' in firstMediaId || !firstMediaId.equals(firstMediaId.uppercase(), ignoreCase = false)
+            if (shouldFilterInvalidItems) {
+                requestedMediaItems = requestedMediaItems.filter { it.isPlayable() }.toMutableList()
+                if (requestedMediaItems.isEmpty()) {
+                    Timber.w("MediaLibrarySessionCallback.onSetMediaItems filtered all invalid items")
+                    return@future MediaSession.MediaItemsWithStartPosition(emptyList(), 0, 0)
+                }
+            }
+            if (requestedMediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_LUCKY_SHUFFLE) {
                 val allSongs = (QuickPicksRepository.trendingList.value + (QuickPicksRepository.relatedPage.value?.songs?.map { it.asSong } ?: emptyList())).distinctBy { it.id }.shuffled()
                 if (allSongs.isNotEmpty()) return@future MediaSession.MediaItemsWithStartPosition(allSongs.map { song -> MediaItemMapper.mapSongToMediaItem(song) }, 0, 0)
             }
-            if (mediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_SONG_SHUFFLE || mediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_SONGS_ALL_SHUFFLE) {
+            if (requestedMediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_SONG_SHUFFLE || requestedMediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_SONGS_ALL_SHUFFLE) {
                 val allSongs = database.songTable.sortAll(SongSortBy.DateAdded, SortOrder.Descending, excludeHidden = true).first().shuffled()
                 if (allSongs.isNotEmpty()) return@future MediaSession.MediaItemsWithStartPosition(allSongs.map { song -> MediaItemMapper.mapSongToMediaItem(song) }, 0, 0)
             }
@@ -808,10 +819,10 @@ override fun onConnect(
                 val allSongs = database.playlistTable.allAsPreview().first().filter { it.playlist.name.startsWith(MONTHLY_PREFIX, true) }.flatMap { preview -> database.songPlaylistMapTable.allSongsOf(preview.playlist.id).first() }.distinctBy { song -> song.id }.shuffled()
                 if (allSongs.isNotEmpty()) return@future MediaSession.MediaItemsWithStartPosition(allSongs.map { song -> MediaItemMapper.mapSongToMediaItem(song) }, 0, 0)
             }
-            if (mediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_PLAYLIST_SHUFFLE) {
-                val paths = mediaItems.first().mediaId.split("/")
+            if (requestedMediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_PLAYLIST_SHUFFLE) {
+                val paths = requestedMediaItems.first().mediaId.split("/")
                 val playlistId = paths.getOrNull(1)
-                    ?: return@future fallbackSetMediaItems(mediaItems, startPositionMs)
+                    ?: return@future fallbackSetMediaItems(requestedMediaItems, startPositionMs)
                 val allSongs = resolvePlaylistSongs(playlistId).shuffled()
                 if (allSongs.isNotEmpty()) return@future MediaSession.MediaItemsWithStartPosition(allSongs.map { song -> MediaItemMapper.mapSongToMediaItem(song) }, 0, 0)
             }
@@ -820,7 +831,7 @@ override fun onConnect(
             var startIdx = startIndex
             runCatching {
                 var songId = ""
-                val paths = mediaItems.first().mediaId.split("/")
+                val paths = requestedMediaItems.first().mediaId.split("/")
                 when (paths.firstOrNull()) {
                     MediaSessionConstants.ID_QUICK_PICKS -> { songId = paths.getOrNull(1).orEmpty(); queryList = (QuickPicksRepository.trendingList.value + (QuickPicksRepository.relatedPage.value?.songs?.map { it.asSong } ?: emptyList())).distinctBy { it.id } }
                     MediaSessionConstants.ID_SEARCH_SONGS -> { songId = paths.getOrNull(2).orEmpty(); queryList = searchedSongs }
@@ -882,7 +893,7 @@ override fun onConnect(
             Timber.e("MediaLibrarySessionCallback.onSetMediaItems failed: ${e.stackTraceToString()}")
         }
 
-        return@future fallbackSetMediaItems(mediaItems, startPositionMs)
+        return@future fallbackSetMediaItems(requestedMediaItems, startPositionMs)
     }
 
     override fun onAddMediaItems(
