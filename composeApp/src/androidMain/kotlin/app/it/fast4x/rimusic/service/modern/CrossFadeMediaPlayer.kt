@@ -36,13 +36,13 @@ class CrossFadeManager(
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val monitorIntervalMs = 100L
-    private val preloadThreshold = 0.94f
     private val readyTimeoutMs = 3_500L
     private val crossfadeCompletionGraceMs = 400L
     private val earlyStartLeadInMs = 0L
     private val incomingStartVolumeRatio = 0.05f
     private val outgoingHoldPortion = 0f
-    private val minimumCrossfadeDurationMs = 750L
+    private val minimumCrossfadeDurationMs = 250L
+    private val preloadPaddingMs = 400L
 
     private var enabled = false
     private var crossfadeDurationMs = 0L
@@ -233,8 +233,8 @@ class CrossFadeManager(
 
         val currentPosition = currentPlayer.currentPosition.coerceAtLeast(0L)
         val remaining = (duration - currentPosition).coerceAtLeast(0L)
-        val preloadLeadInMs = (crossfadeDurationMs + 1_500L).coerceIn(2_000L, 8_000L)
-        val preloadStartPosition = maxOf((duration * preloadThreshold).toLong(), duration - preloadLeadInMs)
+        val preloadLeadInMs = (crossfadeDurationMs + preloadPaddingMs).coerceAtLeast(1_000L)
+        val preloadStartPosition = (duration - preloadLeadInMs).coerceAtLeast(0L)
 
         val shouldPreload = currentPosition >= preloadStartPosition
         if (shouldPreload) {
@@ -322,7 +322,15 @@ class CrossFadeManager(
         waitingReadySinceMs = 0L
         isCrossfading = true
         crossfadeStartedAtMs = SystemClock.elapsedRealtime()
-        activeCrossfadeDurationMs = durationMs.coerceAtLeast(minimumCrossfadeDurationMs)
+        val remainingDurationMs = currentPlayer.duration
+            .takeIf { it != C.TIME_UNSET && it > 0L }
+            ?.let { duration ->
+                (duration - currentPlayer.currentPosition.coerceAtLeast(0L)).coerceAtLeast(0L)
+            }
+            ?: durationMs
+        activeCrossfadeDurationMs = durationMs
+            .coerceAtMost(remainingDurationMs.coerceAtLeast(minimumCrossfadeDurationMs))
+            .coerceAtLeast(minimumCrossfadeDurationMs)
         outgoingMediaId = currentPlayer.currentMediaItem?.mediaId
         outgoingExpectedEndAtMs = currentPlayer.duration
             .takeIf { it != C.TIME_UNSET && it > 0L }

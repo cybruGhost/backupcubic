@@ -27,6 +27,16 @@ import androidx.compose.ui.unit.dp
 import app.it.fast4x.rimusic.enums.PlayerTimelineType
 import kotlin.math.roundToLong
 
+private fun customSeekBarFraction(
+    value: Long,
+    minimumValue: Long,
+    maximumValue: Long,
+): Float {
+    val range = maximumValue - minimumValue
+    if (range <= 0L) return 0f
+    return ((value.toFloat() - minimumValue.toFloat()) / range.toFloat()).coerceIn(0f, 1f)
+}
+
 @Composable
 fun SeekBarCustom(
     type: PlayerTimelineType,
@@ -128,7 +138,7 @@ fun SeekBarCustom(
                 val scrubberPosition = if (maximumValue < minimumValue) {
                     0f
                 } else {
-                    (value.toFloat() - minimumValue) / (maximumValue - minimumValue) * size.width
+                    customSeekBarFraction(value, minimumValue, maximumValue) * size.width
                 }
 
                 drawCircle(
@@ -140,7 +150,7 @@ fun SeekBarCustom(
                 if (drawSteps) {
                     for (i in value + 1..maximumValue) {
                         val stepPosition =
-                            (i.toFloat() - minimumValue) / (maximumValue - minimumValue) * size.width
+                            customSeekBarFraction(i, minimumValue, maximumValue) * size.width
                         drawCircle(
                             color = scrubberColor,
                             radius = scrubberRadius.toPx() / 2,
@@ -164,7 +174,7 @@ fun SeekBarCustom(
         Spacer(
             modifier = Modifier
                 .height(currentBarHeight)
-                .fillMaxWidth((value.toFloat() - minimumValue) / (maximumValue - minimumValue))
+                .fillMaxWidth(customSeekBarFraction(value, minimumValue, maximumValue))
                 .background(color = color, shape = shape)
                 .align(Alignment.CenterStart)
         )

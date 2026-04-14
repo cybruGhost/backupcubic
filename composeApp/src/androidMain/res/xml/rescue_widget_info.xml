@@ -4,7 +4,7 @@
     android:description="@string/rescue_widget"
     android:minWidth="180dp"
     android:minHeight="96dp"
-    android:previewImage="@drawable/player_vertical_widget"
+    android:previewImage="@drawable/rescuecenterwidget"
     android:resizeMode="horizontal|vertical"
     android:widgetFeatures="reconfigurable|configuration_optional"
     android:updatePeriodMillis="0"

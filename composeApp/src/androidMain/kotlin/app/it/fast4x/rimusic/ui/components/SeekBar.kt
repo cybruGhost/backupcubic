@@ -25,6 +25,16 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToLong
 
+private fun seekBarFraction(
+    value: Long,
+    minimumValue: Long,
+    maximumValue: Long,
+): Float {
+    val range = maximumValue - minimumValue
+    if (range <= 0L) return 0f
+    return ((value.toFloat() - minimumValue.toFloat()) / range.toFloat()).coerceIn(0f, 1f)
+}
+
 @Composable
 fun SeekBar(
     value: Long,
@@ -101,7 +111,7 @@ fun SeekBar(
                 val scrubberPosition = if (maximumValue < minimumValue) {
                     0f
                 } else {
-                    (value.toFloat() - minimumValue) / (maximumValue - minimumValue) * size.width
+                    seekBarFraction(value, minimumValue, maximumValue) * size.width
                 }
 
                 drawCircle(
@@ -136,7 +146,7 @@ fun SeekBar(
         Spacer(
             modifier = Modifier
                 .height(currentBarHeight)
-                .fillMaxWidth((value.toFloat() - minimumValue) / (maximumValue - minimumValue))
+                .fillMaxWidth(seekBarFraction(value, minimumValue, maximumValue))
                 .background(color = color, shape = shape)
                 .align(Alignment.CenterStart)
         )
@@ -215,7 +225,7 @@ fun SeekBarThin(
                 if (drawSteps) {
                     for (i in value + 1..maximumValue) {
                         val stepPosition =
-                            (i.toFloat() - minimumValue) / (maximumValue - minimumValue) * size.width
+                            seekBarFraction(i, minimumValue, maximumValue) * size.width
                         drawCircle(
                             color = scrubberColor,
                             radius = scrubberRadius.toPx() / 2,
@@ -238,7 +248,7 @@ fun SeekBarThin(
         Spacer(
             modifier = Modifier
                 .height(barHeight)
-                .fillMaxWidth((value.toFloat() - minimumValue) / (maximumValue - minimumValue))
+                .fillMaxWidth(seekBarFraction(value, minimumValue, maximumValue))
                 .background(color = color, shape = shape)
                 .align(Alignment.CenterStart)
         )
