@@ -105,7 +105,7 @@ fun DebugRescueCenterLauncher(
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        painter = painterResource(R.drawable.alert_circle),
+                        painter = painterResource(R.drawable.rescue),
                         contentDescription = null,
                         tint = if (debugEnabled) colorPalette().accent else colorPalette().textDisabled,
                         modifier = Modifier.size(20.dp)
@@ -193,7 +193,7 @@ fun DebugRescueCenterDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(
-                            painter = painterResource(R.drawable.alert_circle),
+                            painter = painterResource(R.drawable.rescue),
                             contentDescription = null,
                             tint = colorPalette().accent,
                             modifier = Modifier.size(22.dp)
