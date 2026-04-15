@@ -46,6 +46,7 @@ import androidx.glance.text.TextStyle
 import androidx.media3.common.util.UnstableApi
 import androidx.palette.graphics.Palette
 import app.kreate.android.R
+import android.content.BroadcastReceiver
 import app.kreate.android.drawable.APP_ICON_BITMAP
 import app.it.fast4x.rimusic.MainActivity
 import app.it.fast4x.rimusic.RescueCenterActivity
@@ -53,6 +54,7 @@ import app.it.fast4x.rimusic.cleanPrefix
 import java.io.File
 import androidx.compose.ui.graphics.Color
 import android.content.Intent
+import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Broadcast action strings — must match PlayerServiceModern.Action exactly.
@@ -60,7 +62,20 @@ import android.content.Intent
 // via ContextCompat.registerReceiver(..., RECEIVER_NOT_EXPORTED). We set the
 // package on every Intent so the OS routes to the correct private receiver.
 // ─────────────────────────────────────────────────────────────────────────────
+// Add this class after imports, before sealed class Widget
+class WidgetActionReceiver : BroadcastReceiver() {
+    override fun onReceive(context: Context, intent: Intent) {
+        // Start the service (it will register its own receiver)
+        val serviceIntent = Intent(context, PlayerServiceModern::class.java)
+        context.startService(serviceIntent)
 
+        // Forward the intent to the service's internal receiver
+        val forwardIntent = Intent(intent.action).apply {
+            setPackage(context.packageName)
+        }
+        context.sendBroadcast(forwardIntent)
+    }
+}
 private const val ACTION_PLAY     = "it.fast4x.rimusic.play"
 private const val ACTION_PAUSE    = "it.fast4x.rimusic.pause"
 private const val ACTION_NEXT     = "it.fast4x.rimusic.next"
@@ -262,7 +277,7 @@ sealed class Widget : GlanceAppWidget() {
     protected fun StatusBadge() {
         val isPlaying = currentState(isPlayingKey) ?: false
         Text(
-            text = if (isPlaying) "NOW PLAYING" else "PAUSED",
+            text = if (isPlaying) "▶ NOW PLAYING" else "PAUSED",
             style = TextStyle(
                 color = dynAcc(),
                 fontWeight = FontWeight.Medium,
