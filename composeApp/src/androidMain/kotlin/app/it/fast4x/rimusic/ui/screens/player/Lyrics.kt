@@ -1452,6 +1452,32 @@ fun SelectLyricFromTrack(
                             .background(Color.Black.copy(alpha = 0.28f))
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                     ) {
+                        if (isShowingSynchronizedLyrics) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(14.dp))
+                                    .background(colorPalette().background2.copy(alpha = 0.9f))
+                                    .clickable {
+                                        showSimpMusicOptions = false
+                                        isPicking = true
+                                    }
+                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                            ) {
+                                Image(
+                                    painter = painterResource(R.drawable.search),
+                                    contentDescription = "Search LrcLib",
+                                    colorFilter = ColorFilter.tint(colorPalette().accent),
+                                    modifier = Modifier.size(12.dp)
+                                )
+                                BasicText(
+                                    text = "Lrc",
+                                    style = typography().xxs.semiBold.copy(color = colorPalette().accent)
+                                )
+                            }
+                        }
+
                         listOf(
                             "lrclib" to "Lrc",
                             "kugou" to "Kg",

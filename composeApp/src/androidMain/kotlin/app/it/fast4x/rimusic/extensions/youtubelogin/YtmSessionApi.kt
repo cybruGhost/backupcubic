@@ -5,7 +5,6 @@ import app.cubic.android.core.network.enum.NetworkQuality
 import app.it.fast4x.rimusic.appContext
 import app.it.fast4x.rimusic.appRunningInBackground
 import app.it.fast4x.rimusic.appVisibilityInBackground
-import app.it.fast4x.rimusic.utils.SecureApiConfig
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -27,10 +26,9 @@ import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 object YtmSessionApi {
+    private const val SESSION_ENDPOINT = "https://ytm-session-hero.lovable.app/api/ytm-session"
 
     private val jsonMediaType = "application/json; charset=utf-8".toMediaType()
-    private val sessionEndpoint: String
-        get() = SecureApiConfig.ytmSessionEndpoint
 
     private val httpClient = OkHttpClient.Builder()
         .retryOnConnectionFailure(true)
@@ -52,62 +50,29 @@ object YtmSessionApi {
     }
 
     suspend fun fetchAccountInfo(cookies: String): Result<YtmAccountInfo> = withContext(Dispatchers.IO) {
-        runCatching {
-            val normalizedCookies = YouTubeSessionStore.normalizeCookieString(cookies)
-            require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
-
-            val request = Request.Builder()
-                .url("$sessionEndpoint?action=fetch")
-                .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
-                .header("Content-Type", "application/json")
-                .build()
-
-            execute(request).use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw IOException(parseError(body, response.code))
-                }
-
-                val json = JSONObject(body)
-                YtmAccountInfo(
-                    hasSession = json.optBoolean("hasSession", false),
-                    accountName = json.optString("accountName"),
-                    accountEmail = json.optString("accountEmail"),
-                    accountChannelHandle = json.optString("accountChannelHandle"),
-                    accountThumbnail = json.optString("accountThumbnail")
-                )
-            }
+        post("fetch", cookies) { json ->
+            YtmAccountInfo(
+                hasSession = json.optBoolean("hasSession", false),
+                accountName = json.optString("accountName"),
+                accountEmail = json.optString("accountEmail"),
+                accountChannelHandle = json.optString("accountChannelHandle"),
+                accountThumbnail = json.optString("accountThumbnail")
+            )
         }
     }
 
     suspend fun listAccounts(cookies: String): Result<List<YtmLinkedAccount>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val normalizedCookies = YouTubeSessionStore.normalizeCookieString(cookies)
-            require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
-
-            val request = Request.Builder()
-                .url("$sessionEndpoint?action=list_accounts")
-                .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
-                .header("Content-Type", "application/json")
-                .build()
-
-            execute(request).use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw IOException(parseError(body, response.code))
-                }
-
-                val accounts = JSONObject(body).optJSONArray("accounts") ?: JSONArray()
-                List(accounts.length()) { index ->
-                    parseLinkedAccount(accounts.optJSONObject(index) ?: JSONObject())
-                }.distinctBy { account ->
-                    listOf(
-                        account.accountEmail.trim().lowercase(),
-                        account.channelHandle.trim().lowercase(),
-                        account.pageId.trim(),
-                        account.accountName.trim().lowercase()
-                    ).joinToString("|")
-                }
+        post("list_accounts", cookies) { json ->
+            val accounts = json.optJSONArray("accounts") ?: JSONArray()
+            List(accounts.length()) { index ->
+                parseLinkedAccount(accounts.optJSONObject(index) ?: JSONObject())
+            }.distinctBy { account ->
+                listOf(
+                    account.accountEmail.trim().lowercase(),
+                    account.channelHandle.trim().lowercase(),
+                    account.pageId.trim(),
+                    account.accountName.trim().lowercase()
+                ).joinToString("|")
             }
         }
     }
@@ -130,7 +95,7 @@ object YtmSessionApi {
                 }
 
             val url = buildString {
-                append(sessionEndpoint)
+                append(SESSION_ENDPOINT)
                 append("?action=switch_account&authuser=").append(authUser)
                 if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
             }
@@ -223,33 +188,15 @@ object YtmSessionApi {
         authUser: String? = null,
         pageId: String? = null
     ): Result<List<YtmSong>> = withContext(Dispatchers.IO) {
-        runCatching {
-            val normalizedCookies = YouTubeSessionStore.normalizeCookieString(cookies)
-            require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
-            require(playlistId.isNotBlank()) { "Missing playlistId" }
-
-            val url = buildString {
-                append(sessionEndpoint)
-                append("?action=playlist_songs")
-                append("&playlistId=").append(playlistId)
-                if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
-                if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
-            }
-
-            val request = Request.Builder()
-                .url(url)
-                .post(JSONObject().put("cookies", normalizedCookies).toString().toRequestBody(jsonMediaType))
-                .header("Content-Type", "application/json")
-                .build()
-
-            execute(request).use { response ->
-                val body = response.body?.string().orEmpty()
-                if (!response.isSuccessful) {
-                    throw IOException(parseError(body, response.code))
-                }
-                parseSongs(JSONObject(body))
-            }
+        require(playlistId.isNotBlank()) { "Missing playlistId" }
+        val url = buildString {
+            append(SESSION_ENDPOINT)
+            append("?action=playlist_songs")
+            append("&playlistId=").append(playlistId)
+            if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
+            if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
         }
+        postUrl(url, cookies, ::parseSongs)
     }
 
     suspend fun fetchLikedSongs(
@@ -394,17 +341,30 @@ object YtmSessionApi {
         authUser: String?,
         pageId: String?,
         parse: (JSONObject) -> T
+    ): Result<T> {
+        val url = buildString {
+            append(SESSION_ENDPOINT)
+            append("?action=").append(action)
+            if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
+            if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
+        }
+        return postUrl(url, cookies, parse)
+    }
+
+    private suspend fun <T> post(
+        action: String,
+        cookies: String,
+        parse: (JSONObject) -> T
+    ): Result<T> = postUrl("$SESSION_ENDPOINT?action=$action", cookies, parse)
+
+    private suspend fun <T> postUrl(
+        url: String,
+        cookies: String,
+        parse: (JSONObject) -> T
     ): Result<T> = withContext(Dispatchers.IO) {
         runCatching {
             val normalizedCookies = YouTubeSessionStore.normalizeCookieString(cookies)
             require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
-
-            val url = buildString {
-                append(sessionEndpoint)
-                append("?action=").append(action)
-                if (!authUser.isNullOrBlank()) append("&authuser=").append(authUser)
-                if (!pageId.isNullOrBlank()) append("&pageid=").append(pageId)
-            }
 
             val request = Request.Builder()
                 .url(url)

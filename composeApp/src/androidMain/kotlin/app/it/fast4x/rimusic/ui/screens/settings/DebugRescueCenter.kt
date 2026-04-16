@@ -46,6 +46,7 @@ import app.kreate.android.R
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.isDebugModeEnabled
 import app.it.fast4x.rimusic.typography
+import app.kreate.android.me.knighthat.component.export.ExportDatabaseDialog
 import app.kreate.android.me.knighthat.utils.Toaster
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -147,6 +148,7 @@ fun DebugRescueCenterDialog(
     context: Context,
     onDismiss: () -> Unit
 ) {
+    val exportDbDialog = ExportDatabaseDialog(context)
     var refreshToken by remember { mutableIntStateOf(0) }
     var report by remember { mutableStateOf(RescueLogReport(emptyList())) }
     var selectedDate by remember { mutableStateOf<String?>(null) }
@@ -208,11 +210,11 @@ fun DebugRescueCenterDialog(
                             color = colorPalette().textSecondary
                         )
                     }
-                    RescueActionChip(
-                        label = "Refresh",
-                        color = colorPalette().accent,
-                        onClick = { refreshToken++ }
-                    )
+                        RescueActionChip(
+                            label = "Refresh",
+                            color = colorPalette().accent,
+                            onClick = { refreshToken++ }
+                        )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -225,12 +227,20 @@ fun DebugRescueCenterDialog(
                 if (report.days.isEmpty()) {
                     Text("No debug or crash logs found yet.", style = typography().s, color = colorPalette().textSecondary)
                     Spacer(modifier = Modifier.height(12.dp))
-                    RescueActionChip(
-                        label = "Open GitHub",
-                        color = Color(0xFF24292F),
-                        icon = R.drawable.github_logo,
-                        onClick = { openGithubIssues(context) }
-                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RescueActionChip(
+                            label = "Backup DB",
+                            color = colorPalette().accent,
+                            icon = R.drawable.export_outline,
+                            onClick = exportDbDialog::export
+                        )
+                        RescueActionChip(
+                            label = "Open GitHub",
+                            color = Color(0xFF24292F),
+                            icon = R.drawable.github_logo,
+                            onClick = { openGithubIssues(context) }
+                        )
+                    }
                     return@Column
                 }
 
@@ -263,6 +273,26 @@ fun DebugRescueCenterDialog(
                     }
 
                     Spacer(modifier = Modifier.height(12.dp))
+
+                    day.primaryCrashSummary?.let { summary ->
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(18.dp))
+                                .background(Color(0xFFFFB74D).copy(alpha = 0.12f))
+                                .border(1.dp, Color(0xFFFFB74D).copy(alpha = 0.24f), RoundedCornerShape(18.dp))
+                                .padding(12.dp),
+                            verticalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            Text("Latest crash", style = typography().xs, color = colorPalette().textSecondary)
+                            Text(summary.title, style = typography().s, color = Color(0xFFFFCC80))
+                            summary.fileHint?.let {
+                                Text("File: $it", style = typography().xs, color = Color(0xFFFFE0B2))
+                            }
+                        }
+
+                        Spacer(modifier = Modifier.height(12.dp))
+                    }
 
                     Column(
                         modifier = Modifier
@@ -299,6 +329,12 @@ fun DebugRescueCenterDialog(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
+                        RescueActionChip(
+                            label = "Backup DB",
+                            color = colorPalette().accent,
+                            icon = R.drawable.export_outline,
+                            onClick = exportDbDialog::export
+                        )
                         RescueActionChip(
                             label = "Export ${day.date}",
                             color = colorPalette().accent,
@@ -403,6 +439,9 @@ private data class RescueLogDay(
     val crashEntries: List<String>,
     val runtimeLines: List<String>
 ) {
+    val primaryCrashSummary: RescueCrashSummary?
+        get() = crashEntries.lastOrNull()?.let(::extractCrashSummary)
+
     val displayLines: List<String>
         get() = buildList {
             addAll(errorLines)
@@ -411,6 +450,11 @@ private data class RescueLogDay(
             if (isEmpty()) addAll(runtimeLines.takeLast(40))
         }
 }
+
+private data class RescueCrashSummary(
+    val title: String,
+    val fileHint: String?
+)
 
 private fun loadRescueLogReport(context: Context): RescueLogReport {
     val logsDir = context.filesDir.resolve("logs")
@@ -471,6 +515,11 @@ private fun exportDayLog(context: Context, day: RescueLogDay) {
                         appendLine(it)
                         appendLine()
                     }
+                    appendLine("Crash summary:")
+                    day.primaryCrashSummary?.let {
+                        appendLine(it.title)
+                        appendLine("File: ${it.fileHint ?: "Unknown"}")
+                    } ?: appendLine("None")
                 }
             )
         }
@@ -527,6 +576,20 @@ private fun splitCrashBlocks(content: String): List<String> {
     }
     if (current.isNotEmpty()) blocks += current.toString()
     return blocks
+}
+
+private fun extractCrashSummary(block: String): RescueCrashSummary {
+    val lines = block.lineSequence().map(String::trim).filter { it.isNotBlank() }.toList()
+    val title = lines.firstOrNull { it.contains("Exception", true) || it.contains("Error", true) }
+        ?: lines.firstOrNull()
+        ?: "Unknown crash"
+    val fileHint = lines.firstOrNull {
+        it.contains(".kt:", true) || it.contains(".java:", true)
+    }?.substringAfterLast('(')?.substringBefore(')')
+        ?: lines.firstOrNull {
+            it.contains("at ", true) && (it.contains(".kt", true) || it.contains(".java", true))
+        }
+    return RescueCrashSummary(title = title, fileHint = fileHint)
 }
 
 private fun isErrorLine(line: String): Boolean {

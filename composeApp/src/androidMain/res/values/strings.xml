@@ -469,11 +469,11 @@
 <string name="folder_was_not_found">Folder was not found</string>
 <string name="direction_top">Top</string>
 <string name="pick_from">Pick from</string>
-    <string name="download_cover">Download cover</string>
-    <string name="upload_cover">Upload cover</string>
-    <string name="cover_saved">Cover saved</string>
-    <string name="cover_save_failed">Couldn\'t save cover</string>
-    <string name="tap_anywhere_to_dismiss">Tap anywhere to dismiss</string>
+<string name="download_cover">Download cover</string>
+<string name="upload_cover">Upload cover</string>
+<string name="cover_saved">Cover saved</string>
+<string name="cover_save_failed">Couldn\'t save cover</string>
+<string name="tap_anywhere_to_dismiss">Tap anywhere to dismiss</string>
 <string name="retry_with_other_sources">Retry with other sources</string>
 <string name="retry_with_other_sources_hint">Try alternate playback sources such as YouTube match search and fallback stream providers.</string>
 <string name="menu_style">Menu style</string>

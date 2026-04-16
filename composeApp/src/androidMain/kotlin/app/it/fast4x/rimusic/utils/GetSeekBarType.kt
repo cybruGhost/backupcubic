@@ -38,19 +38,9 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.C
 import androidx.media3.common.util.UnstableApi
@@ -78,76 +68,6 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 const val DURATION_INDICATOR_HEIGHT = 20
-
-@Composable
-private fun animatedCrossfadeTimelineModifier(
-    enabled: Boolean,
-    progressValue: Long,
-    durationValue: Long,
-): Modifier {
-    if (!enabled || durationValue <= 0L || durationValue == C.TIME_UNSET) return Modifier
-
-    val transition = rememberInfiniteTransition(label = "crossfadeTimeline")
-    val shift by transition.animateFloat(
-        initialValue = -1f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 2200, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart
-        ),
-        label = "crossfadeTimelineShift"
-    )
-    val pulse by transition.animateFloat(
-        initialValue = 0.78f,
-        targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(durationMillis = 1400, easing = LinearEasing),
-            repeatMode = RepeatMode.Reverse
-        ),
-        label = "crossfadeTimelinePulse"
-    )
-
-    return Modifier.drawWithContent {
-        val progressFraction = (progressValue.toFloat() / durationValue.toFloat()).coerceIn(0f, 1f)
-        val liquidColors = listOf(
-            Color(0xFF123B31),
-            Color(0xFF2EE59D),
-            Color(0xFF5B2FD9),
-            Color(0xFFF472B6),
-            Color(0xFFFB7185),
-            Color(0xFF381A33),
-        )
-        val barCorner = size.height / 2f
-        val gradientStart = Offset(x = size.width * shift - size.width, y = 0f)
-        val gradientEnd = Offset(x = gradientStart.x + size.width * 2f, y = size.height)
-
-        drawRoundRect(
-            color = Color(0xFF221B22).copy(alpha = 0.85f),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(barCorner, barCorner)
-        )
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = liquidColors,
-                start = gradientStart,
-                end = gradientEnd
-            ),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(barCorner, barCorner),
-            alpha = 0.88f * pulse
-        )
-        drawRoundRect(
-            brush = Brush.linearGradient(
-                colors = liquidColors.reversed(),
-                start = Offset(x = size.width - gradientEnd.x, y = 0f),
-                end = Offset(x = size.width - gradientStart.x, y = size.height)
-            ),
-            size = Size(width = size.width * progressFraction, height = size.height),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(barCorner, barCorner),
-            alpha = 0.98f
-        )
-
-        drawContent()
-    }
-}
 
 @OptIn(UnstableApi::class)
 @Composable
@@ -210,30 +130,38 @@ fun GetSeekBar(
     } else {
         null
     }
-    val crossfadeTimelineModifier = animatedCrossfadeTimelineModifier(
-        enabled = crossfadeUiState.isHighlightActive,
-        progressValue = scrubbingPosition ?: effectivePosition,
-        durationValue = effectiveDuration
-    )
-    val timelineModifier = if (
-        crossfadeUiState.isHighlightActive &&
-        (
-            playerTimelineType == PlayerTimelineType.Default ||
-                playerTimelineType == PlayerTimelineType.ThinBar ||
-                playerTimelineType == PlayerTimelineType.ColoredBar
-            )
-    ) {
-        crossfadeTimelineModifier
-    } else {
-        Modifier
-    }
-
     Row(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .padding(horizontal = 10.dp)
             .fillMaxWidth()
+            .drawWithContent {
+                drawContent()
+                if (crossfadePalette != null) {
+                    val safeProgress = crossfadeUiState.progress.coerceIn(0f, 1f)
+                    val glowAlpha = ((1f - safeProgress) * 0.38f).coerceIn(0f, 0.38f)
+                    val sweepWidth = size.width * 0.55f
+                    val travel = size.width + sweepWidth
+                    val startX = (travel * safeProgress) - sweepWidth
+                    val endX = startX + sweepWidth
+                    drawRect(
+                        brush = Brush.horizontalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                crossfadePalette[0].copy(alpha = glowAlpha * 0.7f),
+                                crossfadePalette[1].copy(alpha = glowAlpha),
+                                crossfadePalette[2].copy(alpha = glowAlpha),
+                                crossfadePalette[3].copy(alpha = glowAlpha * 0.7f),
+                                Color.Transparent,
+                            ),
+                            startX = startX,
+                            endX = endX
+                        ),
+                        alpha = 1f
+                    )
+                }
+            }
     ) {
 
         if (effectiveDuration == C.TIME_UNSET)
@@ -271,7 +199,7 @@ fun GetSeekBar(
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                modifier = timelineModifier,
+                crossfadePalette = crossfadePalette,
             )
 
         if (playerTimelineType == PlayerTimelineType.Default)
@@ -296,7 +224,7 @@ fun GetSeekBar(
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                modifier = timelineModifier,
+                crossfadePalette = crossfadePalette,
             )
 
         if (playerTimelineType == PlayerTimelineType.ThinBar)
@@ -321,7 +249,7 @@ fun GetSeekBar(
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                modifier = timelineModifier,
+                crossfadePalette = crossfadePalette,
             )
 
       //  update the Wavy section:
@@ -347,8 +275,7 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
         color = colorPalette().collapsedPlayerProgressBar,
         backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
         scrubberRadius = 6.dp,
-        showTooltip = true,
-        modifier = if (crossfadeUiState.isHighlightActive) crossfadeTimelineModifier else Modifier
+        showTooltip = true
     )
 }
     // Add Ocean section
@@ -373,8 +300,7 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                 },
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
-                scrubberRadius = 6.dp,
-                modifier = if (crossfadeUiState.isHighlightActive) crossfadeTimelineModifier else Modifier
+                scrubberRadius = 6.dp
             )
         }
         if (playerTimelineType == PlayerTimelineType.FakeAudioBar)
@@ -391,7 +317,6 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                 },
                 modifier = Modifier
                     .height(40.dp)
-                    .then(if (crossfadeUiState.isHighlightActive) crossfadeTimelineModifier else Modifier)
             )
 
 
@@ -418,7 +343,6 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                 backgroundColor = colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
                 crossfadePalette = crossfadePalette,
-                modifier = timelineModifier
             )
 
 

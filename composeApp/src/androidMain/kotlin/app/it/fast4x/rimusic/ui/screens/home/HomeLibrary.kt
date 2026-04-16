@@ -51,6 +51,7 @@ import app.it.fast4x.rimusic.ui.components.ButtonsRow
 import app.it.fast4x.rimusic.ui.components.navigation.header.TabToolBar
 import app.it.fast4x.rimusic.ui.components.tab.ItemSize
 import app.it.fast4x.rimusic.ui.components.tab.TabHeader
+import app.it.fast4x.rimusic.ui.components.tab.toolbar.MenuIcon
 import app.it.fast4x.rimusic.ui.components.themed.FloatingActionsContainerWithScrollToTop
 import app.it.fast4x.rimusic.ui.components.themed.HeaderInfo
 import app.it.fast4x.rimusic.ui.components.themed.MultiFloatingActionsContainer
@@ -60,11 +61,11 @@ import app.it.fast4x.rimusic.utils.CheckMonthlyPlaylist
 import app.it.fast4x.rimusic.utils.Preference.HOME_LIBRARY_ITEM_SIZE
 import app.it.fast4x.rimusic.utils.Preference.HOME_LIBRARY_SORT_BY
 import app.it.fast4x.rimusic.utils.Preference.HOME_LIBRARY_SORT_ORDER
-import app.it.fast4x.rimusic.utils.autoSyncToolbutton
 import app.it.fast4x.rimusic.utils.autosyncKey
 import app.it.fast4x.rimusic.utils.disableScrollingTextKey
 import app.it.fast4x.rimusic.utils.enableCreateMonthlyPlaylistsKey
 import app.it.fast4x.rimusic.utils.importYTMLikedPlaylists
+import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
 import app.it.fast4x.rimusic.utils.playlistTypeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.showFloatingIconKey
@@ -139,7 +140,6 @@ fun HomeLibrary(
     val newPlaylistDialog = NewPlaylistDialog()
     //</editor-fold>
     val importPlaylistDialog = ImportSongsFromCSV()
-    val sync = autoSyncToolbutton(R.string.autosync)
 
     LaunchedEffect( sort.sortBy, sort.sortOrder ) {
         Database.playlistTable
@@ -195,19 +195,26 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
     var refreshing by remember { mutableStateOf(false) }
     val refreshScope = rememberCoroutineScope()
 
- fun refresh() {
+fun refresh() {
     if (refreshing) return
     refreshScope.launch(Dispatchers.IO) {
         refreshing = true
         justSynced = false
-        // Actually trigger sync on refresh
         try {
-            importYTMLikedPlaylists()
+            val synced = syncSelectedYtmAccountData(force = true)
             withContext(Dispatchers.Main) {
-                justSynced = true
+                justSynced = synced
+                if (synced) {
+                    Toaster.i("YouTube Music library synced")
+                } else {
+                    Toaster.i("No YT Music session data was synced")
+                }
             }
         } catch (e: Exception) {
             Timber.e(e, "Refresh sync failed")
+            withContext(Dispatchers.Main) {
+                Toaster.n(R.string.ytm_playlists_sync_failed, duration = Toast.LENGTH_LONG)
+            }
         }
         delay(500)
         refreshing = false
@@ -218,11 +225,11 @@ LaunchedEffect(justSynced, doAutoSync) {
     if (!justSynced && doAutoSync) {
         refreshScope.launch(Dispatchers.IO) {
             try {
-                val result = importYTMLikedPlaylists()
+                val result = syncSelectedYtmAccountData()
                 withContext(Dispatchers.Main) {
                     if (result) {
                         justSynced = true
-                        Toaster.i(R.string.ytm_playlists_synced)
+                        Toaster.i("YouTube Music library synced")
                     }
                 }
             } catch (e: Exception) {
@@ -234,6 +241,14 @@ LaunchedEffect(justSynced, doAutoSync) {
         }
     }
 }
+
+    val sync = object : MenuIcon {
+        override val iconId: Int = R.drawable.sync
+        override val menuIconTitle: String
+            @Composable get() = if (refreshing) "Syncing YT Music" else "Sync YT Music"
+
+        override fun onShortClick() = refresh()
+    }
 
     Box(
         modifier = Modifier

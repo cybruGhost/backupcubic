@@ -104,6 +104,7 @@ import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.restartActivityKey
 import app.it.fast4x.rimusic.utils.thumbnailRoundnessKey
 import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
+import app.it.fast4x.rimusic.utils.autosyncKey
 import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
 import app.it.fast4x.rimusic.utils.ytAccountEmailKey
 import app.it.fast4x.rimusic.utils.ytAccountNameKey
@@ -215,6 +216,8 @@ AnimatedVisibility(
             var accountChannelHandle by remember { mutableStateOf(storedAccountChannelHandle) }
             var accountThumbnail by remember { mutableStateOf(storedAccountThumbnail) }
             var isSyncingYtmData by remember { mutableStateOf(false) }
+            var pendingManualYtmSync by remember { mutableStateOf(false) }
+            var enableAutoYtmSync by rememberPreference(autosyncKey, false)
             var currentSessionId by remember {
                 mutableStateOf(YouTubeSessionStore.getCurrentSession(context)?.sessionId.orEmpty())
             }
@@ -239,11 +242,36 @@ AnimatedVisibility(
                 savedSessions = YouTubeSessionStore.getSessions(context)
             }
 
+            fun markSelectedLinkedAccounts(
+                accounts: List<YtmLinkedAccount>,
+                session: YoutubeSession?
+            ): List<YtmLinkedAccount> {
+                val currentAuthUser = session?.authUser?.trim().orEmpty()
+                val currentPageId = session?.pageId?.trim().orEmpty()
+
+                return accounts
+                    .map { account ->
+                        val matchesCurrentSession = when {
+                            currentAuthUser.isBlank() -> account.isSelected
+                            currentPageId.isNotBlank() -> {
+                                account.authUser.trim() == currentAuthUser &&
+                                    account.pageId.trim() == currentPageId
+                            }
+                            else -> account.authUser.trim() == currentAuthUser
+                        }
+                        account.copy(isSelected = matchesCurrentSession || account.isSelected && currentAuthUser.isBlank())
+                    }
+                    .sortedByDescending { it.isSelected }
+            }
+
             fun clearAccountScopedUiCaches() {
                 appContext().preferences.edit()
                     .putString("quickPicsHomePageSessionId", "")
+                    .putString("quickPicsHomePageAccountHandle", "")
                     .putString("quickPicsHomePageChipTitle", "")
                     .putString("quickPicsHomePageChipParams", "")
+                    .putString("quickPicsSessionHomeFeedSessionId", "")
+                    .putString("quickPicsSessionHomeFeedAccountHandle", "")
                     .apply()
             }
 
@@ -255,34 +283,43 @@ AnimatedVisibility(
                 }
                 isRefreshingAccountInfo = true
                 return try {
+                    val currentStoredSession = YouTubeSessionStore.getCurrentSession(context)
                     val accountInfo = YtmSessionApi.fetchAccountInfo(cookie).getOrThrow()
                     val accounts = YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList())
-                    val selectedAccount = accounts.firstOrNull { it.isSelected }
+                    val selectedAccount =
+                        accounts.firstOrNull { account ->
+                            account.authUser == currentStoredSession?.authUser &&
+                                account.pageId == currentStoredSession?.pageId
+                        }
+                            ?: accounts.firstOrNull { it.isSelected }
 
-                    applySession(
-                        YouTubeSessionStore.saveSession(
-                            context = context,
-                            session = YoutubeSession(
-                                cookie = cookie,
-                                visitorData = visitorData,
-                                dataSyncId = dataSyncId,
-                                authUser = selectedAccount?.authUser.orEmpty(),
-                                pageId = selectedAccount?.pageId.orEmpty(),
-                                accountName = accountInfo.accountName,
-                                accountEmail = accountInfo.accountEmail,
-                                accountChannelHandle = accountInfo.accountChannelHandle,
-                                accountThumbnail = accountInfo.accountThumbnail,
-                                lastAccountRefreshAt = if (accountInfo.hasSession) {
-                                    System.currentTimeMillis()
-                                } else {
-                                    0L
-                                }
-                            ),
-                            makePreferred = true
-                        )
+                    val refreshedSession = YouTubeSessionStore.saveSession(
+                        context = context,
+                        session = YoutubeSession(
+                            cookie = cookie,
+                            visitorData = visitorData,
+                            dataSyncId = dataSyncId,
+                            authUser = selectedAccount?.authUser
+                                ?.takeIf { it.isNotBlank() }
+                                ?: currentStoredSession?.authUser.orEmpty(),
+                            pageId = selectedAccount?.pageId
+                                ?.takeIf { it.isNotBlank() }
+                                ?: currentStoredSession?.pageId.orEmpty(),
+                            accountName = accountInfo.accountName,
+                            accountEmail = accountInfo.accountEmail,
+                            accountChannelHandle = accountInfo.accountChannelHandle,
+                            accountThumbnail = accountInfo.accountThumbnail,
+                            lastAccountRefreshAt = if (accountInfo.hasSession) {
+                                System.currentTimeMillis()
+                            } else {
+                                0L
+                            }
+                        ),
+                        makePreferred = true
                     )
 
-                    linkedAccounts = accounts
+                    applySession(refreshedSession)
+                    linkedAccounts = markSelectedLinkedAccounts(accounts, refreshedSession)
                     if (showToast) Toaster.i("YouTube Music account refreshed")
                     true
                 } catch (e: Exception) {
@@ -326,7 +363,10 @@ AnimatedVisibility(
 
                     applySession(nextSession)
                     clearAccountScopedUiCaches()
-                    linkedAccounts = YtmSessionApi.listAccounts(nextSession.cookie).getOrDefault(emptyList())
+                    linkedAccounts = markSelectedLinkedAccounts(
+                        YtmSessionApi.listAccounts(nextSession.cookie).getOrDefault(emptyList()),
+                        nextSession
+                    )
                     Toaster.i("${linkedAccount.accountName.ifBlank { "YouTube account" }} is now active")
                     restartService = true
                 }.onFailure {
@@ -343,11 +383,11 @@ AnimatedVisibility(
                 }
                 isSyncingYtmData = true
                 runCatching {
-                    syncSelectedYtmAccountData()
+                    syncSelectedYtmAccountData(force = true)
                 }.onSuccess { synced ->
                     Toaster.i(
                         if (synced) "YouTube Music library synced"
-                        else "Nothing new to sync right now"
+                        else "No session data was synced right now"
                     )
                 }.onFailure {
                     Timber.w(it, "AccountsSettings: manual_ytm_sync failed")
@@ -382,16 +422,21 @@ AnimatedVisibility(
                 val currentSession = YouTubeSessionStore.applyCurrentSession(context)
                 applySession(currentSession)
                 if (isLoggedIn && YouTubeSessionStore.shouldRefreshAccount(currentSession)) {
-                    scope.launch {
-                        refreshSessionFromApi(showToast = false)
-                    }
+                    refreshSessionFromApi(showToast = false)
                 } else if (isLoggedIn && linkedAccounts.isEmpty()) {
-                    scope.launch {
-                        linkedAccounts = YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList())
-                    }
+                    linkedAccounts = markSelectedLinkedAccounts(
+                        YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList()),
+                        currentSession
+                    )
                 } else if (!isLoggedIn) {
                     linkedAccounts = emptyList()
                 }
+            }
+
+            LaunchedEffect(pendingManualYtmSync) {
+                if (!pendingManualYtmSync) return@LaunchedEffect
+                pendingManualYtmSync = false
+                syncYtmLibraryManually()
             }
 
 
@@ -598,15 +643,21 @@ AnimatedVisibility(
                             }
 
                             if (isLoggedIn) {
+                                OtherSwitchSettingEntry(
+                                    title = "Auto sync YouTube Music",
+                                    text = "Off by default. When enabled, Cubic may refresh YT Music library data occasionally in the background flow.",
+                                    isChecked = enableAutoYtmSync,
+                                    onCheckedChange = { enableAutoYtmSync = it },
+                                    icon = R.drawable.sync
+                                )
+
                                 OtherSettingsEntry(
                                     title = if (isSyncingYtmData) "Syncing YouTube Music library..." else "Sync YouTube Music library",
-                                    text = "Manually sync liked songs, playlists, artists, and albums. Playback stays separate from this sync.",
+                                    text = "Manual sync now uses the active YT Music session directly for liked songs, playlists, artists, and albums.",
                                     icon = R.drawable.sync,
                                     onClick = {
                                         if (!isSyncingYtmData) {
-                                            scope.launch {
-                                                syncYtmLibraryManually()
-                                            }
+                                            pendingManualYtmSync = true
                                         }
                                     }
                                 )
@@ -653,11 +704,15 @@ AnimatedVisibility(
                                             .joinToString(" • "),
                                         icon = R.drawable.person,
                                         onClick = {
-                                            applySession(
-                                                YouTubeSessionStore.switchToSession(
-                                                    context = context,
-                                                    sessionId = savedSession.sessionId
-                                                )
+                                            val switchedSession = YouTubeSessionStore.switchToSession(
+                                                context = context,
+                                                sessionId = savedSession.sessionId
+                                            )
+                                            applySession(switchedSession)
+                                            clearAccountScopedUiCaches()
+                                            linkedAccounts = markSelectedLinkedAccounts(
+                                                linkedAccounts,
+                                                switchedSession
                                             )
                                             Toaster.i("Reused saved YouTube session")
                                         }

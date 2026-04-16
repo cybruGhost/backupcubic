@@ -1353,16 +1353,21 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             }
             Player.STATE_ENDED -> {
                 releasePlaybackWakeLock()
+                if (!player.hasNextMediaItem()) {
+                    runCatching {
+                        player.playWhenReady = false
+                        player.pause()
+                    }.onFailure {
+                        Timber.e(it, "Failed to keep ended player paused without clearing the queue")
+                    }
+                }
             }
             Player.STATE_IDLE -> {
                 releasePlaybackWakeLock()
-                // FIX: Only clear media items when we are genuinely done — NOT during network
-                // recovery (waitingForNetwork) or retry attempts (currentSongRetryCount > 0).
-                if (!waitingForNetwork.value && currentSongRetryCount == 0) {
-                    player.shuffleModeEnabled = false
-                    runCatching { player.clearMediaItems() }
-                        .onFailure { Timber.e(it, "Failed to clear media items after idle state") }
-                }
+                // Do not clear the queue here. Media3 can transiently report IDLE during
+                // recovery/crossfade edges, and clearing items from this callback can make
+                // the player UI disappear or the service stop even though playback should
+                // simply pause and remain resumable.
             }
         }
     } catch (e: Exception) {
