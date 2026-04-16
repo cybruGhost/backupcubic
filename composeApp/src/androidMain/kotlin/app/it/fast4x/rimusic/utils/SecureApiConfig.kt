@@ -6,7 +6,7 @@ object SecureApiConfig {
     }
 
     val cubicAppConfigBaseUrl: String by lazy {
-        reveal("//:sptth", "njysktgjtxvucjgaywyd", "/oc.esabapus.", "/1v/snoitcnuf", "gifnoc-ppa/")
+        reveal("//:sptth", "njysktgjtxvucjgaywyd", "oc.esabapus.", "/1v/snoitcnuf/", "gifnoc-ppa")
     }
 
     val cubicNotificationConfigUrl: String by lazy {

@@ -47,6 +47,82 @@ fun MediaItem.isPlayable(): Boolean {
     return youtubeIdRegex.matches(id)
 }
 
+private fun MediaItem.isPlaybackSourceValid(): Boolean {
+    val id = mediaId.trim()
+    val uri = sanitizePlaybackUri(
+        localConfiguration?.uri?.toString()
+            ?.takeIf { it.isNotBlank() }
+            ?: id
+    )
+    return id.isNotBlank() || uri != Uri.EMPTY
+}
+
+private fun Player.sanitizedPlaybackQueue(mediaItems: List<MediaItem>): List<MediaItem> =
+    mediaItems.mapNotNull { item ->
+        val cleanedItem = item.cleaned
+        if (!cleanedItem.isPlayable() || !cleanedItem.isPlaybackSourceValid()) {
+            Timber.w("Dropping invalid media item from queue mediaId=%s", item.mediaId)
+            null
+        } else {
+            cleanedItem.buildUpon()
+                .setUri(
+                    sanitizePlaybackUri(
+                        cleanedItem.localConfiguration?.uri?.toString()
+                            ?.takeIf { it.isNotBlank() }
+                            ?: cleanedItem.mediaId
+                    )
+                )
+                .build()
+        }
+    }.fastDistinctBy(MediaItem::mediaId)
+
+private fun Player.findPlayableStartIndex(
+    mediaItems: List<MediaItem>,
+    preferredIndex: Int
+): Int {
+    if (mediaItems.isEmpty()) return -1
+    if (preferredIndex in mediaItems.indices) return preferredIndex
+    return mediaItems.indexOfFirst { it.isPlayable() && it.isPlaybackSourceValid() }
+}
+
+fun Player.skipBrokenMediaItem(reason: String? = null): Boolean {
+    val brokenId = currentMediaItem?.mediaId.orEmpty()
+    Timber.w("Skipping broken media item mediaId=%s reason=%s", brokenId, reason)
+    return when {
+        hasNextMediaItem() -> {
+            runCatching { seekToNextMediaItem() }
+                .onFailure { Timber.e(it, "skipBrokenMediaItem failed seeking next for mediaId=%s", brokenId) }
+                .isSuccess.also { success ->
+                    if (success) {
+                        safePrepare()
+                        restoreGlobalVolume()
+                        playWhenReady = true
+                    }
+                }
+        }
+        mediaItemCount > 1 && currentMediaItemIndex in 0 until mediaItemCount -> {
+            val indexToRemove = currentMediaItemIndex
+            runCatching { removeMediaItem(indexToRemove) }
+                .onFailure { Timber.e(it, "skipBrokenMediaItem failed removing mediaId=%s", brokenId) }
+                .isSuccess.also { success ->
+                    if (success && mediaItemCount > 0) {
+                        val nextIndex = indexToRemove.coerceAtMost(mediaItemCount - 1)
+                        runCatching { seekTo(nextIndex, C.TIME_UNSET) }
+                        safePrepare()
+                        restoreGlobalVolume()
+                        playWhenReady = true
+                    } else if (success) {
+                        pause()
+                    }
+                }
+        }
+        else -> {
+            pause()
+            false
+        }
+    }
+}
+
 private fun MediaItem.hasOfflinePlayableSource(context: Context): Boolean {
     val rawUri = localConfiguration?.uri?.toString().orEmpty()
     if (mediaId.isBlank() && rawUri.isBlank()) return false
@@ -106,9 +182,17 @@ fun Player.safeSetMediaItem(mediaItem: MediaItem, resetPosition: Boolean = true)
         .isSuccess
 
 fun Player.safeSetMediaItems(mediaItems: List<MediaItem>, startIndex: Int, startPositionMs: Long): Boolean =
-    runCatching { setMediaItems(mediaItems, startIndex, startPositionMs) }
-        .onFailure { Timber.e(it, "safeSetMediaItems failed at index=%s size=%s", startIndex, mediaItems.size) }
-        .isSuccess
+    run {
+        val sanitizedItems = sanitizedPlaybackQueue(mediaItems)
+        val safeIndex = findPlayableStartIndex(sanitizedItems, startIndex)
+        if (sanitizedItems.isEmpty() || safeIndex < 0) {
+            Timber.w("safeSetMediaItems blocked empty or invalid queue requestedSize=%s startIndex=%s", mediaItems.size, startIndex)
+            return@run false
+        }
+        runCatching { setMediaItems(sanitizedItems, safeIndex, startPositionMs) }
+            .onFailure { Timber.e(it, "safeSetMediaItems failed at index=%s size=%s", safeIndex, sanitizedItems.size) }
+            .isSuccess
+    }
 
 fun Player.safeSeekTo(positionMs: Long): Boolean =
     runCatching { seekTo(positionMs.coerceAtLeast(0L)) }
@@ -203,6 +287,10 @@ fun Player.playAtMedia(mediaItems: List<MediaItem>, mediaId: String) {
 fun Player.forcePlay(mediaItem: MediaItem) {
     if (!ensurePlayableOrNotify(mediaItem)) return
     val cleanedMediaItem = mediaItem.cleaned
+    if (!cleanedMediaItem.isPlaybackSourceValid()) {
+        skipBrokenMediaItem("forcePlay invalid source")
+        return
+    }
     val safeMediaItem = cleanedMediaItem.buildUpon()
         .setUri(
             sanitizePlaybackUri(
@@ -241,6 +329,10 @@ fun Player.forcePlay(mediaItem: MediaItem) {
 }
 
 fun Player.playVideo(mediaItem: MediaItem) {
+    if (!mediaItem.cleaned.isPlaybackSourceValid()) {
+        skipBrokenMediaItem("playVideo invalid source")
+        return
+    }
     val safeMediaItem = mediaItem.cleaned.buildUpon()
         .setUri(
             sanitizePlaybackUri(
@@ -266,26 +358,17 @@ fun Player.playAtIndex(mediaItemIndex: Int) {
 @SuppressLint("Range")
 @UnstableApi
 fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
-    if ( mediaItems.isEmpty() ) return
-    val selectedItem = mediaItems.getOrNull(mediaItemIndex) ?: return
+    val cleanedMediaItems = sanitizedPlaybackQueue(mediaItems)
+    if ( cleanedMediaItems.isEmpty() ) return
+    val safeIndex = findPlayableStartIndex(cleanedMediaItems, mediaItemIndex)
+    if (safeIndex < 0) return
+    val selectedItem = cleanedMediaItems.getOrNull(safeIndex) ?: return
     if (!ensurePlayableOrNotify(selectedItem)) return
 
     // This will prevent UI from freezing up during conversion
     CoroutineScope( Dispatchers.Default ).launch {
-        val cleanedMediaItems = mediaItems.fastMap { item ->
-            item.cleaned.buildUpon()
-                .setUri(
-                    sanitizePlaybackUri(
-                        item.localConfiguration?.uri?.toString()
-                            ?.takeIf { it.isNotBlank() }
-                            ?: item.mediaId
-                    )
-                )
-                .build()
-        }.fastDistinctBy( MediaItem::mediaId )
-
         runBlocking( Dispatchers.Main ) {
-            if (!safeSetMediaItems( cleanedMediaItems, mediaItemIndex, C.TIME_UNSET )) return@runBlocking
+            if (!safeSetMediaItems( cleanedMediaItems, safeIndex, C.TIME_UNSET )) return@runBlocking
             if (!safePrepare()) return@runBlocking
             restoreGlobalVolume()
             playWhenReady = true
@@ -326,6 +409,7 @@ fun Player.playPrevious() {
 @UnstableApi
 fun Player.addNext(mediaItem: MediaItem, context: Context? = null) {
     if (context != null && excludeMediaItem(mediaItem, context)) return
+    if (!mediaItem.cleaned.isPlaybackSourceValid()) return
 
     val itemIndex = findMediaItemIndexById(mediaItem.mediaId)
     if (itemIndex >= 0) removeMediaItem(itemIndex)
@@ -341,21 +425,22 @@ fun Player.addNext(mediaItem: MediaItem, context: Context? = null) {
 fun Player.addNext(mediaItems: List<MediaItem>, context: Context? = null) {
     val filteredMediaItems = if (context != null) excludeMediaItems(mediaItems, context)
     else mediaItems
+    val cleanedMediaItems = sanitizedPlaybackQueue(filteredMediaItems)
 
-    filteredMediaItems.forEach { mediaItem ->
+    cleanedMediaItems.forEach { mediaItem ->
         val itemIndex = findMediaItemIndexById(mediaItem.mediaId)
         if (itemIndex >= 0) removeMediaItem(itemIndex)
     }
 
     if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
-        setMediaItems(filteredMediaItems.map { it.cleaned })
+        safeSetMediaItems(cleanedMediaItems, 0, C.TIME_UNSET)
 
         if( playbackState == Player.STATE_IDLE )
             prepare()
 
         play()
     } else {
-        addMediaItems(currentMediaItemIndex + 1, filteredMediaItems.map { it.cleaned })
+        addMediaItems(currentMediaItemIndex + 1, cleanedMediaItems)
     }
 
 }
@@ -363,6 +448,7 @@ fun Player.addNext(mediaItems: List<MediaItem>, context: Context? = null) {
 
 fun Player.enqueue(mediaItem: MediaItem, context: Context? = null) {
      if (context != null && excludeMediaItem(mediaItem, context)) return
+    if (!mediaItem.cleaned.isPlaybackSourceValid()) return
 
     val itemIndex = findMediaItemIndexById(mediaItem.mediaId)
     if (itemIndex >= 0) removeMediaItem(itemIndex)
@@ -379,13 +465,12 @@ fun Player.enqueue(mediaItem: MediaItem, context: Context? = null) {
 fun Player.enqueue(mediaItems: List<MediaItem>, context: Context? = null) {
     val filteredMediaItems = if (context != null) excludeMediaItems(mediaItems, context)
     else mediaItems
+    val cleanedMediaItems = sanitizedPlaybackQueue(filteredMediaItems)
 
     if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
-        //forcePlayFromBeginning(mediaItems)
-        forcePlayFromBeginning(filteredMediaItems)
+        forcePlayFromBeginning(cleanedMediaItems)
     } else {
-        //addMediaItems(mediaItemCount, mediaItems)
-        addMediaItems(mediaItemCount, filteredMediaItems.map { it.cleaned })
+        addMediaItems(mediaItemCount, cleanedMediaItems)
     }
 }
 

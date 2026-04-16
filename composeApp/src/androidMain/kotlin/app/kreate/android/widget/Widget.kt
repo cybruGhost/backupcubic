@@ -45,6 +45,7 @@ import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
 import androidx.media3.common.util.UnstableApi
 import androidx.palette.graphics.Palette
+import androidx.core.content.ContextCompat
 import app.kreate.android.R
 import android.content.BroadcastReceiver
 import app.kreate.android.drawable.APP_ICON_BITMAP
@@ -54,6 +55,7 @@ import app.it.fast4x.rimusic.cleanPrefix
 import java.io.File
 import androidx.compose.ui.graphics.Color
 import android.content.Intent
+import android.os.SystemClock
 import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -64,13 +66,38 @@ import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 // ─────────────────────────────────────────────────────────────────────────────
 // Add this class after imports, before sealed class Widget
 class WidgetActionReceiver : BroadcastReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
-        // Start the service (it will register its own receiver)
-        val serviceIntent = Intent(context, PlayerServiceModern::class.java)
-        context.startService(serviceIntent)
+    companion object {
+        private var lastAction: String? = null
+        private var lastActionAtMs: Long = 0L
+        private const val ACTION_DEBOUNCE_MS = 700L
+    }
 
-        // Forward the intent to the service's internal receiver
-        val forwardIntent = Intent(intent.action).apply {
+    override fun onReceive(context: Context, intent: Intent) {
+        val incomingAction = intent.action ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (incomingAction == lastAction && now - lastActionAtMs < ACTION_DEBOUNCE_MS) {
+            return
+        }
+        lastAction = incomingAction
+        lastActionAtMs = now
+
+        val playerAction = when (intent.action) {
+            ACTION_PLAY -> PlayerServiceModern.Action.play.value
+            ACTION_PAUSE -> PlayerServiceModern.Action.pause.value
+            ACTION_NEXT -> PlayerServiceModern.Action.next.value
+            ACTION_PREVIOUS -> PlayerServiceModern.Action.previous.value
+            else -> null
+        } ?: return
+
+        // Make sure the service is alive before forwarding the transport action.
+        runCatching {
+            ContextCompat.startForegroundService(
+                context,
+                Intent(context, PlayerServiceModern::class.java)
+            )
+        }
+
+        val forwardIntent = Intent(playerAction).apply {
             setPackage(context.packageName)
         }
         context.sendBroadcast(forwardIntent)
@@ -317,7 +344,13 @@ sealed class Widget : GlanceAppWidget() {
                 contentDescription = "Previous",
                 modifier = GlanceModifier
                     .size(20.dp)
-                    .clickable(actionSendBroadcast(Intent(ACTION_PREVIOUS).setPackage(pkg)))
+                    .clickable(
+                        actionSendBroadcast(
+                            Intent(context, WidgetActionReceiver::class.java)
+                                .setAction(ACTION_PREVIOUS)
+                                .setPackage(pkg)
+                        )
+                    )
             )
 
             Spacer(GlanceModifier.width(6.dp))
@@ -329,7 +362,9 @@ sealed class Widget : GlanceAppWidget() {
                     .cornerRadius(50.dp)
                     .clickable(
                         actionSendBroadcast(
-                            Intent(if (isPlaying) ACTION_PAUSE else ACTION_PLAY).setPackage(pkg)
+                            Intent(context, WidgetActionReceiver::class.java)
+                                .setAction(if (isPlaying) ACTION_PAUSE else ACTION_PLAY)
+                                .setPackage(pkg)
                         )
                     ),
                 contentAlignment = Alignment.Center
@@ -348,7 +383,13 @@ sealed class Widget : GlanceAppWidget() {
                 contentDescription = "Next",
                 modifier = GlanceModifier
                     .size(20.dp)
-                    .clickable(actionSendBroadcast(Intent(ACTION_NEXT).setPackage(pkg)))
+                    .clickable(
+                        actionSendBroadcast(
+                            Intent(context, WidgetActionReceiver::class.java)
+                                .setAction(ACTION_NEXT)
+                                .setPackage(pkg)
+                        )
+                    )
             )
         }
     }

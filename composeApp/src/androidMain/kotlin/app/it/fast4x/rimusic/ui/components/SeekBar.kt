@@ -17,6 +17,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -51,6 +52,7 @@ fun SeekBar(
     scrubberRadius: Dp = 6.dp,
     shape: Shape = RectangleShape,
     drawSteps: Boolean = false,
+    crossfadePalette: List<Color>? = null,
 ) {
     val isDragging = remember {
         MutableTransitionState(false)
@@ -60,6 +62,8 @@ fun SeekBar(
 
     val currentBarHeight by transition.animateDp(label = "") { if (it) scrubberRadius else barHeight }
     val currentScrubberRadius by transition.animateDp(label = "") { if (it) 0.dp else scrubberRadius }
+    val progressFraction = seekBarFraction(value, minimumValue, maximumValue)
+    val progressBrush = crossfadePalette?.takeIf { it.isNotEmpty() }?.let(Brush::horizontalGradient)
 
     Box(
         modifier = modifier
@@ -111,7 +115,7 @@ fun SeekBar(
                 val scrubberPosition = if (maximumValue < minimumValue) {
                     0f
                 } else {
-                    seekBarFraction(value, minimumValue, maximumValue) * size.width
+                    progressFraction * size.width
                 }
 
                 drawCircle(
@@ -146,8 +150,14 @@ fun SeekBar(
         Spacer(
             modifier = Modifier
                 .height(currentBarHeight)
-                .fillMaxWidth(seekBarFraction(value, minimumValue, maximumValue))
-                .background(color = color, shape = shape)
+                .fillMaxWidth(progressFraction)
+                .let { progressModifier ->
+                    if (progressBrush != null) {
+                        progressModifier.background(brush = progressBrush, shape = shape)
+                    } else {
+                        progressModifier.background(color = color, shape = shape)
+                    }
+                }
                 .align(Alignment.CenterStart)
         )
     }
@@ -169,11 +179,14 @@ fun SeekBarThin(
     scrubberRadius: Dp = 6.dp,
     shape: Shape = RectangleShape,
     drawSteps: Boolean = false,
+    crossfadePalette: List<Color>? = null,
 ) {
     val isDragging = remember {
         MutableTransitionState(false)
     }
 
+    val progressFraction = seekBarFraction(value, minimumValue, maximumValue)
+    val progressBrush = crossfadePalette?.takeIf { it.isNotEmpty() }?.let(Brush::horizontalGradient)
 
     Box(
         modifier = modifier
@@ -248,8 +261,14 @@ fun SeekBarThin(
         Spacer(
             modifier = Modifier
                 .height(barHeight)
-                .fillMaxWidth(seekBarFraction(value, minimumValue, maximumValue))
-                .background(color = color, shape = shape)
+                .fillMaxWidth(progressFraction)
+                .let { progressModifier ->
+                    if (progressBrush != null) {
+                        progressModifier.background(brush = progressBrush, shape = shape)
+                    } else {
+                        progressModifier.background(color = color, shape = shape)
+                    }
+                }
                 .align(Alignment.CenterStart)
         )
     }

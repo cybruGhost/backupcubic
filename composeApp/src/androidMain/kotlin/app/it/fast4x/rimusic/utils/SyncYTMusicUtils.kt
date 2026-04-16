@@ -44,6 +44,7 @@ import timber.log.Timber
 private val ytmAlbumThumbnailCache = mutableMapOf<String, String?>()
 private var lastFullAccountSyncAtMs = 0L
 private val ytmAccountSyncMutex = Mutex()
+private const val AUTO_SYNC_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal data types
@@ -396,46 +397,44 @@ fun ytmPrivatePlaylistSync(playlist: Playlist, playlistId: Long) {
 suspend fun importYTMSubscribedChannels(): Boolean = withContext(Dispatchers.IO) {
     if (!isYouTubeSyncEnabled()) return@withContext false
 
-    val sessionScope = currentSessionLibraryScope()
-    val sessionArtists = sessionScope?.let { scope ->
+    val sessionScope = currentSessionLibraryScope() ?: return@withContext false
+    val sessionArtists = sessionScope.let { scope ->
         safeYtmCall("sessionArtists") {
             YtmSessionApi.fetchArtists(scope.cookie, scope.authUser, scope.pageId)
         }
     }
 
-    if (!sessionArtists.isNullOrEmpty()) {
-        runCatching {
-            sessionArtists.forEach { remoteArtist ->
-                if (remoteArtist.browseId.isBlank() || remoteArtist.name.isBlank()) return@forEach
-                val localArtist = Database.artistTable.findById(remoteArtist.browseId).first()
-                if (localArtist == null) {
-                    Database.artistTable.upsert(Artist(id = remoteArtist.browseId, name = remoteArtist.name, thumbnailUrl = remoteArtist.thumbnail, bookmarkedAt = System.currentTimeMillis(), isYoutubeArtist = true))
-                } else {
-                    Database.artistTable.update(localArtist.copy(name = remoteArtist.name, thumbnailUrl = remoteArtist.thumbnail, bookmarkedAt = localArtist.bookmarkedAt ?: System.currentTimeMillis(), isYoutubeArtist = true))
-                }
-            }
-        }.onSuccess { return@withContext true }
-    }
-
-    val page = safeYtmCall("importYTMSubscribedChannels") {
-        YouTubeRequestThrottler.run { Innertube.library("FEmusic_library_corpus_artists").completed() }
-    } ?: return@withContext false
-
     runCatching {
-        val ytmArtists = page.items.filterIsInstance<Innertube.ArtistItem>()
+        val ytmArtists = sessionArtists.orEmpty()
+            .filter { it.browseId.isNotBlank() && it.name.isNotBlank() }
+
+        if (ytmArtists.isEmpty()) return@withContext false
+
         ytmArtists.forEach { remoteArtist ->
-            if (remoteArtist.key.isBlank() || remoteArtist.title.isNullOrBlank()) return@forEach
-            var localArtist = Database.artistTable.findById(remoteArtist.key).first()
+            val localArtist = Database.artistTable.findById(remoteArtist.browseId).first()
             if (localArtist == null) {
-                localArtist = Artist(id = remoteArtist.key, name = remoteArtist.title, thumbnailUrl = remoteArtist.thumbnail?.url, bookmarkedAt = System.currentTimeMillis(), isYoutubeArtist = true)
-                Database.artistTable.upsert(localArtist)
+                Database.artistTable.upsert(
+                    Artist(
+                        id = remoteArtist.browseId,
+                        name = remoteArtist.name,
+                        thumbnailUrl = remoteArtist.thumbnail,
+                        bookmarkedAt = System.currentTimeMillis(),
+                        isYoutubeArtist = true
+                    )
+                )
             } else {
-                localArtist.copy(bookmarkedAt = localArtist.bookmarkedAt ?: System.currentTimeMillis(), thumbnailUrl = remoteArtist.thumbnail?.url, isYoutubeArtist = true)
-                    .let(Database.artistTable::update)
+                Database.artistTable.update(
+                    localArtist.copy(
+                        name = remoteArtist.name,
+                        thumbnailUrl = remoteArtist.thumbnail,
+                        bookmarkedAt = localArtist.bookmarkedAt ?: System.currentTimeMillis(),
+                        isYoutubeArtist = true
+                    )
+                )
             }
         }
         Database.artistTable.allFollowing().first()
-            .filter { it.isYoutubeArtist && it.id !in ytmArtists.map { a -> a.key } }
+            .filter { it.isYoutubeArtist && it.id !in ytmArtists.map { a -> a.browseId } }
             .map { it.copy(isYoutubeArtist = false, bookmarkedAt = null) }
             .forEach(Database.artistTable::update)
     }.onFailure {
@@ -451,49 +450,39 @@ suspend fun importYTMSubscribedChannels(): Boolean = withContext(Dispatchers.IO)
 suspend fun importYTMLikedAlbums(): Boolean = withContext(Dispatchers.IO) {
     if (!isYouTubeSyncEnabled()) return@withContext false
 
-    val sessionScope = currentSessionLibraryScope()
-    val sessionAlbums = sessionScope?.let { scope ->
+    val sessionScope = currentSessionLibraryScope() ?: return@withContext false
+    val sessionAlbums = sessionScope.let { scope ->
         safeYtmCall("sessionAlbums") { YtmSessionApi.fetchAlbums(scope.cookie, scope.authUser, scope.pageId) }
     }
 
-    if (!sessionAlbums.isNullOrEmpty()) {
-        runCatching {
-            sessionAlbums.forEach { remoteAlbum ->
-                if (remoteAlbum.browseId.isBlank() || remoteAlbum.title.isBlank()) return@forEach
-                val localAlbum = Database.albumTable.findById(remoteAlbum.browseId).first()
-                val album = (localAlbum ?: Album(
-                    id = remoteAlbum.browseId, title = remoteAlbum.title, authorsText = remoteAlbum.artist,
-                    thumbnailUrl = remoteAlbum.thumbnail, year = remoteAlbum.year,
-                    bookmarkedAt = System.currentTimeMillis(), isYoutubeAlbum = true,
-                )).copy(
-                    title = remoteAlbum.title, authorsText = remoteAlbum.artist,
-                    thumbnailUrl = remoteAlbum.thumbnail, year = remoteAlbum.year,
-                    bookmarkedAt = localAlbum?.bookmarkedAt ?: System.currentTimeMillis(), isYoutubeAlbum = true,
-                )
-                if (localAlbum == null) Database.albumTable.upsert(album) else Database.albumTable.updateReplace(album)
-            }
-        }.onSuccess { return@withContext true }
-    }
-
-    val page = safeYtmCall("importYTMLikedAlbums") {
-        YouTubeRequestThrottler.run { Innertube.library("FEmusic_liked_albums").completed() }
-    } ?: return@withContext false
-
     runCatching {
-        val ytmAlbums = page.items.filterIsInstance<Innertube.AlbumItem>()
+        val ytmAlbums = sessionAlbums.orEmpty()
+            .filter { it.browseId.isNotBlank() && it.title.isNotBlank() }
+
+        if (ytmAlbums.isEmpty()) return@withContext false
+
         ytmAlbums.forEach { remoteAlbum ->
-            if (remoteAlbum.key.isBlank() || remoteAlbum.title.isNullOrBlank()) return@forEach
-            var localAlbum = Database.albumTable.findById(remoteAlbum.key).first()
-            if (localAlbum == null) {
-                localAlbum = Album(id = remoteAlbum.key, title = remoteAlbum.title, thumbnailUrl = remoteAlbum.thumbnail?.url, bookmarkedAt = System.currentTimeMillis(), year = remoteAlbum.year, authorsText = remoteAlbum.authors?.getOrNull(1)?.name, isYoutubeAlbum = true)
-                Database.albumTable.upsert(localAlbum)
-            } else {
-                localAlbum.copy(isYoutubeAlbum = true, bookmarkedAt = localAlbum.bookmarkedAt ?: System.currentTimeMillis(), thumbnailUrl = remoteAlbum.thumbnail?.url)
-                    .let(Database.albumTable::updateReplace)
-            }
+            val localAlbum = Database.albumTable.findById(remoteAlbum.browseId).first()
+            val album = (localAlbum ?: Album(
+                id = remoteAlbum.browseId,
+                title = remoteAlbum.title,
+                authorsText = remoteAlbum.artist,
+                thumbnailUrl = remoteAlbum.thumbnail,
+                year = remoteAlbum.year,
+                bookmarkedAt = System.currentTimeMillis(),
+                isYoutubeAlbum = true,
+            )).copy(
+                title = remoteAlbum.title,
+                authorsText = remoteAlbum.artist,
+                thumbnailUrl = remoteAlbum.thumbnail,
+                year = remoteAlbum.year,
+                bookmarkedAt = localAlbum?.bookmarkedAt ?: System.currentTimeMillis(),
+                isYoutubeAlbum = true,
+            )
+            if (localAlbum == null) Database.albumTable.upsert(album) else Database.albumTable.updateReplace(album)
         }
         Database.albumTable.all().first()
-            .filter { it.isYoutubeAlbum && it.id !in ytmAlbums.map { a -> a.key } }
+            .filter { it.isYoutubeAlbum && it.id !in ytmAlbums.map { a -> a.browseId } }
             .map { it.copy(isYoutubeAlbum = false, bookmarkedAt = null) }
             .also(Database.albumTable::updateReplace)
     }.onFailure {
@@ -509,82 +498,8 @@ suspend fun importYTMLikedAlbums(): Boolean = withContext(Dispatchers.IO) {
 suspend fun importYTMLikedPlaylists(): Boolean = withContext(Dispatchers.IO) {
     if (!isYouTubeSyncEnabled()) return@withContext false
 
-    val sessionScope = currentSessionLibraryScope()
-    if (sessionScope != null && syncSessionPlaylists(sessionScope)) return@withContext true
-
-    val firstPage = safeYtmCall("importYTMLikedPlaylists:first_page") {
-        YouTubeRequestThrottler.run { Innertube.library("FEmusic_liked_playlists").completed() }
-    } ?: return@withContext false
-
-    val ytmPlaylists = mutableListOf<Innertube.PlaylistItem>()
-    ytmPlaylists += firstPage.items.filterIsInstance<Innertube.PlaylistItem>()
-
-    var continuation = firstPage.continuation
-    while (!continuation.isNullOrBlank()) {
-        val currentContinuation = continuation
-        val continuationPage = safeYtmCall(label = "importYTMLikedPlaylists:continuation", timeoutMs = 20_000L) {
-            YouTubeRequestThrottler.run { Innertube.libraryContinuation(currentContinuation) }
-        } ?: break
-        ytmPlaylists += continuationPage.items.filterIsInstance<Innertube.PlaylistItem>()
-        continuation = continuationPage.continuation
-    }
-
-    if (ytmPlaylists.isEmpty()) {
-        Timber.w("importYTMLikedPlaylists: empty remote list, keeping local data")
-        return@withContext false
-    }
-
-    val distinctYtmPlaylists = ytmPlaylists.distinctBy { playlistIdentityKey(it.key, it.title.orEmpty()) }
-
-    distinctYtmPlaylists.forEach { remotePlaylist ->
-        if (remotePlaylist.key.isBlank()) return@forEach
-        val localPlaylist = findExistingYtmPlaylist(browseId = remotePlaylist.key, title = remotePlaylist.title.orEmpty())
-        val playlist = (localPlaylist ?: Playlist(
-            name = remotePlaylist.title.orEmpty(), browseId = remotePlaylist.key,
-            isEditable = remotePlaylist.isEditable == true, isYoutubePlaylist = true,
-        )).copy(name = remotePlaylist.title.orEmpty(), browseId = remotePlaylist.key, isEditable = remotePlaylist.isEditable == true, isYoutubePlaylist = true)
-
-        val localSongCount = if ((localPlaylist?.id ?: 0) > 0) {
-            Database.songPlaylistMapTable.allSongsOf(localPlaylist!!.id).first().size
-        } else 0
-
-        val playlistId = if (playlist.id > 0) {
-            Database.playlistTable.update(playlist); playlist.id
-        } else Database.playlistTable.insert(playlist)
-
-        val remoteSongs = if (localSongCount > 0) emptyList()
-        else fetchRemotePlaylistSongs(sessionScope = sessionScope, playlistId = remotePlaylist.key, browseId = remotePlaylist.key, timeoutMs = 30_000L)
-
-        if (remoteSongs.isEmpty() && localSongCount <= 0) return@forEach
-
-        runCatching {
-            Database.asyncTransaction {
-                val currentPlaylist = playlist.copy(id = playlistId)
-                playlistTable.insertIgnore(currentPlaylist)
-                playlistTable.update(currentPlaylist)
-                if (remoteSongs.isNotEmpty()) {
-                    remoteSongs.forEach { songTable.insertIgnore(it.song) }
-                    songPlaylistMapTable.clear(currentPlaylist.id)
-                    songPlaylistMapTable.updateReplace(remoteSongs.mapIndexed { index, remoteSong ->
-                        app.it.fast4x.rimusic.models.SongPlaylistMap(
-                            songId = remoteSong.song.id,
-                            playlistId = currentPlaylist.id,
-                            position = index,
-                            setVideoId = remoteSong.setVideoId
-                        )
-                    })
-                }
-            }
-        }.onFailure { Timber.e(it, "importYTMLikedPlaylists failed saving playlist=%s", remotePlaylist.key) }
-    }
-
-    // Unmark local playlists no longer present remotely
-    Database.playlistTable.allAsPreview().first().map { it.playlist }
-        .filter { it.isYoutubePlaylist && it.browseId !in distinctYtmPlaylists.map { p -> p.key.removePrefix("VL") } }
-        .forEach { Database.playlistTable.update(it.copy(isYoutubePlaylist = false, browseId = null)) }
-
-    cleanupDuplicateYtmPlaylists()
-    true
+    val sessionScope = currentSessionLibraryScope() ?: return@withContext false
+    syncSessionPlaylists(sessionScope)
 }
 
 /**
@@ -645,14 +560,17 @@ suspend fun importYTMLikedSongs(): Boolean = withContext(Dispatchers.IO) {
  * Full account sync. Guaranteed to run on [Dispatchers.IO].
  * Rate-limited to once per minute.
  */
-suspend fun syncSelectedYtmAccountData(): Boolean = withContext(Dispatchers.IO) {
+suspend fun syncSelectedYtmAccountData(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
     if (!isYouTubeSyncEnabled()) return@withContext false
     if (appRunningInBackground) return@withContext false
+    if (currentSessionLibraryScope() == null) return@withContext false
     ytmAccountSyncMutex.withLock {
         if (appRunningInBackground) return@withLock false
 
         val now = System.currentTimeMillis()
-        if (now - lastFullAccountSyncAtMs < 60_000L) return@withLock false
+        val autoSyncEnabled = isAutoSyncEnabled()
+        if (!force && !autoSyncEnabled) return@withLock false
+        if (!force && now - lastFullAccountSyncAtMs < AUTO_SYNC_INTERVAL_MS) return@withLock false
 
         val syncSteps = listOf(
             "liked songs" to ::importYTMLikedSongs,

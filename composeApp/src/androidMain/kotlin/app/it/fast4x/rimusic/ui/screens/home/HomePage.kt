@@ -109,6 +109,8 @@ import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.selectedCountryCodeKey
 import app.it.fast4x.rimusic.utils.showFloatingIconKey
 import app.it.fast4x.rimusic.utils.showSearchTabKey
+import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
+import app.it.fast4x.rimusic.utils.ytCookieKey
 import app.it.fast4x.rimusic.utils.homeScreenTabIndexKey
 import app.it.fast4x.rimusic.utils.preferences
 import coil.compose.AsyncImage
@@ -425,6 +427,8 @@ fun HomePage(
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
     val showSearchTab by rememberPreference(showSearchTabKey, false)
     val showFloatingIcon by rememberPreference(showFloatingIconKey, false)
+    val activeYouTubeCookie by rememberPreference(ytCookieKey, "")
+    val activeYouTubeAccountHandle by rememberPreference(ytAccountChannelHandleKey, "")
 
     @Suppress("UNUSED_VARIABLE")
     val ignoredSettings = Pair(selectedCountryCode, parentalControlEnabled)
@@ -477,6 +481,11 @@ fun HomePage(
     }
 
     LaunchedEffect(Unit) { loadData() }
+
+    LaunchedEffect(activeYouTubeCookie, activeYouTubeAccountHandle) {
+        loadedData = false
+        loadData()
+    }
 
     var refreshing by remember { mutableStateOf(false) }
     fun refresh() {

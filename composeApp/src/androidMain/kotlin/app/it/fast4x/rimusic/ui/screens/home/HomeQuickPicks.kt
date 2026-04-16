@@ -786,7 +786,14 @@ fun HomeQuickPicks(
             }
 
             val homeDeferred = async(Dispatchers.IO) {
-                if (isYouTubeLoggedIn() && (sessionHomeFeedResult == null || forceReload)) {
+                val shouldFetchSessionHomeFeed =
+                    isYouTubeLoggedIn() && (
+                        forceReload ||
+                            sessionHomeFeedResult == null ||
+                            sessionHomeFeedResult?.isFailure == true ||
+                            sessionHomeFeedResult?.getOrNull().isNullOrEmpty()
+                        )
+                if (shouldFetchSessionHomeFeed) {
                     val session = YouTubeSessionStore.applyCurrentSession(context)
                     val cookie = session?.cookie?.takeIf { it.isNotBlank() }
                     if (cookie.isNullOrBlank()) {
