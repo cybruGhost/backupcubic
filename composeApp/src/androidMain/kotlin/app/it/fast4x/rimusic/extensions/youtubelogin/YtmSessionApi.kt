@@ -87,12 +87,7 @@ object YtmSessionApi {
             require(normalizedCookies.isNotBlank()) { "No YouTube Music cookies found yet" }
             require(authUser.isNotBlank()) { "Missing authUser for selected account" }
 
-            val body = JSONObject()
-                .put("cookies", normalizedCookies)
-                .put("authUser", authUser)
-                .apply {
-                    if (!pageId.isNullOrBlank()) put("pageId", pageId)
-                }
+            val body = JSONObject().put("cookies", normalizedCookies)
 
             val url = buildString {
                 append(SESSION_ENDPOINT)
@@ -127,15 +122,15 @@ object YtmSessionApi {
             val item = arr.optJSONObject(index) ?: JSONObject()
             val subtitle = item.optString("subtitle")
             YtmPlaylist(
-                playlistId = item.optString("playlistId"),
-                browseId = item.optString("browseId"),
-                rawPlaylistId = item.optString("rawPlaylistId"),
-                title = item.optString("title"),
-                name = item.optString("name"),
-                thumbnail = item.optString("thumbnail"),
-                thumbnailUrl = item.optString("thumbnailUrl"),
-                songCount = item.optString("songCount").ifBlank { extractSongCount(subtitle) },
-                subtitle = subtitle
+                playlistId = item.optString("playlistId").normalizedField(),
+                browseId = item.optString("browseId").normalizedField(),
+                rawPlaylistId = item.optString("rawPlaylistId").normalizedField(),
+                title = item.optString("title").normalizedField(),
+                name = item.optString("name").normalizedField(),
+                thumbnail = item.optString("thumbnail").normalizedField(),
+                thumbnailUrl = item.optString("thumbnailUrl").normalizedField(),
+                songCount = item.optString("songCount").normalizedField().ifBlank { extractSongCount(subtitle) },
+                subtitle = subtitle.normalizedField()
             )
         }
     }
@@ -150,32 +145,33 @@ object YtmSessionApi {
             val section = arr.optJSONObject(index) ?: JSONObject()
             val items = section.optJSONArray("items") ?: JSONArray()
             YtmHomeSection(
-                title = section.optString("title"),
-                subtitle = section.optString("subtitle"),
-                browseId = section.optString("browseId"),
-                params = section.optString("params"),
-                type = section.optString("type"),
+                title = section.optString("title").normalizedField(),
+                subtitle = section.optString("subtitle").normalizedField(),
+                browseId = section.optString("browseId").normalizedField(),
+                params = section.optString("params").normalizedField(),
+                type = section.optString("type").normalizedField(),
                 itemCount = section.optInt("itemCount"),
                 hasMore = section.optBoolean("hasMore"),
                 items = List(items.length()) { itemIndex ->
                     val item = items.optJSONObject(itemIndex) ?: JSONObject()
                     YtmHomeSectionItem(
-                        id = item.optString("id"),
-                        videoId = item.optString("videoId"),
-                        playlistId = item.optString("playlistId"),
-                        browseId = item.optString("browseId"),
-                        title = item.optString("title"),
-                        subtitle = item.optString("subtitle"),
-                        artistsText = item.optString("artistsText"),
-                        artistId = item.optString("artistId"),
+                        id = item.optString("id").normalizedField(),
+                        videoId = item.optString("videoId").normalizedField(),
+                        playlistId = item.optString("playlistId").normalizedField(),
+                        browseId = item.optString("browseId").normalizedField(),
+                        title = item.optString("title").normalizedField(),
+                        subtitle = item.optString("subtitle").normalizedField(),
+                        artistsText = item.optString("artistsText").normalizedField(),
+                        artistId = item.optString("artistId").normalizedField(),
                         artistIds = item.optJSONArray("artistIds")?.let { artistIds ->
-                            List(artistIds.length()) { artistIndex -> artistIds.optString(artistIndex) }
+                            List(artistIds.length()) { artistIndex -> artistIds.optString(artistIndex).normalizedField() }
+                                .filter { it.isNotBlank() }
                         } ?: emptyList(),
-                        album = item.optString("album"),
-                        albumId = item.optString("albumId"),
-                        thumbnail = item.optString("thumbnail"),
-                        thumbnailUrl = item.optString("thumbnailUrl"),
-                        type = item.optString("type")
+                        album = item.optString("album").normalizedField(),
+                        albumId = item.optString("albumId").normalizedField(),
+                        thumbnail = item.optString("thumbnail").normalizedField(),
+                        thumbnailUrl = item.optString("thumbnailUrl").normalizedField(),
+                        type = item.optString("type").normalizedField()
                     )
                 }
             )
@@ -220,10 +216,10 @@ object YtmSessionApi {
         List(arr.length()) { index ->
             val item = arr.optJSONObject(index) ?: JSONObject()
             YtmArtist(
-                browseId = item.optString("browseId"),
-                name = item.optString("name"),
-                thumbnail = item.optString("thumbnail"),
-                subscribers = item.optString("subscribers")
+                browseId = item.optString("browseId").normalizedField(),
+                name = item.optString("name").normalizedField(),
+                thumbnail = item.optString("thumbnail").normalizedField(),
+                subscribers = item.optString("subscribers").normalizedField()
             )
         }
     }
@@ -237,13 +233,13 @@ object YtmSessionApi {
         List(arr.length()) { index ->
             val item = arr.optJSONObject(index) ?: JSONObject()
             YtmAlbum(
-                browseId = item.optString("browseId"),
-                playlistId = item.optString("playlistId"),
-                title = item.optString("title"),
-                artist = item.optString("artist"),
-                thumbnail = item.optString("thumbnail"),
-                year = item.optString("year"),
-                type = item.optString("type")
+                browseId = item.optString("browseId").normalizedField(),
+                playlistId = item.optString("playlistId").normalizedField(),
+                title = item.optString("title").normalizedField(),
+                artist = item.optString("artist").normalizedField(),
+                thumbnail = item.optString("thumbnail").normalizedField(),
+                year = item.optString("year").normalizedField(),
+                type = item.optString("type").normalizedField()
             )
         }
     }
@@ -265,30 +261,30 @@ object YtmSessionApi {
 
     private fun parseLinkedAccount(json: JSONObject): YtmLinkedAccount =
         YtmLinkedAccount(
-            accountName = json.optString("accountName"),
-            accountEmail = json.optString("accountEmail"),
-            channelHandle = json.optString("channelHandle"),
-            accountThumbnail = json.optString("accountThumbnail"),
-            subscribers = json.optString("subscribers"),
+            accountName = json.optString("accountName").normalizedField(),
+            accountEmail = json.optString("accountEmail").normalizedField(),
+            channelHandle = json.optString("channelHandle").normalizedField(),
+            accountThumbnail = json.optString("accountThumbnail").normalizedField(),
+            subscribers = json.optString("subscribers").normalizedField(),
             isSelected = json.optBoolean("isSelected"),
-            authUser = json.optString("authUser"),
-            pageId = json.optString("pageId")
+            authUser = json.optString("authUser").normalizedField(),
+            pageId = json.optString("pageId").normalizedField()
         )
 
     private fun parseApiSession(json: JSONObject, fallbackCookie: String): YtmApiSession =
         YtmApiSession(
             hasSession = json.optBoolean("hasSession", true),
-            cookie = json.optString("cookies").ifBlank {
-                json.optString("cookie").ifBlank { fallbackCookie }
+            cookie = json.optString("cookies").normalizedField().ifBlank {
+                json.optString("cookie").normalizedField().ifBlank { fallbackCookie }
             },
-            visitorData = json.optString("visitorData"),
-            dataSyncId = json.optString("dataSyncId"),
-            authUser = json.optString("authUser"),
-            pageId = json.optString("pageId"),
-            accountName = json.optString("accountName"),
-            accountEmail = json.optString("accountEmail"),
-            accountChannelHandle = json.optString("accountChannelHandle"),
-            accountThumbnail = json.optString("accountThumbnail")
+            visitorData = json.optString("visitorData").normalizedField(),
+            dataSyncId = json.optString("dataSyncId").normalizedField(),
+            authUser = json.optString("authUser").normalizedField(),
+            pageId = json.optString("pageId").normalizedField(),
+            accountName = json.optString("accountName").normalizedField(),
+            accountEmail = json.optString("accountEmail").normalizedField(),
+            accountChannelHandle = json.optString("accountChannelHandle").normalizedField(),
+            accountThumbnail = json.optString("accountThumbnail").normalizedField()
         )
 
     private fun parseSongs(json: JSONObject): List<YtmSong> {
@@ -296,33 +292,35 @@ object YtmSessionApi {
         return List(songs.length()) { index ->
             val item = songs.optJSONObject(index) ?: JSONObject()
             YtmSong(
-                id = item.optString("id").ifBlank { item.optString("videoId") },
-                videoId = item.optString("videoId"),
-                title = item.optString("title"),
-                artist = item.optString("artist"),
-                artistsText = item.optString("artistsText"),
-                artistId = item.optString("artistId"),
+                id = item.optString("id").normalizedField().ifBlank { item.optString("videoId").normalizedField() },
+                videoId = item.optString("videoId").normalizedField(),
+                title = item.optString("title").normalizedField(),
+                artist = item.optString("artist").normalizedField(),
+                artistsText = item.optString("artistsText").normalizedField(),
+                artistId = item.optString("artistId").normalizedField(),
                 artistIds = item.optJSONArray("artistIds")?.let { artistIds ->
-                    List(artistIds.length()) { artistIndex -> artistIds.optString(artistIndex) }
+                    List(artistIds.length()) { artistIndex -> artistIds.optString(artistIndex).normalizedField() }
+                        .filter { it.isNotBlank() }
                 } ?: emptyList(),
                 artists = item.optJSONArray("artists")?.let { artists ->
                     List(artists.length()) { artistIndex ->
                         val artist = artists.optJSONObject(artistIndex) ?: JSONObject()
                         YtmArtistRef(
-                            id = artist.optString("id"),
-                            name = artist.optString("name")
+                            id = artist.optString("id").normalizedField(),
+                            name = artist.optString("name").normalizedField()
                         )
                     }
+                        .filter { it.id.isNotBlank() || it.name.isNotBlank() }
                 } ?: emptyList(),
-                album = item.optString("album"),
-                albumId = item.optString("albumId"),
-                thumbnail = item.optString("thumbnail"),
-                thumbnailUrl = item.optString("thumbnailUrl"),
-                duration = item.optString("duration"),
-                durationText = item.optString("durationText"),
-                setVideoId = item.optString("setVideoId"),
+                album = item.optString("album").normalizedField(),
+                albumId = item.optString("albumId").normalizedField(),
+                thumbnail = item.optString("thumbnail").normalizedField(),
+                thumbnailUrl = item.optString("thumbnailUrl").normalizedField(),
+                duration = item.optString("duration").normalizedField(),
+                durationText = item.optString("durationText").normalizedField(),
+                setVideoId = item.optString("setVideoId").normalizedField(),
                 position = item.optInt("position", -1),
-                dateAdded = item.optString("dateAdded"),
+                dateAdded = item.optString("dateAdded").normalizedField(),
                 isAvailable = item.optBoolean("isAvailable", true)
             )
         }
@@ -428,4 +426,7 @@ object YtmSessionApi {
             in 500..599 -> "YouTube Music session service is having trouble right now."
             else -> "Request failed with status $statusCode"
         }
+
+    private fun String.normalizedField(): String =
+        trim().takeUnless { it.equals("null", ignoreCase = true) }.orEmpty()
 }

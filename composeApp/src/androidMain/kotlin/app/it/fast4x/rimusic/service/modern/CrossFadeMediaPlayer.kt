@@ -33,6 +33,7 @@ class CrossFadeManager(
     private var nextPlayer: ExoPlayer,
     private val targetVolumeProvider: () -> Float,
     private val onPlayersSwapped: (ExoPlayer, ExoPlayer) -> Unit,
+    private val onCrossfadeActiveChanged: (Boolean) -> Unit = {},
 ) {
     private val handler = Handler(Looper.getMainLooper())
     private val monitorIntervalMs = 100L
@@ -57,6 +58,7 @@ class CrossFadeManager(
     private var outgoingExpectedEndAtMs = 0L
     private var baseVolume = 1f
     private var isMonitoring = false
+    private var lastReportedCrossfadeActive = false
     private var pauseAtEndMethod: Method? = null
     private val _uiState = MutableStateFlow(CrossfadeUiState())
     val uiState: StateFlow<CrossfadeUiState> = _uiState
@@ -177,6 +179,7 @@ class CrossFadeManager(
         if (!isCrossfading) return false
 
         isCrossfading = false
+        notifyCrossfadeActive(false)
         waitingReadySinceMs = 0L
         activeCrossfadeDurationMs = 0L
         outgoingMediaId = null
@@ -197,6 +200,7 @@ class CrossFadeManager(
 
     fun release() {
         stopMonitoring()
+        notifyCrossfadeActive(false)
         nextPlayer.release()
     }
 
@@ -321,6 +325,7 @@ class CrossFadeManager(
 
         waitingReadySinceMs = 0L
         isCrossfading = true
+        notifyCrossfadeActive(true)
         crossfadeStartedAtMs = SystemClock.elapsedRealtime()
         val remainingDurationMs = currentPlayer.duration
             .takeIf { it != C.TIME_UNSET && it > 0L }
@@ -408,6 +413,7 @@ class CrossFadeManager(
         val incomingPlayer = nextPlayer
         val shouldKeepPlaying = outgoingPlayer.playWhenReady || outgoingPlayer.isPlaying
         isCrossfading = false
+        notifyCrossfadeActive(false)
         activeCrossfadeDurationMs = 0L
         outgoingMediaId = null
         outgoingExpectedEndAtMs = 0L
@@ -447,6 +453,7 @@ class CrossFadeManager(
     private fun cancelCrossfade() {
         val shouldRestoreCurrentVolume = isCrossfading
         isCrossfading = false
+        notifyCrossfadeActive(false)
         waitingReadySinceMs = 0L
         if (shouldRestoreCurrentVolume) {
             currentPlayer.volume = baseVolume
@@ -482,6 +489,12 @@ class CrossFadeManager(
     private fun stopMonitoring() {
         isMonitoring = false
         handler.removeCallbacks(monitorRunnable)
+    }
+
+    private fun notifyCrossfadeActive(active: Boolean) {
+        if (lastReportedCrossfadeActive == active) return
+        lastReportedCrossfadeActive = active
+        onCrossfadeActiveChanged(active)
     }
 
     private fun updateUiState(crossfadeElapsedMs: Long = 0L) {

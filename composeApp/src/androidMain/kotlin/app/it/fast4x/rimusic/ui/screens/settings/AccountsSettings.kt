@@ -104,7 +104,6 @@ import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.restartActivityKey
 import app.it.fast4x.rimusic.utils.thumbnailRoundnessKey
 import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
-import app.it.fast4x.rimusic.utils.autosyncKey
 import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
 import app.it.fast4x.rimusic.utils.ytAccountEmailKey
 import app.it.fast4x.rimusic.utils.ytAccountNameKey
@@ -215,9 +214,6 @@ AnimatedVisibility(
             var accountEmail by remember { mutableStateOf(storedAccountEmail) }
             var accountChannelHandle by remember { mutableStateOf(storedAccountChannelHandle) }
             var accountThumbnail by remember { mutableStateOf(storedAccountThumbnail) }
-            var isSyncingYtmData by remember { mutableStateOf(false) }
-            var pendingManualYtmSync by remember { mutableStateOf(false) }
-            var enableAutoYtmSync by rememberPreference(autosyncKey, false)
             var currentSessionId by remember {
                 mutableStateOf(YouTubeSessionStore.getCurrentSession(context)?.sessionId.orEmpty())
             }
@@ -368,32 +364,15 @@ AnimatedVisibility(
                         nextSession
                     )
                     Toaster.i("${linkedAccount.accountName.ifBlank { "YouTube account" }} is now active")
+                    scope.launch(Dispatchers.IO) {
+                        syncSelectedYtmAccountData()
+                    }
                     restartService = true
                 }.onFailure {
                     Timber.w(it, "AccountsSettings: switch_account failed")
                     Toaster.e(it.message ?: "Failed to switch YouTube Music account")
                 }
                 isRefreshingAccountInfo = false
-            }
-
-            suspend fun syncYtmLibraryManually() {
-                if (!isLoggedIn) {
-                    Toaster.i("Connect YouTube Music first")
-                    return
-                }
-                isSyncingYtmData = true
-                runCatching {
-                    syncSelectedYtmAccountData(force = true)
-                }.onSuccess { synced ->
-                    Toaster.i(
-                        if (synced) "YouTube Music library synced"
-                        else "No session data was synced right now"
-                    )
-                }.onFailure {
-                    Timber.w(it, "AccountsSettings: manual_ytm_sync failed")
-                    Toaster.e(it.message ?: "Failed to sync YouTube Music library")
-                }
-                isSyncingYtmData = false
             }
 
             LaunchedEffect(Unit) {
@@ -432,13 +411,6 @@ AnimatedVisibility(
                     linkedAccounts = emptyList()
                 }
             }
-
-            LaunchedEffect(pendingManualYtmSync) {
-                if (!pendingManualYtmSync) return@LaunchedEffect
-                pendingManualYtmSync = false
-                syncYtmLibraryManually()
-            }
-
 
                     OtherSwitchSettingEntry(
                         title = stringResource(R.string.enable_youtube_music_login),
@@ -640,27 +612,6 @@ AnimatedVisibility(
                                         )
                                     }
                                 }
-                            }
-
-                            if (isLoggedIn) {
-                                OtherSwitchSettingEntry(
-                                    title = "Auto sync YouTube Music",
-                                    text = "Off by default. When enabled, Cubic may refresh YT Music library data occasionally in the background flow.",
-                                    isChecked = enableAutoYtmSync,
-                                    onCheckedChange = { enableAutoYtmSync = it },
-                                    icon = R.drawable.sync
-                                )
-
-                                OtherSettingsEntry(
-                                    title = if (isSyncingYtmData) "Syncing YouTube Music library..." else "Sync YouTube Music library",
-                                    text = "Manual sync now uses the active YT Music session directly for liked songs, playlists, artists, and albums.",
-                                    icon = R.drawable.sync,
-                                    onClick = {
-                                        if (!isSyncingYtmData) {
-                                            pendingManualYtmSync = true
-                                        }
-                                    }
-                                )
                             }
 
                             linkedAccounts.forEach { linkedAccount ->

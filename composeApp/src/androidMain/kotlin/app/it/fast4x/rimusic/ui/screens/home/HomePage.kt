@@ -429,6 +429,7 @@ fun HomePage(
     val showFloatingIcon by rememberPreference(showFloatingIconKey, false)
     val activeYouTubeCookie by rememberPreference(ytCookieKey, "")
     val activeYouTubeAccountHandle by rememberPreference(ytAccountChannelHandleKey, "")
+    val activeYouTubeSessionId = YouTubeSessionStore.getCurrentSession(context)?.sessionId.orEmpty()
 
     @Suppress("UNUSED_VARIABLE")
     val ignoredSettings = Pair(selectedCountryCode, parentalControlEnabled)
@@ -482,7 +483,7 @@ fun HomePage(
 
     LaunchedEffect(Unit) { loadData() }
 
-    LaunchedEffect(activeYouTubeCookie, activeYouTubeAccountHandle) {
+    LaunchedEffect(activeYouTubeCookie, activeYouTubeSessionId, activeYouTubeAccountHandle) {
         loadedData = false
         loadData()
     }

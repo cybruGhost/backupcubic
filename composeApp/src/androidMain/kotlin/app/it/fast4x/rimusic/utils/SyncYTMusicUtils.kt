@@ -15,7 +15,6 @@ import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.YtMusic
 import it.fast4x.innertube.utils.completed
 import app.it.fast4x.rimusic.Database
-import app.it.fast4x.rimusic.isAutoSyncEnabled
 import app.it.fast4x.rimusic.models.Album
 import app.it.fast4x.rimusic.models.Artist
 import app.it.fast4x.rimusic.models.Playlist
@@ -43,8 +42,8 @@ import timber.log.Timber
 
 private val ytmAlbumThumbnailCache = mutableMapOf<String, String?>()
 private var lastFullAccountSyncAtMs = 0L
+private var lastFullAccountSyncKey = ""
 private val ytmAccountSyncMutex = Mutex()
-private const val AUTO_SYNC_INTERVAL_MS = 3L * 24L * 60L * 60L * 1000L
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Internal data types
@@ -133,10 +132,13 @@ private fun currentSessionLibraryScope(): SessionLibraryScope? {
     val cookie = session.cookie.takeIf { it.isNotBlank() } ?: return null
     return SessionLibraryScope(
         cookie = cookie,
-        authUser = session.authUser.ifBlank { null },
-        pageId = session.pageId.ifBlank { null },
+        authUser = session.authUser.trim().takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) },
+        pageId = session.pageId.trim().takeUnless { it.isBlank() || it.equals("null", ignoreCase = true) },
     )
 }
+
+private fun SessionLibraryScope.syncIdentityKey(): String =
+    listOf(cookie.take(48), authUser.orEmpty(), pageId.orEmpty()).joinToString("|")
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Song normalisation
@@ -560,17 +562,18 @@ suspend fun importYTMLikedSongs(): Boolean = withContext(Dispatchers.IO) {
  * Full account sync. Guaranteed to run on [Dispatchers.IO].
  * Rate-limited to once per minute.
  */
-suspend fun syncSelectedYtmAccountData(force: Boolean = false): Boolean = withContext(Dispatchers.IO) {
+suspend fun syncSelectedYtmAccountData(): Boolean = withContext(Dispatchers.IO) {
     if (!isYouTubeSyncEnabled()) return@withContext false
     if (appRunningInBackground) return@withContext false
-    if (currentSessionLibraryScope() == null) return@withContext false
+    val sessionScope = currentSessionLibraryScope() ?: return@withContext false
     ytmAccountSyncMutex.withLock {
         if (appRunningInBackground) return@withLock false
 
         val now = System.currentTimeMillis()
-        val autoSyncEnabled = isAutoSyncEnabled()
-        if (!force && !autoSyncEnabled) return@withLock false
-        if (!force && now - lastFullAccountSyncAtMs < AUTO_SYNC_INTERVAL_MS) return@withLock false
+        val syncKey = sessionScope.syncIdentityKey()
+        if (syncKey == lastFullAccountSyncKey && now - lastFullAccountSyncAtMs < 60_000L) {
+            return@withLock false
+        }
 
         val syncSteps = listOf(
             "liked songs" to ::importYTMLikedSongs,
@@ -587,7 +590,10 @@ suspend fun syncSelectedYtmAccountData(force: Boolean = false): Boolean = withCo
                 .onFailure { Timber.e(it, "syncSelectedYtmAccountData failed while syncing %s", label) }
         }
 
-        if (syncedAny) lastFullAccountSyncAtMs = now
+        if (syncedAny) {
+            lastFullAccountSyncAtMs = now
+            lastFullAccountSyncKey = syncKey
+        }
         syncedAny
     }
 }

@@ -13,10 +13,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -168,13 +170,18 @@ fun DebugRescueCenterDialog(
 
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .wrapContentHeight(),
             shape = RoundedCornerShape(28.dp),
             colors = CardDefaults.cardColors(containerColor = colorPalette().background1.copy(alpha = 0.96f)),
             elevation = CardDefaults.cardElevation(defaultElevation = 18.dp)
         ) {
+            val contentScroll = rememberScrollState()
             Column(
                 modifier = Modifier
+                    .heightIn(max = 560.dp)
+                    .verticalScroll(contentScroll)
                     .background(
                         Brush.verticalGradient(
                             listOf(
@@ -210,11 +217,12 @@ fun DebugRescueCenterDialog(
                             color = colorPalette().textSecondary
                         )
                     }
-                        RescueActionChip(
-                            label = "Refresh",
-                            color = colorPalette().accent,
-                            onClick = { refreshToken++ }
-                        )
+                    RescueActionChip(
+                        label = "Refresh",
+                        color = colorPalette().accent,
+                        modifier = Modifier,
+                        onClick = { refreshToken++ }
+                    )
                 }
 
                 Spacer(modifier = Modifier.height(14.dp))
@@ -227,17 +235,19 @@ fun DebugRescueCenterDialog(
                 if (report.days.isEmpty()) {
                     Text("No debug or crash logs found yet.", style = typography().s, color = colorPalette().textSecondary)
                     Spacer(modifier = Modifier.height(12.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         RescueActionChip(
                             label = "Backup DB",
                             color = colorPalette().accent,
                             icon = R.drawable.export_outline,
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = exportDbDialog::export
                         )
                         RescueActionChip(
                             label = "Open GitHub",
                             color = Color(0xFF24292F),
                             icon = R.drawable.github_logo,
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = { openGithubIssues(context) }
                         )
                     }
@@ -325,25 +335,28 @@ fun DebugRescueCenterDialog(
 
                     Spacer(modifier = Modifier.height(14.dp))
 
-                    Row(
+                    Column(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         RescueActionChip(
                             label = "Backup DB",
                             color = colorPalette().accent,
                             icon = R.drawable.export_outline,
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = exportDbDialog::export
                         )
                         RescueActionChip(
                             label = "Export ${day.date}",
                             color = colorPalette().accent,
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = { exportDayLog(context, day) }
                         )
                         RescueActionChip(
                             label = "GitHub Issue",
                             color = Color(0xFF24292F),
                             icon = R.drawable.github_logo,
+                            modifier = Modifier.fillMaxWidth(),
                             onClick = { openGithubIssues(context) }
                         )
                     }
@@ -407,15 +420,17 @@ private fun RescueActionChip(
     label: String,
     color: Color,
     icon: Int? = null,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .clip(RoundedCornerShape(18.dp))
             .background(color.copy(alpha = 0.16f))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center
     ) {
         icon?.let {
             Icon(

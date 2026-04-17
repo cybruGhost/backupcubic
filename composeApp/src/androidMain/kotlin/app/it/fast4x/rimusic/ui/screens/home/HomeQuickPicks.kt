@@ -538,7 +538,14 @@ fun HomeQuickPicks(
     val context = LocalContext.current
     val activeYouTubeCookie by rememberPreference(ytCookieKey, "")
     val activeYouTubeAccountHandle by rememberPreference(ytAccountChannelHandleKey, "")
-    val activeYouTubeSessionId = YouTubeSessionStore.getCurrentSession(context)?.sessionId.orEmpty()
+    val activeYouTubeSession = YouTubeSessionStore.getCurrentSession(context)
+    val activeYouTubeSessionId = activeYouTubeSession?.sessionId.orEmpty()
+    val activeYouTubeAccountIdentity = listOf(
+        activeYouTubeSessionId,
+        activeYouTubeSession?.authUser.orEmpty(),
+        activeYouTubeSession?.pageId.orEmpty(),
+        activeYouTubeAccountHandle
+    ).joinToString("|")
 
     val showRelatedAlbums by rememberPreference(showRelatedAlbumsKey, true)
     val showSimilarArtists by rememberPreference(showSimilarArtistsKey, true)
@@ -837,7 +844,7 @@ fun HomeQuickPicks(
                 isYouTubeLoggedIn() &&
                 sessionHomeFeedInit == null &&
                 activeYouTubeSessionId == sessionHomeFeedSessionId &&
-                activeYouTubeAccountHandle == sessionHomeFeedAccountHandle
+                activeYouTubeAccountIdentity == sessionHomeFeedAccountHandle
             ) {
                 sessionHomeFeedInit = sessionHomeFeedResult?.getOrNull()
             }
@@ -941,14 +948,14 @@ fun HomeQuickPicks(
                     if (activeYouTubeSessionId.isNotBlank()) {
                         homePageSessionId = activeYouTubeSessionId
                     }
-                    homePageAccountHandle = activeYouTubeAccountHandle
+                    homePageAccountHandle = activeYouTubeAccountIdentity
                 }
                 sessionHomeFeedResult?.getOrNull()?.let { fetchedHomeFeed ->
                     sessionHomeFeedInit = fetchedHomeFeed
                     if (activeYouTubeSessionId.isNotBlank()) {
                         sessionHomeFeedSessionId = activeYouTubeSessionId
                     }
-                    sessionHomeFeedAccountHandle = activeYouTubeAccountHandle
+                    sessionHomeFeedAccountHandle = activeYouTubeAccountIdentity
                 }
 
                 loadedData = true
@@ -1044,7 +1051,7 @@ fun HomeQuickPicks(
         }
     }
 
-    LaunchedEffect(activeYouTubeCookie, activeYouTubeSessionId, activeYouTubeAccountHandle) {
+    LaunchedEffect(activeYouTubeCookie, activeYouTubeSessionId, activeYouTubeAccountIdentity) {
         if (!YouTubeSessionStore.hasAuthCookies(activeYouTubeCookie)) {
             homePageResult = null
             homePageInit = null
@@ -1063,17 +1070,17 @@ fun HomeQuickPicks(
 
         if (
             activeYouTubeSessionId.isNotBlank() &&
-            (homePageSessionId != activeYouTubeSessionId || homePageAccountHandle != activeYouTubeAccountHandle)
+            (homePageSessionId != activeYouTubeSessionId || homePageAccountHandle != activeYouTubeAccountIdentity)
         ) {
             homePageResult = null
             homePageInit = null
             homePagePreference = null
             homePageSessionId = activeYouTubeSessionId
-            homePageAccountHandle = activeYouTubeAccountHandle
+            homePageAccountHandle = activeYouTubeAccountIdentity
             sessionHomeFeedResult = null
             sessionHomeFeedInit = null
             sessionHomeFeedSessionId = activeYouTubeSessionId
-            sessionHomeFeedAccountHandle = activeYouTubeAccountHandle
+            sessionHomeFeedAccountHandle = activeYouTubeAccountIdentity
             sessionLikedSongsPreview = emptyList()
             selectedHomeChipTitle = ""
             selectedHomeChipParams = ""

@@ -21,14 +21,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -51,7 +46,6 @@ import app.it.fast4x.rimusic.ui.components.ButtonsRow
 import app.it.fast4x.rimusic.ui.components.navigation.header.TabToolBar
 import app.it.fast4x.rimusic.ui.components.tab.ItemSize
 import app.it.fast4x.rimusic.ui.components.tab.TabHeader
-import app.it.fast4x.rimusic.ui.components.tab.toolbar.MenuIcon
 import app.it.fast4x.rimusic.ui.components.themed.FloatingActionsContainerWithScrollToTop
 import app.it.fast4x.rimusic.ui.components.themed.HeaderInfo
 import app.it.fast4x.rimusic.ui.components.themed.MultiFloatingActionsContainer
@@ -61,28 +55,19 @@ import app.it.fast4x.rimusic.utils.CheckMonthlyPlaylist
 import app.it.fast4x.rimusic.utils.Preference.HOME_LIBRARY_ITEM_SIZE
 import app.it.fast4x.rimusic.utils.Preference.HOME_LIBRARY_SORT_BY
 import app.it.fast4x.rimusic.utils.Preference.HOME_LIBRARY_SORT_ORDER
-import app.it.fast4x.rimusic.utils.autosyncKey
+import app.it.fast4x.rimusic.utils.autoSyncToolbutton
 import app.it.fast4x.rimusic.utils.disableScrollingTextKey
 import app.it.fast4x.rimusic.utils.enableCreateMonthlyPlaylistsKey
-import app.it.fast4x.rimusic.utils.importYTMLikedPlaylists
-import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
 import app.it.fast4x.rimusic.utils.playlistTypeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.showFloatingIconKey
 import app.it.fast4x.rimusic.utils.showMonthlyPlaylistsKey
 import app.it.fast4x.rimusic.utils.showPinnedPlaylistsKey
 import app.it.fast4x.rimusic.utils.showPipedPlaylistsKey
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.launch
 import app.kreate.android.me.knighthat.component.Sort
 import app.kreate.android.me.knighthat.component.playlist.NewPlaylistDialog
 import app.kreate.android.me.knighthat.component.tab.CsvImportConversionHost
-import timber.log.Timber
-import android.widget.Toast
-import app.kreate.android.me.knighthat.utils.Toaster
-import kotlinx.coroutines.withContext
 import app.kreate.android.me.knighthat.component.tab.ImportSongsFromCSV
 import app.kreate.android.me.knighthat.component.tab.Search
 import app.kreate.android.me.knighthat.component.tab.SongShuffler
@@ -189,66 +174,7 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
         override fun onClick(index: Int) = onPlaylistClick( itemsOnDisplay[index].playlist )
     }
 
-    val doAutoSync by rememberPreference(autosyncKey, false)
-    var justSynced by rememberSaveable { mutableStateOf(!doAutoSync) }
-
-    var refreshing by remember { mutableStateOf(false) }
-    val refreshScope = rememberCoroutineScope()
-
-fun refresh() {
-    if (refreshing) return
-    refreshScope.launch(Dispatchers.IO) {
-        refreshing = true
-        justSynced = false
-        try {
-            val synced = syncSelectedYtmAccountData(force = true)
-            withContext(Dispatchers.Main) {
-                justSynced = synced
-                if (synced) {
-                    Toaster.i("YouTube Music library synced")
-                } else {
-                    Toaster.i("No YT Music session data was synced")
-                }
-            }
-        } catch (e: Exception) {
-            Timber.e(e, "Refresh sync failed")
-            withContext(Dispatchers.Main) {
-                Toaster.n(R.string.ytm_playlists_sync_failed, duration = Toast.LENGTH_LONG)
-            }
-        }
-        delay(500)
-        refreshing = false
-    }
-}
-
-LaunchedEffect(justSynced, doAutoSync) {
-    if (!justSynced && doAutoSync) {
-        refreshScope.launch(Dispatchers.IO) {
-            try {
-                val result = syncSelectedYtmAccountData()
-                withContext(Dispatchers.Main) {
-                    if (result) {
-                        justSynced = true
-                        Toaster.i("YouTube Music library synced")
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "Failed to sync playlists")
-                withContext(Dispatchers.Main) {
-                   Toaster.n(R.string.ytm_playlists_sync_failed, duration = Toast.LENGTH_LONG)
-                }
-            }
-        }
-    }
-}
-
-    val sync = object : MenuIcon {
-        override val iconId: Int = R.drawable.sync
-        override val menuIconTitle: String
-            @Composable get() = if (refreshing) "Syncing YT Music" else "Sync YT Music"
-
-        override fun onShortClick() = refresh()
-    }
+    val sync = autoSyncToolbutton(R.string.sync)
 
     Box(
         modifier = Modifier
@@ -261,15 +187,11 @@ LaunchedEffect(justSynced, doAutoSync) {
                     1f
             )
     ) {
-        PullToRefreshBox(
-            isRefreshing = refreshing,
-            onRefresh = ::refresh
+        Box(
+            modifier = Modifier
+                .background(colorPalette().background0)
+                .fillMaxSize()
         ) {
-            Box(
-                modifier = Modifier
-                    .background(colorPalette().background0)
-                    .fillMaxSize()
-            ) {
             Column( Modifier.fillMaxSize() ) {
                 // Sticky tab's title
                 TabHeader( R.string.playlists ) {
@@ -374,7 +296,6 @@ LaunchedEffect(justSynced, doAutoSync) {
                     onClickSettings = onSettingsClick,
                     onClickSearch = onSearchClick
                 )
-            }
         }
 
         CsvImportConversionHost()
