@@ -533,6 +533,15 @@ class PlayerServiceModern : MediaLibraryService(),
             nextPlayer = crossfadeOverlayPlayer,
             targetVolumeProvider = { preferences.getFloat(playbackVolumeKey, 1f) },
             onPlayersSwapped = ::onCrossfadePlayersSwapped,
+            onCrossfadeActiveChanged = { isActive ->
+                if (isServiceReady) {
+                    if (isActive) {
+                        acquirePlaybackWakeLock()
+                    } else if (!player.isPlaying) {
+                        releasePlaybackWakeLock()
+                    }
+                }
+            },
         ).apply {
             updateConfig(
                 enabled = preferences.getBoolean(crossfadeEnabledKey, false),
