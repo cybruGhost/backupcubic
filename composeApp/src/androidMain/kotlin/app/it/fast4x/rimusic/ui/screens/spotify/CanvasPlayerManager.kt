@@ -23,9 +23,9 @@ object CanvasPlayerManager {
     private var releaseGeneration = 0L
     
     // Memory optimization
-    private const val PLAYER_RECYCLE_THRESHOLD = 2000L
-    private const val NORMAL_RELEASE_DELAY_MS = 900L
-    private const val NEW_SONG_RELEASE_DELAY_MS = 1300L
+    private const val PLAYER_RECYCLE_THRESHOLD = 30_000L
+    private const val NORMAL_RELEASE_DELAY_MS = 8_000L
+    private const val NEW_SONG_RELEASE_DELAY_MS = 1_300L
     
     fun getCurrentCanvasUrl(): String? = currentCanvasUrl
     fun getCurrentMediaItemId(): String? = currentMediaItemId
@@ -168,6 +168,11 @@ object CanvasPlayerManager {
             player.repeatMode = Player.REPEAT_MODE_OFF
             Timber.d("CanvasPlayer: Loop stopped")
         }
+    }
+
+    fun pauseKeepingState() {
+        currentPlayer?.pause()
+        isPlayerActive = currentPlayer != null
     }
     
     fun isActive(): Boolean = isPlayerActive

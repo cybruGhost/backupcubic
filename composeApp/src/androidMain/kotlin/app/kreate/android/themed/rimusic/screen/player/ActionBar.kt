@@ -296,7 +296,9 @@ fun BoxScope.ActionBar(
                                 .takeIf { it >= 0 }
                                 ?.coerceIn(0, pagerStateQueue.pageCount - 1)
                                 ?: 0
-                            pagerStateQueue.animateScrollToPage(targetPage)
+                            if (targetPage < pagerStateQueue.pageCount) {
+                                pagerStateQueue.animateScrollToPage(targetPage)
+                            }
                         }
                     }
 
@@ -350,13 +352,17 @@ fun BoxScope.ActionBar(
                         modifier = Modifier.weight(1f)
                     ) { index ->
                         val mediaItemAtIndex by remember(queuePreviewItems, index) {
-                            derivedStateOf { queuePreviewItems[index] }
+                            derivedStateOf { queuePreviewItems.getOrNull(index) }
                         }
-                        val actualQueueIndex by remember(mediaItems, mediaItemAtIndex.mediaId) {
+                        val actualQueueIndex by remember(mediaItems, mediaItemAtIndex?.mediaId) {
                             derivedStateOf {
-                                mediaItems.indexOfFirst { it.mediaId == mediaItemAtIndex.mediaId }
+                                mediaItemAtIndex?.mediaId
+                                    ?.let { mediaId -> mediaItems.indexOfFirst { it.mediaId == mediaId } }
+                                    ?: -1
                             }
                         }
+
+                        if (mediaItemAtIndex == null) return@HorizontalPager
 
                         Row(
                             horizontalArrangement = Arrangement.Center,

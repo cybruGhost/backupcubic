@@ -13,6 +13,7 @@ import app.it.fast4x.rimusic.utils.mediaItems
 import app.it.fast4x.rimusic.utils.isPlayable
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import timber.log.Timber
 import java.lang.reflect.Method
 import kotlin.math.pow
 
@@ -38,6 +39,7 @@ class CrossFadeManager(
     private val handler = Handler(Looper.getMainLooper())
     private val monitorIntervalMs = 100L
     private val readyTimeoutMs = 3_500L
+    private val activeBufferingTimeoutMs = 8_000L
     private val crossfadeCompletionGraceMs = 400L
     private val earlyStartLeadInMs = 0L
     private val incomingStartVolumeRatio = 0.05f
@@ -52,6 +54,7 @@ class CrossFadeManager(
     private var waitingReadySinceMs = 0L
     private var skippedMediaId: String? = null
     private var isCrossfading = false
+    private var activeBufferingSinceMs = 0L
     private var crossfadeStartedAtMs = 0L
     private var activeCrossfadeDurationMs = 0L
     private var outgoingMediaId: String? = null
@@ -177,25 +180,33 @@ class CrossFadeManager(
 
     fun recoverFromSecondaryError(): Boolean {
         if (!isCrossfading) return false
-
-        isCrossfading = false
-        notifyCrossfadeActive(false)
-        waitingReadySinceMs = 0L
-        activeCrossfadeDurationMs = 0L
-        outgoingMediaId = null
-        outgoingExpectedEndAtMs = 0L
-        skippedMediaId = currentPlayer.currentMediaItem?.mediaId
-        setPauseAtEndOfMediaItems(currentPlayer, false)
-        currentPlayer.volume = baseVolume.coerceAtLeast(targetVolumeProvider())
-        if (currentPlayer.playbackState == Player.STATE_IDLE) {
-            currentPlayer.prepare()
+        return runCatching {
+            isCrossfading = false
+            notifyCrossfadeActive(false)
+            waitingReadySinceMs = 0L
+            activeBufferingSinceMs = 0L
+            activeCrossfadeDurationMs = 0L
+            outgoingMediaId = null
+            outgoingExpectedEndAtMs = 0L
+            skippedMediaId = currentPlayer.currentMediaItem?.mediaId
+            setPauseAtEndOfMediaItems(currentPlayer, false)
+            currentPlayer.volume = baseVolume.coerceAtLeast(targetVolumeProvider())
+            val currentState = runCatching { currentPlayer.playbackState }.getOrDefault(Player.STATE_IDLE)
+            if (currentState == Player.STATE_IDLE) {
+                currentPlayer.prepare()
+            }
+            if (currentPlayer.playWhenReady && !currentPlayer.isPlaying) {
+                currentPlayer.play()
+            }
+            resetNextPlayer()
+            updateUiState()
+            true
+        }.getOrElse { error ->
+            Timber.e(error, "CrossFadeManager recoverFromSecondaryError crashed, forcing full crossfade reset")
+            runCatching { cancelCrossfade() }
+                .onFailure { Timber.e(it, "CrossFadeManager cancelCrossfade also failed during recovery") }
+            false
         }
-        if (currentPlayer.playWhenReady && !currentPlayer.isPlaying) {
-            currentPlayer.play()
-        }
-        resetNextPlayer()
-        updateUiState()
-        return true
     }
 
     fun release() {
@@ -203,6 +214,41 @@ class CrossFadeManager(
         notifyCrossfadeActive(false)
         nextPlayer.release()
     }
+
+    fun shouldHoldWakeLock(): Boolean {
+        if (!enabled) return false
+        if (isCrossfading) return true
+        if (!currentPlayer.playWhenReady) return false
+        return waitingReadySinceMs > 0L ||
+            (preloadedIndex != C.INDEX_UNSET && nextPlayer.playbackState == Player.STATE_BUFFERING) ||
+            (preloadedIndex != C.INDEX_UNSET && nextPlayer.playbackState == Player.STATE_READY)
+    }
+
+    fun reportedPlaybackState(): Int? {
+        if (!enabled) return null
+        return when {
+            isCrossfading && nextPlayer.playbackState == Player.STATE_BUFFERING -> Player.STATE_BUFFERING
+            isCrossfading && nextPlayer.playbackState == Player.STATE_IDLE -> Player.STATE_BUFFERING
+            isCrossfading && (nextPlayer.playbackState == Player.STATE_READY || nextPlayer.isPlaying) -> Player.STATE_READY
+            waitingReadySinceMs > 0L && currentPlayer.playWhenReady -> Player.STATE_BUFFERING
+            preloadedIndex != C.INDEX_UNSET &&
+                currentPlayer.playWhenReady &&
+                nextPlayer.playbackState == Player.STATE_BUFFERING -> Player.STATE_BUFFERING
+            else -> null
+        }
+    }
+
+    fun reportedIsPlaying(): Boolean? {
+        val reportedState = reportedPlaybackState() ?: return null
+        return when (reportedState) {
+            Player.STATE_READY -> currentPlayer.playWhenReady && (currentPlayer.isPlaying || nextPlayer.isPlaying || isCrossfading)
+            Player.STATE_BUFFERING -> false
+            else -> null
+        }
+    }
+
+    fun isTransitioningPlayback(): Boolean =
+        enabled && (isCrossfading || waitingReadySinceMs > 0L || preloadedIndex != C.INDEX_UNSET)
 
     private fun tick() {
         val currentMediaId = currentPlayer.currentMediaItem?.mediaId
@@ -295,6 +341,7 @@ class CrossFadeManager(
 
         isCrossfading = false
         waitingReadySinceMs = 0L
+        activeBufferingSinceMs = 0L
 
         val queue = buildQueueSnapshot(currentPlayer)
         return runCatching {
@@ -327,6 +374,7 @@ class CrossFadeManager(
         isCrossfading = true
         notifyCrossfadeActive(true)
         crossfadeStartedAtMs = SystemClock.elapsedRealtime()
+        activeBufferingSinceMs = 0L
         val remainingDurationMs = currentPlayer.duration
             .takeIf { it != C.TIME_UNSET && it > 0L }
             ?.let { duration ->
@@ -367,6 +415,7 @@ class CrossFadeManager(
         if (!isCrossfading) return
 
         if (!currentPlayer.playWhenReady) {
+            activeBufferingSinceMs = 0L
             nextPlayer.pause()
             return
         }
@@ -375,7 +424,28 @@ class CrossFadeManager(
             nextPlayer.play()
         }
 
-        val elapsed = SystemClock.elapsedRealtime() - crossfadeStartedAtMs
+        val now = SystemClock.elapsedRealtime()
+        val nextIsUnavailable = nextPlayer.playbackState == Player.STATE_IDLE || nextPlayer.playbackState == Player.STATE_ENDED
+        val nextIsBuffering = nextPlayer.playbackState == Player.STATE_BUFFERING ||
+            (nextPlayer.playbackState == Player.STATE_READY && !nextPlayer.isPlaying && currentPlayer.playWhenReady)
+
+        if (nextIsUnavailable) {
+            recoverFromSecondaryError()
+            return
+        }
+
+        if (nextIsBuffering) {
+            if (activeBufferingSinceMs == 0L) {
+                activeBufferingSinceMs = now
+            } else if (now - activeBufferingSinceMs >= activeBufferingTimeoutMs) {
+                recoverFromSecondaryError()
+                return
+            }
+        } else {
+            activeBufferingSinceMs = 0L
+        }
+
+        val elapsed = now - crossfadeStartedAtMs
         val fraction = (elapsed.toFloat() / activeCrossfadeDurationMs.toFloat()).coerceIn(0f, 1f)
         val normalizedProgress = ((fraction - outgoingHoldPortion) / (1f - outgoingHoldPortion))
             .coerceIn(0f, 1f)
@@ -395,14 +465,17 @@ class CrossFadeManager(
         nextPlayer.volume = (baseVolume * fadeIn).coerceIn(0f, baseVolume)
         updateUiState(elapsed)
 
+        val incomingReady = nextPlayer.playbackState == Player.STATE_READY || nextPlayer.isPlaying
         if (
-            outgoingReachedExpectedEnd ||
-            (
-                currentRemaining != null &&
-                    currentRemaining <= crossfadeCompletionGraceMs &&
-                    currentPlayer.currentMediaItem?.mediaId == outgoingMediaId
-                ) ||
-            currentPlayer.playbackState == Player.STATE_ENDED
+            incomingReady && (
+                outgoingReachedExpectedEnd ||
+                    (
+                        currentRemaining != null &&
+                            currentRemaining <= crossfadeCompletionGraceMs &&
+                            currentPlayer.currentMediaItem?.mediaId == outgoingMediaId
+                        ) ||
+                    currentPlayer.playbackState == Player.STATE_ENDED
+                )
         ) {
             completeCrossfade()
         }
@@ -411,43 +484,57 @@ class CrossFadeManager(
     private fun completeCrossfade() {
         val outgoingPlayer = currentPlayer
         val incomingPlayer = nextPlayer
+        val incomingState = runCatching { incomingPlayer.playbackState }.getOrDefault(Player.STATE_IDLE)
+        if (incomingState == Player.STATE_IDLE || incomingState == Player.STATE_ENDED) {
+            Timber.w(
+                "CrossFadeManager completeCrossfade aborted because incoming player is not playable state=%s mediaId=%s",
+                incomingState,
+                incomingPlayer.currentMediaItem?.mediaId
+            )
+            recoverFromSecondaryError()
+            return
+        }
         val shouldKeepPlaying = outgoingPlayer.playWhenReady || outgoingPlayer.isPlaying
         isCrossfading = false
         notifyCrossfadeActive(false)
+        activeBufferingSinceMs = 0L
         activeCrossfadeDurationMs = 0L
         outgoingMediaId = null
         outgoingExpectedEndAtMs = 0L
 
-        incomingPlayer.volume = baseVolume
-        incomingPlayer.repeatMode = outgoingPlayer.repeatMode
-        incomingPlayer.shuffleModeEnabled = outgoingPlayer.shuffleModeEnabled
-        incomingPlayer.playbackParameters = outgoingPlayer.playbackParameters
-        incomingPlayer.playWhenReady = shouldKeepPlaying
-
-        currentPlayer = incomingPlayer
-        nextPlayer = outgoingPlayer
-        setPauseAtEndOfMediaItems(currentPlayer, false)
         runCatching {
+            incomingPlayer.volume = baseVolume
+            incomingPlayer.repeatMode = outgoingPlayer.repeatMode
+            incomingPlayer.shuffleModeEnabled = outgoingPlayer.shuffleModeEnabled
+            incomingPlayer.playbackParameters = outgoingPlayer.playbackParameters
+            incomingPlayer.playWhenReady = shouldKeepPlaying
+
+            currentPlayer = incomingPlayer
+            nextPlayer = outgoingPlayer
+            setPauseAtEndOfMediaItems(currentPlayer, false)
             if (currentPlayer.playbackState == Player.STATE_IDLE) {
                 currentPlayer.prepare()
             }
             if (shouldKeepPlaying && !currentPlayer.isPlaying) {
                 currentPlayer.play()
             }
-        }
-        runCatching {
+
             nextPlayer.pause()
             nextPlayer.stop()
             nextPlayer.clearMediaItems()
             nextPlayer.volume = 0f
             setPauseAtEndOfMediaItems(nextPlayer, false)
+
+            waitingReadySinceMs = 0L
+            skippedMediaId = null
+            preloadedIndex = C.INDEX_UNSET
+            preloadedMediaId = null
+            onPlayersSwapped(currentPlayer, nextPlayer)
+            updateUiState()
+        }.onFailure { error ->
+            Timber.e(error, "CrossFadeManager completeCrossfade failed, falling back to recovery")
+            recoverFromSecondaryError()
         }
-        waitingReadySinceMs = 0L
-        skippedMediaId = null
-        preloadedIndex = C.INDEX_UNSET
-        preloadedMediaId = null
-        onPlayersSwapped(currentPlayer, nextPlayer)
-        updateUiState()
     }
 
     private fun cancelCrossfade() {
@@ -455,6 +542,7 @@ class CrossFadeManager(
         isCrossfading = false
         notifyCrossfadeActive(false)
         waitingReadySinceMs = 0L
+        activeBufferingSinceMs = 0L
         if (shouldRestoreCurrentVolume) {
             currentPlayer.volume = baseVolume
         }
@@ -511,16 +599,13 @@ class CrossFadeManager(
             null
         }
 
-        val displayPlayer = when {
-            isCrossfading && normalizedIncomingMediaItem != null -> nextPlayer
-            else -> currentPlayer
-        }
+        val displayPlayer = currentPlayer
         val fallbackPlayer = if (displayPlayer === currentPlayer) nextPlayer else currentPlayer
 
         val normalizedDisplayMediaItem = when {
-            isCrossfading -> normalizedIncomingMediaItem
+            isCrossfading -> normalizedCurrentMediaItem
                 ?: previousDisplayItem
-                ?: normalizedCurrentMediaItem
+                ?: normalizedIncomingMediaItem
             else -> normalizedCurrentMediaItem ?: previousDisplayItem
         }
 

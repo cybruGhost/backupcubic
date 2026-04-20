@@ -182,6 +182,9 @@ fun Queue(
 
                     containsTitle || containsArtist
                 }
+                .filterNot { song ->
+                    nowPlayingSong?.id == song.id
+                }
                 .let { itemsOnDisplay = it }
         }
 

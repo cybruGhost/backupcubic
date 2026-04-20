@@ -1,5 +1,7 @@
 package app.kreate.android.themed.rimusic.screen.home
 
+import android.media.MediaMetadataRetriever
+import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.PaddingValues
@@ -27,6 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
 import androidx.compose.ui.util.fastMap
+import androidx.documentfile.provider.DocumentFile
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -119,6 +122,7 @@ fun HomeSongs(
     val maxTopPlaylistItems by rememberPreference( MaxTopPlaylistItemsKey, MaxTopPlaylistItems.`10` )
     val includeLocalSongs by rememberPreference( includeLocalSongsKey, true )
     val excludeSongWithDurationLimit by rememberPreference( excludeSongsWithDurationLimitKey, DurationInMinutes.Disabled )
+    val customDownloadUri by rememberPreference(MyDownloadHelper.CUSTOM_DOWNLOAD_URI_KEY, "")
     //</editor-fold>
 
     var items by remember { mutableStateOf(emptyList<Song>()) }
@@ -181,7 +185,7 @@ fun HomeSongs(
 
     // This phrase loads all songs across types into [items]
     // No filtration applied to this stage, only sort
-    LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon ) {
+    LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon, customDownloadUri ) {
         isLoading = true
 
         val retrievedSongs = when( builtInPlaylist ) {
@@ -202,10 +206,12 @@ fun HomeSongs(
                                                                .values
                                                                .filter { it.state == Download.STATE_COMPLETED }
                                                                .fastMap { it.request.id }
+                val customFolderSongs = loadCustomDownloadFolderSongs(context, customDownloadUri)
                 Database.songTable
                         .sortAll( songSort.sortBy, songSort.sortOrder )
                         .map { list ->
-                            list.fastFilter { it.id in downloaded }
+                            (list.fastFilter { it.id in downloaded } + customFolderSongs)
+                                .distinctBy(Song::id)
                         }
             }
 
@@ -486,5 +492,68 @@ fun HomeSongs(
             }
 
         }
+    }
+}
+
+private suspend fun loadCustomDownloadFolderSongs(
+    context: android.content.Context,
+    treeUriString: String,
+): List<Song> = kotlinx.coroutines.withContext(Dispatchers.IO) {
+    if (treeUriString.isBlank()) return@withContext emptyList()
+
+    val root = DocumentFile.fromTreeUri(context, Uri.parse(treeUriString)) ?: return@withContext emptyList()
+    root.walkAudioFiles().mapNotNull { file ->
+        val fileUri = file.uri
+        val retriever = MediaMetadataRetriever()
+        runCatching {
+            retriever.setDataSource(context, fileUri)
+            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+                ?.takeIf { it.isNotBlank() }
+                ?: file.name?.substringBeforeLast(".").orEmpty()
+            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+                ?.takeIf { it.isNotBlank() }
+            val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
+                ?.toLongOrNull()
+            Song(
+                id = fileUri.toString(),
+                title = title.ifBlank { file.name ?: fileUri.lastPathSegment.orEmpty() },
+                artistsText = artist,
+                durationText = durationMs?.toDurationText(),
+                thumbnailUrl = null
+            )
+        }.getOrNull().also {
+            runCatching { retriever.release() }
+        }
+    }.distinctBy(Song::id)
+}
+
+private fun DocumentFile.walkAudioFiles(): List<DocumentFile> {
+    if (!exists()) return emptyList()
+    if (isFile) return listOfNotNull(takeIf { it.isPlayableAudioFile() })
+    return listFiles().flatMap { child ->
+        when {
+            child.isDirectory -> child.walkAudioFiles()
+            child.isPlayableAudioFile() -> listOf(child)
+            else -> emptyList()
+        }
+    }
+}
+
+private fun DocumentFile.isPlayableAudioFile(): Boolean {
+    val mime = type.orEmpty()
+    if (mime.startsWith("audio/", ignoreCase = true)) return true
+    val extension = name?.substringAfterLast('.', "").orEmpty().lowercase()
+    return extension in setOf("mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "mp4")
+}
+
+private fun Long.toDurationText(): String {
+    val totalSeconds = (this / 1000L).coerceAtLeast(0L)
+    val hours = totalSeconds / 3600L
+    val minutes = (totalSeconds % 3600L) / 60L
+    val seconds = totalSeconds % 60L
+    return if (hours > 0L) {
+        "%d:%02d:%02d".format(hours, minutes, seconds)
+    } else {
+        "%d:%02d".format(minutes, seconds)
     }
 }

@@ -44,9 +44,11 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import app.it.fast4x.rimusic.utils.DataStoreUtils
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
@@ -63,6 +65,7 @@ fun SnakeGame(
     colorPalette: app.it.fast4x.rimusic.ui.styling.ColorPalette,
     typography: app.it.fast4x.rimusic.ui.styling.Typography
 ) {
+    val context = LocalContext.current
     val gridSize = 20
     var direction by remember { mutableStateOf(Direction.RIGHT) }
     var nextDirection by remember { mutableStateOf(Direction.RIGHT) }
@@ -72,7 +75,7 @@ fun SnakeGame(
     var starFoodTimer by remember { mutableStateOf(0) }
     var gameState by remember { mutableStateOf(GameState.PLAYING) }
     var score by remember { mutableStateOf(0) }
-    var highScore by remember { mutableStateOf(getCachedHighScore()) }
+    var highScore by remember { mutableStateOf(getCachedHighScore(context)) }
     var snakeSpeed by remember { mutableStateOf(150L) }
     var lastMoveTime by remember { mutableStateOf(0L) }
     var lastStarFoodTime by remember { mutableStateOf(0L) }
@@ -101,11 +104,11 @@ fun SnakeGame(
 
                     // Check self-collision - GAME OVER if snake hits itself
                     val head = newSnake.first()
-                    if (head in newSnake.drop(1)) {
+                    if (!invincible && head in newSnake.drop(1)) {
                         gameState = GameState.GAME_OVER
                         if (score > highScore) {
                             highScore = score
-                            saveHighScore(score)
+                            saveHighScore(context, score)
                         }
                         break
                     }
@@ -177,7 +180,7 @@ fun SnakeGame(
                         invincibleTimer = 0
                     },
                     onClearHighScore = {
-                        clearHighScore()
+                        clearHighScore(context)
                         highScore = 0
                     },
                     colorPalette = colorPalette,
