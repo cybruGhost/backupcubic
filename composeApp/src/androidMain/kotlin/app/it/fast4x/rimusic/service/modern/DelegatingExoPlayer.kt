@@ -24,6 +24,12 @@ class DelegatingExoPlayer(
     private var displayStateProvider: (() -> CrossfadeUiState?)? = null
     @Volatile
     private var crossfadeEnabledProvider: (() -> Boolean)? = null
+    @Volatile
+    private var playbackStateProvider: (() -> Int?)? = null
+    @Volatile
+    private var isPlayingProvider: (() -> Boolean?)? = null
+    @Volatile
+    private var isLoadingProvider: (() -> Boolean?)? = null
 
     private val playerListeners = CopyOnWriteArraySet<Player.Listener>()
     private val analyticsListeners = CopyOnWriteArraySet<AnalyticsListener>()
@@ -56,6 +62,18 @@ class DelegatingExoPlayer(
         crossfadeEnabledProvider = provider
     }
 
+    fun setPlaybackStateProvider(provider: () -> Int?) {
+        playbackStateProvider = provider
+    }
+
+    fun setIsPlayingProvider(provider: () -> Boolean?) {
+        isPlayingProvider = provider
+    }
+
+    fun setIsLoadingProvider(provider: () -> Boolean?) {
+        isLoadingProvider = provider
+    }
+
     fun refreshState() {
         notifyStateRefresh(delegate)
     }
@@ -68,6 +86,8 @@ class DelegatingExoPlayer(
             "getCurrentPosition" -> reportedCurrentPosition()
             "getContentPosition" -> reportedCurrentPosition()
             "getDuration" -> reportedDuration()
+            "getPlaybackState" -> reportedPlaybackState()
+            "isLoading" -> reportedIsLoading()
             "getBufferedPosition" -> reportedBufferedPosition()
             "getContentBufferedPosition" -> reportedBufferedPosition()
             "getBufferedPercentage" -> reportedBufferedPercentageValue()
@@ -132,10 +152,17 @@ class DelegatingExoPlayer(
 
     private fun currentDisplayState(): CrossfadeUiState? = displayStateProvider?.invoke()
     private fun isCrossfadeEnabled(): Boolean = crossfadeEnabledProvider?.invoke() == true
+    private fun providedPlaybackState(): Int? = playbackStateProvider?.invoke()
+    private fun providedIsPlaying(): Boolean? = isPlayingProvider?.invoke()
+    private fun providedIsLoading(): Boolean? = isLoadingProvider?.invoke()
 
     private fun shouldUseDisplayState(): Boolean {
         val state = currentDisplayState()
-        return isCrossfadeEnabled() && state?.isEnabled == true && state.isActive && state.displayMediaItem != null
+        return isCrossfadeEnabled() &&
+            (
+                (state?.isEnabled == true && state.displayMediaItem != null && state.isActive) ||
+                    providedPlaybackState() != null
+                )
     }
 
     private fun activeDisplayState(): CrossfadeUiState? =
@@ -166,10 +193,24 @@ class DelegatingExoPlayer(
     }
 
     private fun reportedIsPlaying(): Boolean {
-        if (!shouldUseDisplayState()) {
-            return delegate.isPlaying
+        if (shouldUseDisplayState()) {
+            providedIsPlaying()?.let { return it }
         }
-        return true
+        return delegate.isPlaying
+    }
+
+    private fun reportedPlaybackState(): Int {
+        if (shouldUseDisplayState()) {
+            providedPlaybackState()?.let { return it }
+        }
+        return delegate.playbackState
+    }
+
+    private fun reportedIsLoading(): Boolean {
+        if (shouldUseDisplayState()) {
+            providedIsLoading()?.let { return it }
+        }
+        return runCatching { delegate.isLoading }.getOrDefault(delegate.playbackState == Player.STATE_BUFFERING)
     }
 
     private fun reportedDuration(): Long {
@@ -234,8 +275,16 @@ class DelegatingExoPlayer(
             activeDelegate.mediaMetadata
         }
         val playWhenReady = activeDelegate.playWhenReady
-        val playbackState = activeDelegate.playbackState
-        val isPlaying = if (useDisplayState) true else activeDelegate.isPlaying
+        val playbackState = if (useDisplayState) {
+            reportedPlaybackState()
+        } else {
+            activeDelegate.playbackState
+        }
+        val isPlaying = if (useDisplayState) {
+            reportedIsPlaying()
+        } else {
+            activeDelegate.isPlaying
+        }
         val shouldEmitSyntheticTransition =
             useDisplayState && currentMediaItem?.mediaId != activeDelegate.currentMediaItem?.mediaId
 

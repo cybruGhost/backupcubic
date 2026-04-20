@@ -8,6 +8,8 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import app.it.fast4x.rimusic.service.modern.LOCAL_KEY_PREFIX
+import app.it.fast4x.rimusic.utils.plainLyricsFromTimedText
+import app.it.fast4x.rimusic.utils.resolveLocalMediaUri
 import app.it.fast4x.rimusic.utils.sanitizePlaybackUri
 import java.io.Serializable
 
@@ -45,10 +47,7 @@ val PersistentSong.asMediaItem: MediaItem
         )
         .setMediaId(id)
         .setUri(
-            if (id.startsWith(LOCAL_KEY_PREFIX)) ContentUris.withAppendedId(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                id.substringAfter(LOCAL_KEY_PREFIX).toLong()
-            ) else sanitizePlaybackUri(id)
+            if (id.startsWith(LOCAL_KEY_PREFIX)) resolveLocalMediaUri(id) else sanitizePlaybackUri(id)
         )
         .setCustomCacheKey(id)
         .build()

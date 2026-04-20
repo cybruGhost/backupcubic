@@ -763,7 +763,12 @@ private fun PlayerContent(
     val displayedPositionAndDuration = displayedPlayerState.position to displayedPlayerState.duration
     val mediaItem = displayedPlayerState.mediaItem ?: return
 
-    val displayedMediaItemIndex = remember(mediaItems, mediaItem.mediaId, crossfadeUiState.isEnabled) {
+    val displayedMediaItemIndex = remember(
+        mediaItems,
+        mediaItem.mediaId,
+        crossfadeUiState.displayMediaItem?.mediaId,
+        binder.player.currentMediaItemIndex
+    ) {
         mediaItems.indexOfFirst { queuedItem -> queuedItem.mediaId == mediaItem.mediaId }
             .takeIf { it >= 0 }
             ?: binder.player.currentMediaItemIndex.coerceAtLeast(0)
@@ -2393,11 +2398,8 @@ private fun OptimizedCanvasVideoPlayer(
 ) {
     val context = LocalContext.current
     val isDarkTheme = isSystemInDarkTheme()
-    val shouldReleasePlayer = remember(mediaItemId) {
-        derivedStateOf { !CanvasPlayerManager.isPlayingForMediaItem(mediaItemId) }
-    }
     DisposableEffect(playerKey) {
-        onDispose { if (shouldReleasePlayer.value) CanvasPlayerManager.releasePlayer() }
+        onDispose { CanvasPlayerManager.pauseKeepingState() }
     }
     LaunchedEffect(isPlaying) {
         delay(100)

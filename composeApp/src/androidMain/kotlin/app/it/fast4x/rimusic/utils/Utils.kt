@@ -58,6 +58,7 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.time.Duration
+import kotlin.math.absoluteValue
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Duration.Companion.minutes
 
@@ -71,6 +72,21 @@ data class SimpMusicLyricsResult(
     val translatedLyrics: String? = null,
     val translatedLanguage: String? = null,
 )
+
+fun resolveLocalMediaUri(id: String): Uri {
+    val localId = id.substringAfter(LOCAL_KEY_PREFIX, missingDelimiterValue = id)
+        .trim()
+        .toLongOrNull()
+
+    return when {
+        localId != null -> ContentUris.withAppendedId(
+            MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
+            localId
+        )
+        id.startsWith("content://", true) || id.startsWith("file://", true) -> sanitizePlaybackUri(id)
+        else -> sanitizePlaybackUri(id.removePrefix(LOCAL_KEY_PREFIX))
+    }
+}
 
 private fun normalizeSimpMusicSyncedLyrics(raw: String?): String? {
     if (raw.isNullOrBlank()) return null
@@ -418,10 +434,11 @@ val Song.asMediaItem: MediaItem
         )
         .setMediaId(id)
         .setUri(
-            if (isLocal) ContentUris.withAppendedId(
-                MediaStore.Audio.Media.EXTERNAL_CONTENT_URI,
-                id.substringAfter(LOCAL_KEY_PREFIX).toLong()
-            ) else sanitizePlaybackUri(id)
+            when {
+                id.startsWith(LOCAL_KEY_PREFIX) -> resolveLocalMediaUri(id)
+                id.startsWith("content://", true) || id.startsWith("file://", true) -> sanitizePlaybackUri(id)
+                else -> sanitizePlaybackUri(id)
+            }
         )
         .setCustomCacheKey(id)
         .build()
@@ -437,7 +454,12 @@ val Innertube.VideoItem.asSong: Song
 
 val MediaItem.asSong: Song
     get() = Song (
-        id = mediaId.split("/").lastOrNull() ?: mediaId,
+        id = when {
+            mediaId.startsWith(LOCAL_KEY_PREFIX) -> mediaId
+            mediaId.startsWith("content://", true) -> mediaId
+            mediaId.startsWith("file://", true) -> mediaId
+            else -> mediaId.split("/").lastOrNull() ?: mediaId
+        },
         title = cleanPrefix(mediaMetadata.title.toString()),
         artistsText = mediaMetadata.artist.toString(),
         durationText = mediaMetadata.extras?.getString("durationText"),
@@ -498,6 +520,35 @@ fun durationTextToMillis(duration: String): Long {
         durationToMillis(duration)
     } catch (e: Exception) {
         0L
+    }
+}
+
+fun plainLyricsFromTimedText(timedLyrics: String?): String? =
+    timedLyrics
+        ?.lineSequence()
+        ?.map { line -> line.replace(Regex("""\[[^\]]*]"""), "").trim() }
+        ?.filter { it.isNotBlank() }
+        ?.joinToString("\n")
+        ?.ifBlank { null }
+
+fun pickBestLrcLibTrack(
+    tracks: List<it.fast4x.lrclib.models.Track>,
+    title: String,
+    durationMs: Long
+): it.fast4x.lrclib.models.Track? {
+    if (tracks.isEmpty()) return null
+
+    val normalizedTitle = cleanPrefix(title).trim().lowercase()
+    val durationSeconds = (durationMs / 1000L).coerceAtLeast(0L)
+
+    return tracks.minByOrNull { track ->
+        val normalizedTrackTitle = cleanPrefix(track.trackName).trim().lowercase()
+        val durationDelta = (track.duration - durationSeconds).absoluteValue
+        val titlePenalty = if (normalizedTrackTitle == normalizedTitle) 0L else 1_000L
+        val syncedPenalty = if (track.syncedLyrics.isNullOrBlank()) 500L else 0L
+        val plainPenalty = if (track.plainLyrics.isNullOrBlank()) 250L else 0L
+
+        durationDelta + titlePenalty + syncedPenalty + plainPenalty
     }
 }
 

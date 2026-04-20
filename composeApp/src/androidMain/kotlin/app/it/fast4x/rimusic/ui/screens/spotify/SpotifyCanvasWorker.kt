@@ -657,6 +657,11 @@ object SpotifyCanvasState {
         addLog(canvasString(R.string.cubic_canvas_new_song_log, title ?: "", artist ?: ""), LogType.INFO)
     }
 
+    fun matchesCurrentSong(mediaId: String, title: String?, artist: String?): Boolean =
+        currentMediaItemId == mediaId &&
+            currentSongTitle == title &&
+            currentArtist == artist
+
     fun clearAll() {
         currentCanvasUrl = null
         currentTrackId = null
@@ -727,104 +732,67 @@ fun SpotifyCanvasWorker() {
         }
     }
 
-    LaunchedEffect(appRunningInBackground, isCanvasEnabled, displayedMediaItem?.mediaId) {
+    LaunchedEffect(
+        isCanvasEnabled,
+        appRunningInBackground,
+        displayedMediaItem?.mediaId,
+        displayedMediaItem?.mediaMetadata?.title,
+        displayedMediaItem?.mediaMetadata?.artist
+    ) {
         if (!isCanvasEnabled) return@LaunchedEffect
-        val mediaItem = displayedMediaItem ?: return@LaunchedEffect
-        val mediaId = mediaItem.mediaId
 
         if (appRunningInBackground) {
             SpotifyCanvasState.isPlaying = false
-            CanvasPlayerManager.stopAndClear()
+            CanvasPlayerManager.pauseKeepingState()
             return@LaunchedEffect
         }
 
-        val metadata = resolveCanvasMetadata(
+        val mediaItem = displayedMediaItem ?: return@LaunchedEffect
+        val mediaId = mediaItem.mediaId
+        val (title, artist) = resolveCanvasMetadata(
             mediaId = mediaId,
             title = mediaItem.mediaMetadata.title?.toString().orEmpty(),
             artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
         )
-        val title = metadata.first
-        val artist = metadata.second
         if (title.isBlank() || artist.isBlank()) return@LaunchedEffect
 
-        if (SpotifyCanvasState.currentMediaItemId == mediaId && SpotifyCanvasState.currentCanvasUrl != null) {
-            val shouldPlay = binder.player.playWhenReady && binder.player.playbackState == Player.STATE_READY
+        val songChanged = !SpotifyCanvasState.matchesCurrentSong(mediaId, title, artist)
+        if (songChanged) {
+            CanvasPlayerManager.stopAndClearForNewSong()
+            SpotifyCanvasState.clearForNewSong(mediaId, title, artist)
+        }
+
+        val shouldPlay = binder.player.playWhenReady && binder.player.playbackState == Player.STATE_READY
+        if (SpotifyCanvasState.currentCanvasUrl != null &&
+            SpotifyCanvasState.matchesCurrentSong(mediaId, title, artist)
+        ) {
             SpotifyCanvasState.isPlaying = shouldPlay
             CanvasPlayerManager.updatePlayState(shouldPlay)
             return@LaunchedEffect
         }
 
-        SpotifyCanvasState.clearForNewSong(mediaId, title, artist)
+        if (!SpotifyCanvasState.shouldFetchForCurrentSong(mediaId)) return@LaunchedEffect
+
         SpotifyCanvasState.markFetchAttempted()
-        launch(Dispatchers.IO) {
-            fetchCanvasForSong(context, title, artist, showLogs, mediaId)
-        }
-    }
-
-    LaunchedEffect(displayedMediaItem?.mediaId, isCanvasEnabled, appRunningInBackground) {
-        if (!isCanvasEnabled || appRunningInBackground) return@LaunchedEffect
-
-        val mediaItem = displayedMediaItem
-        val mediaId = mediaItem?.mediaId ?: return@LaunchedEffect
-        val metadata = resolveCanvasMetadata(
-            mediaId = mediaId,
-            title = mediaItem.mediaMetadata.title?.toString().orEmpty(),
-            artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
-        )
-        val title = metadata.first
-        val artist = metadata.second
-        if (title.isBlank() || artist.isBlank()) return@LaunchedEffect
-
-        if (SpotifyCanvasState.currentMediaItemId != mediaId ||
-            SpotifyCanvasState.currentCanvasUrl == null
-        ) {
-            SpotifyCanvasState.clearForNewSong(mediaId, title, artist)
-            if (showLogs) {
-                SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_initial_fetch, title, artist), LogType.LOADING)
-            }
-            launch(Dispatchers.IO) {
-                fetchCanvasForSong(context, title, artist, showLogs, mediaId)
-            }
-        }
-    }
-
-    LaunchedEffect(binder.player, isCanvasEnabled, appRunningInBackground) {
-        if (!isCanvasEnabled || appRunningInBackground) return@LaunchedEffect
-
-        snapshotFlow {
-            Triple(
-                binder.player.currentMediaItem?.mediaId,
-                binder.player.mediaMetadata.title?.toString().orEmpty(),
-                binder.player.mediaMetadata.artist?.toString().orEmpty()
+        if (showLogs) {
+            SpotifyCanvasState.addLog(
+                canvasString(
+                    if (songChanged) R.string.cubic_canvas_initial_fetch else R.string.cubic_canvas_fetching_for,
+                    title,
+                    artist
+                ),
+                LogType.LOADING
             )
-        }.collect { (mediaId, title, artist) ->
-            if (mediaId == null || appRunningInBackground) return@collect
-            val metadata = resolveCanvasMetadata(mediaId, title, artist)
-            val resolvedTitle = metadata.first
-            val resolvedArtist = metadata.second
-            if (resolvedTitle.isBlank() || resolvedArtist.isBlank()) return@collect
-
-            val songChanged = mediaId != SpotifyCanvasState.lastProcessedMediaId
-            val canvasCleared = SpotifyCanvasState.currentCanvasUrl == null
-
-            if (songChanged) {
-                SpotifyCanvasState.clearForNewSong(mediaId, resolvedTitle, resolvedArtist)
-                CanvasPlayerManager.stopAndClearForNewSong()
-            }
-
-            val shouldFetch = songChanged ||
-                (SpotifyCanvasState.shouldFetchForCurrentSong(mediaId) && canvasCleared) ||
-                (!SpotifyCanvasState.hasTriedFetching && mediaId == SpotifyCanvasState.currentMediaItemId)
-
-            if (shouldFetch) {
-                SpotifyCanvasState.markFetchAttempted()
-                if (showLogs) {
-                    SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_fetching_for, resolvedTitle, resolvedArtist), LogType.LOADING)
-                }
-                launch(Dispatchers.IO) {
-                    fetchCanvasForSong(context, resolvedTitle, resolvedArtist, showLogs, mediaId)
-                }
-            }
+        }
+        launch(Dispatchers.IO) {
+            fetchCanvasForSong(
+                context = context,
+                title = title,
+                artist = artist,
+                showLogs = showLogs,
+                mediaId = mediaId,
+                shouldPlayWhenReady = shouldPlay
+            )
         }
     }
 
@@ -835,7 +803,7 @@ fun SpotifyCanvasWorker() {
         }.collect { (playbackState, playWhenReady) ->
             if (appRunningInBackground) {
                 SpotifyCanvasState.isPlaying = false
-                CanvasPlayerManager.stopAndClear()
+                CanvasPlayerManager.pauseKeepingState()
                 return@collect
             }
             val mediaId = displayedMediaItem?.mediaId
@@ -854,8 +822,8 @@ fun SpotifyCanvasWorker() {
 
     DisposableEffect(Unit) {
         onDispose {
-            SpotifyCanvasState.clearAll()
-            CanvasPlayerManager.stopAndClear()
+            SpotifyCanvasState.isPlaying = false
+            CanvasPlayerManager.pauseKeepingState()
         }
     }
 }
@@ -879,7 +847,8 @@ private suspend fun fetchCanvasForSong(
     title: String,
     artist: String,
     showLogs: Boolean,
-    mediaId: String
+    mediaId: String,
+    shouldPlayWhenReady: Boolean,
 ) {
     if (appRunningInBackground) return
     SpotifyCanvasState.isLoading = true
@@ -901,9 +870,10 @@ private suspend fun fetchCanvasForSong(
         if (mediaId == SpotifyCanvasState.currentMediaItemId) {
             if (canvasUrl != null) {
                 SpotifyCanvasState.currentCanvasUrl = canvasUrl
-                SpotifyCanvasState.isPlaying = true
+                SpotifyCanvasState.isPlaying = shouldPlayWhenReady
                 SpotifyCanvasState.error = null
                 SpotifyCanvasState.shouldRetryFetch = false
+                CanvasPlayerManager.updatePlayState(shouldPlayWhenReady)
                 if (showLogs) {
                     SpotifyCanvasState.addLog(canvasString(R.string.cubic_canvas_loaded_successfully), LogType.SUCCESS)
                 }
