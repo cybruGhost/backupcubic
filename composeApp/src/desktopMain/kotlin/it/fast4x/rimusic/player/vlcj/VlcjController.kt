@@ -35,7 +35,7 @@ class VlcjController : PlayerController {
     private val stateListener = object : MediaPlayerEventAdapter() {
         override fun mediaPlayerReady(mediaPlayer: MediaPlayer) {
             catch { mediaPlayer.audio().setVolume(50) }
-            _state.update { it.copy(duration = mediaPlayer.status().length()) }
+            _state.update { it.copy(duration = mediaPlayer.status().length(), volume = 0.5f) }
         }
 
         override fun playing(mediaPlayer: MediaPlayer) {
@@ -59,7 +59,7 @@ class VlcjController : PlayerController {
         }
 
         override fun volumeChanged(mediaPlayer: MediaPlayer, volume: Float) {
-            _state.update { it.copy(volume = volume) }
+            _state.update { it.copy(volume = (volume / 100f).coerceIn(0f, 1f)) }
         }
 
         override fun timeChanged(mediaPlayer: MediaPlayer, newTime: Long) {
@@ -73,6 +73,7 @@ class VlcjController : PlayerController {
         get() = _state.asStateFlow()
 
     override fun load(url: String) = catch {
+        _state.value = PlayerState()
         player?.run {
             controls().stop()
             events().removeMediaPlayerEventListener(stateListener)

@@ -563,7 +563,7 @@ private fun PlayerContent(
             if (!isNetworkAvailable(context)) return@LaunchedEffect
 
             try {
-                val currentItem = binder.player.currentMediaItem ?: return@LaunchedEffect
+                val currentItem = binder.displayedMediaItem ?: binder.player.currentMediaItem ?: return@LaunchedEffect
                 val currentMediaId = currentItem.mediaId
 
                 if (currentMediaId == lastSearchFallbackMediaId) return@LaunchedEffect
@@ -1162,7 +1162,7 @@ private fun PlayerContent(
             showthumbnail = showthumbnail,
             onMaximize = {},
             onDoubleTap = {
-                val currentMediaItem = binder.player.currentMediaItem
+                val currentMediaItem = binder.displayedMediaItem ?: binder.player.currentMediaItem
                 Database.asyncTransaction {
                     if (!isSongLiked)
                         currentMediaItem

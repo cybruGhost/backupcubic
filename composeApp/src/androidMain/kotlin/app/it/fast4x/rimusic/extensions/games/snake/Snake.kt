@@ -413,7 +413,7 @@ fun Controls(
             colorPalette = colorPalette
         )
         Row(
-            horizontalArrangement = Arrangement.spacedBy(32.dp),
+            horizontalArrangement = Arrangement.spacedBy(20.dp),
             modifier = Modifier.padding(vertical = 4.dp)
         ) {
             ControlButton(
@@ -451,7 +451,7 @@ fun ControlButton(
 ) {
     IconButton(
         modifier = Modifier
-            .size(56.dp)
+            .size(72.dp)
             .clip(CircleShape)
             .background(if (enabled) colorPalette.background3 else colorPalette.textDisabled.copy(alpha = 0.3f)),
         onClick = onClick,
@@ -461,7 +461,7 @@ fun ControlButton(
             imageVector = imageVector,
             contentDescription = contentDescription,
             tint = if (enabled) colorPalette.text else colorPalette.textDisabled,
-            modifier = Modifier.size(32.dp)
+            modifier = Modifier.size(40.dp)
         )
     }
 }
@@ -555,6 +555,15 @@ fun generateFood(occupiedCells: List<Cell>, gridSize: Int): Cell {
 }
 
 // --- High Score Management ---
-private fun getCachedHighScore(): Int = 0
-private fun saveHighScore(score: Int) {}
-private fun clearHighScore() {}
+private const val SNAKE_HIGH_SCORE_KEY = "snake_high_score"
+
+private fun getCachedHighScore(context: android.content.Context): Int =
+    DataStoreUtils.getIntBlocking(context, SNAKE_HIGH_SCORE_KEY, 0)
+
+private fun saveHighScore(context: android.content.Context, score: Int) {
+    DataStoreUtils.saveIntBlocking(context, SNAKE_HIGH_SCORE_KEY, score)
+}
+
+private fun clearHighScore(context: android.content.Context) {
+    DataStoreUtils.saveIntBlocking(context, SNAKE_HIGH_SCORE_KEY, 0)
+}

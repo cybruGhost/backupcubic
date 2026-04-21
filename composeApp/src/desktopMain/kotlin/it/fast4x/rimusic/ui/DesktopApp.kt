@@ -29,6 +29,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -36,12 +38,14 @@ import androidx.navigation.compose.rememberNavController
 import app.it.fast4x.rimusic.ui.bars.DefaultBottomBar
 import app.it.fast4x.rimusic.ui.screens.*
 import database.entities.Song
-import it.fast4x.invidious.Invidious
 import it.fast4x.innertube.Innertube
+import it.fast4x.innertube.models.PlayerResponse
 import it.fast4x.innertube.requests.player
+import it.fast4x.innertube.utils.NewPipeUtils
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import okhttp3.OkHttpClient
 import org.jetbrains.compose.resources.painterResource
 import rimusic.composeapp.generated.resources.*
 import vlcj.VlcjController
@@ -79,12 +83,14 @@ fun DesktopApp() {
     val backStackEntry      by navController.currentBackStackEntryAsState()
     val currentRoute        = backStackEntry?.destination?.route ?: "quickpics"
     val controller          = remember { VlcjController() }
+    val desktopHttpClient   = remember { OkHttpClient() }
     val scope               = rememberCoroutineScope()
 
     var currentSong         by remember { mutableStateOf<Song?>(null) }
     var activeStreamUrl     by remember { mutableStateOf<String?>(null) }
     var playbackMessage     by remember { mutableStateOf<String?>(null) }
     var isResolving         by remember { mutableStateOf(false) }
+    var showExpandedPlayer  by remember { mutableStateOf(false) }
     var selectedMood        by remember { mutableStateOf<Innertube.Mood.Item?>(null) }
     var selectedAlbumId     by remember { mutableStateOf<String?>(null) }
     var selectedPlaylistId  by remember { mutableStateOf<String?>(null) }
@@ -92,7 +98,12 @@ fun DesktopApp() {
     var searchQuery         by remember { mutableStateOf("") }
     var activeSearchQuery   by remember { mutableStateOf("") }
 
-    DisposableEffect(Unit) { onDispose { controller.dispose() } }
+    DisposableEffect(Unit) {
+        NewPipeUtils.init { desktopHttpClient }
+        onDispose {
+            controller.dispose()
+        }
+    }
 
     LaunchedEffect(activeStreamUrl) {
         val url = activeStreamUrl ?: return@LaunchedEffect
@@ -319,10 +330,25 @@ fun DesktopApp() {
                             currentSong      = currentSong,
                             isResolving      = isResolving,
                             playbackMessage  = playbackMessage,
+                            onOpenPlayer     = {
+                                if (currentSong != null || activeStreamUrl != null) {
+                                    showExpandedPlayer = true
+                                }
+                            },
                             modifier         = Modifier.fillMaxWidth().padding(horizontal = 20.dp).padding(bottom = 16.dp)
                         )
                     }
                 }
+            }
+
+            if (showExpandedPlayer && (currentSong != null || activeStreamUrl != null)) {
+                ExpandedDesktopPlayerDialog(
+                    controller = controller,
+                    currentSong = currentSong,
+                    playbackMessage = playbackMessage,
+                    isResolving = isResolving,
+                    onDismiss = { showExpandedPlayer = false }
+                )
             }
         }
     }
@@ -519,6 +545,7 @@ private fun GlassyPlayerRail(
     currentSong     : Song?,
     isResolving     : Boolean,
     playbackMessage : String?,
+    onOpenPlayer    : () -> Unit,
     modifier        : Modifier = Modifier
 ) {
     Box(
@@ -586,7 +613,11 @@ private fun GlassyPlayerRail(
 
                 // Track info
                 Column(
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier
+                        .weight(1f)
+                        .clip(RoundedCornerShape(12.dp))
+                        .clickable(enabled = currentSong != null || isResolving, onClick = onOpenPlayer)
+                        .padding(vertical = 2.dp),
                     verticalArrangement = Arrangement.spacedBy(3.dp)
                 ) {
                     Text(
@@ -613,6 +644,14 @@ private fun GlassyPlayerRail(
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
+                    if (currentSong != null || isResolving) {
+                        Text(
+                            text = "Open player",
+                            color = RiColor.accent,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
                 }
             }
 
@@ -624,42 +663,172 @@ private fun GlassyPlayerRail(
     }
 }
 
-// ── Resolve stream URL ────────────────────────────────────────────────────────
-private suspend fun resolveDesktopPlaybackUrl(videoId: String): String? = withContext(Dispatchers.IO) {
-    val primary = runCatching {
-        Innertube.player(videoId = videoId)
-            ?.getOrNull()
-            ?.streamingData
-            ?.autoMaxQualityFormat
-            ?.let { f ->
-                val range = if (f.contentLength != null) "0-${f.contentLength}" else "0-10000000"
-                "${f.url}&range=$range"
-            }
-    }.getOrNull()
-    if (!primary.isNullOrBlank()) return@withContext primary
+@Composable
+private fun ExpandedDesktopPlayerDialog(
+    controller: VlcjController,
+    currentSong: Song?,
+    playbackMessage: String?,
+    isResolving: Boolean,
+    onDismiss: () -> Unit
+) {
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0xCC0B1119))
+                .padding(36.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(0.82f)
+                    .fillMaxHeight(0.82f)
+                    .clip(RoundedCornerShape(28.dp))
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color(0xFF111C28), Color(0xFF0D141C))
+                        )
+                    )
+                    .drawBehind {
+                        drawRoundRect(
+                            color = RiColor.border,
+                            cornerRadius = androidx.compose.ui.geometry.CornerRadius(28.dp.toPx()),
+                            style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx())
+                        )
+                    }
+                    .padding(28.dp)
+            ) {
+                Column(
+                    modifier = Modifier.fillMaxSize(),
+                    verticalArrangement = Arrangement.spacedBy(22.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Text(
+                                text = currentSong?.title ?: "Now playing",
+                                color = RiColor.textPrimary,
+                                fontSize = 30.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = when {
+                                    isResolving -> "Resolving stream..."
+                                    !playbackMessage.isNullOrBlank() && playbackMessage != "Playing" -> playbackMessage
+                                    !currentSong?.artistsText.isNullOrBlank() -> currentSong.artistsText!!
+                                    else -> "RiMusic Desktop"
+                                },
+                                color = if (!playbackMessage.isNullOrBlank() && playbackMessage != "Playing") RiColor.red else RiColor.textSecond,
+                                fontSize = 15.sp,
+                                maxLines = 2,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
 
-    runCatching {
-        Invidious.api.videos(videoId)
-            ?.getOrNull()
-            ?.adaptiveFormats
-            .orEmpty()
-            .asSequence()
-            .mapNotNull { fmt ->
-                val url      = readProp<String>(fmt, "url")
-                val mime     = readProp<String>(fmt, "type") ?: readProp<String>(fmt, "mimeType")
-                val bitrate  = readProp<Int>(fmt, "bitrate") ?: 0
-                if (url.isNullOrBlank() || mime?.contains("audio", ignoreCase = true) != true) null
-                else bitrate to url
+                        TextButton(onClick = onDismiss) {
+                            Text("Close", color = RiColor.accent)
+                        }
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .weight(1f)
+                            .clip(RoundedCornerShape(24.dp))
+                            .background(RiColor.surfaceGlass),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(
+                            text = currentSong?.artistsText ?: "Playback controls",
+                            color = RiColor.textDim,
+                            fontSize = 18.sp
+                        )
+                    }
+
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(20.dp))
+                            .background(RiColor.glass)
+                            .padding(horizontal = 20.dp, vertical = 16.dp)
+                    ) {
+                        DefaultBottomBar(controller = controller)
+                    }
+                }
             }
-            .maxByOrNull { it.first }
-            ?.second
-    }.getOrNull()
+        }
+    }
 }
 
-private inline fun <reified T> readProp(instance: Any, name: String): T? = runCatching {
-    val getter = instance.javaClass.methods.firstOrNull { m ->
-        m.parameterCount == 0 &&
-        (m.name == "get${name.replaceFirstChar { it.uppercase() }}" || m.name == name)
-    }
-    (getter?.invoke(instance) ?: instance.javaClass.fields.firstOrNull { it.name == name }?.get(instance)) as? T
-}.getOrNull()
+// ── Resolve stream URL ────────────────────────────────────────────────────────
+private suspend fun resolveDesktopPlaybackUrl(videoId: String): String? = withContext(Dispatchers.IO) {
+    resolveInnertubePlaybackUrl(videoId)
+}
+
+private suspend fun resolveInnertubePlaybackUrl(videoId: String): String? {
+    val responses = mutableListOf<PlayerResponse?>()
+    responses += runCatching {
+        Innertube.player(videoId = videoId)?.getOrNull()
+    }.getOrNull()
+
+    return responses
+        .asSequence()
+        .filterNotNull()
+        .mapNotNull { response ->
+            orderedDesktopInnertubeFormats(response.streamingData)
+                .firstNotNullOfOrNull { format ->
+                    NewPipeUtils.getStreamUrl(format, videoId)
+                        .getOrNull()
+                        ?.withDesktopPlaybackRange(format.contentLength)
+                }
+        }
+        .firstOrNull()
+}
+
+private fun orderedDesktopInnertubeFormats(
+    streamingData: PlayerResponse.StreamingData?
+): List<PlayerResponse.StreamingData.Format> {
+    val formats = streamingData?.adaptiveFormats
+        ?.filter { format ->
+            format.isAudio &&
+                format.hasPlayableSource &&
+                format.mimeType.contains("audio", ignoreCase = true)
+        }
+        .orEmpty()
+    if (formats.isEmpty()) return emptyList()
+
+    val preferred = sequenceOf(
+        streamingData?.highestQualityFormat,
+        streamingData?.mediumQualityFormat,
+        streamingData?.lowestQualityFormat,
+        streamingData?.autoMaxQualityFormat
+    )
+        .filterNotNull()
+        .filter { candidate ->
+            candidate.isAudio &&
+                candidate.hasPlayableSource &&
+                candidate.mimeType.contains("audio", ignoreCase = true)
+        }
+        .toList()
+
+    return (preferred + formats.sortedByDescending { it.bitrate ?: 0 })
+        .distinctBy { it.itag }
+}
+
+private fun String.withDesktopPlaybackRange(contentLength: Long?): String {
+    val sourceUrl = this
+    val separator = if ('?' in sourceUrl) "&" else "?"
+    val safeRangeEnd = contentLength?.takeIf { it > 0 } ?: 10_000_000L
+    return "$sourceUrl${separator}range=0-$safeRangeEnd"
+}
+
+private val PlayerResponse.StreamingData.Format.hasPlayableSource: Boolean
+    get() = !url.isNullOrBlank() || !signatureCipher.isNullOrBlank()

@@ -397,6 +397,8 @@ fun HomeSongsScreen(navController: NavController) {
                 songs = itemsOnDisplayState.toList()
             )
         }
+
+        RestartAppDialog.Render()
     }
 }
 
