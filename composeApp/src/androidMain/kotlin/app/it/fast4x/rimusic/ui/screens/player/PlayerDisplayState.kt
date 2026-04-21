@@ -44,25 +44,26 @@ private fun isRecoverableError(error: PlaybackException?): Boolean {
 fun rememberDisplayedPlayerState(
     binder: PlayerServiceModern.Binder,
 ): PlayerDisplayState {
+    val sessionPlayer = binder.sessionPlayer
     val crossfadeUiState by binder.crossfadeUiState.collectAsState()
-    val playbackProgress by binder.player.playbackProgressState()
+    val playbackProgress by sessionPlayer.playbackProgressState()
     var currentMediaItem by remember {
-        mutableStateOf(binder.displayedMediaItem ?: binder.player.currentMediaItem)
+        mutableStateOf(binder.displayedMediaItem ?: sessionPlayer.currentMediaItem ?: binder.player.currentMediaItem)
     }
     var playbackStateValue by remember {
-        mutableIntStateOf(binder.player.playbackState)
+        mutableIntStateOf(sessionPlayer.playbackState)
     }
     var playWhenReadyState by remember {
-        mutableStateOf(binder.player.playWhenReady)
+        mutableStateOf(sessionPlayer.playWhenReady)
     }
     var isPlaying by remember {
-        mutableStateOf(binder.player.isPlaying)
+        mutableStateOf(sessionPlayer.isPlaying)
     }
     var playerError by remember {
-        mutableStateOf<PlaybackException?>(binder.player.playerError)
+        mutableStateOf<PlaybackException?>(sessionPlayer.playerError)
     }
 
-    binder.player.DisposableListener {
+    sessionPlayer.DisposableListener {
         object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 currentMediaItem = binder.displayedMediaItem ?: mediaItem
@@ -70,13 +71,13 @@ fun rememberDisplayedPlayerState(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 playbackStateValue = playbackState
-                playerError = binder.player.playerError
-                isPlaying = binder.player.isPlaying
+                playerError = sessionPlayer.playerError
+                isPlaying = sessionPlayer.isPlaying
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 playWhenReadyState = playWhenReady
-                isPlaying = binder.player.isPlaying
+                isPlaying = sessionPlayer.isPlaying
             }
 
             override fun onIsPlayingChanged(isPlayingNow: Boolean) {

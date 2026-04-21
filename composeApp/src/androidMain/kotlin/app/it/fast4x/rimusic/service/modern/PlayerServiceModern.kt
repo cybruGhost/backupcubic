@@ -183,6 +183,7 @@ import app.it.fast4x.rimusic.utils.safeSeekTo
 import app.it.fast4x.rimusic.utils.setGlobalVolume
 import app.it.fast4x.rimusic.utils.showDownloadButtonBackgroundPlayerKey
 import app.it.fast4x.rimusic.utils.showLikeButtonBackgroundPlayerKey
+import app.it.fast4x.rimusic.utils.skipBrokenMediaItem
 import app.it.fast4x.rimusic.utils.skipMediaOnErrorKey
 import app.it.fast4x.rimusic.utils.skipSilenceKey
 import app.it.fast4x.rimusic.utils.timer
@@ -250,10 +251,8 @@ class PlayerServiceModern : MediaLibraryService(),
     private var mediaLibrarySessionCallback: MediaLibrarySessionCallback =
         MediaLibrarySessionCallback(this, Database, MyDownloadHelper)
     lateinit var player: ExoPlayer
-    private lateinit var crossfadeOverlayPlayer: ExoPlayer
-    private lateinit var stablePlayerBridge: DelegatingExoPlayer
     private lateinit var sessionPlayer: ExoPlayer
-    private lateinit var crossFadeMediaPlayer: CrossFadeManager
+    private val crossfadeUiState = MutableStateFlow(CrossfadeUiState())
     lateinit var cache: Cache
     lateinit var downloadCache: Cache
     private lateinit var audioVolumeObserver: AudioVolumeObserver
@@ -458,6 +457,9 @@ class PlayerServiceModern : MediaLibraryService(),
         audioQualityFormat = preferences.getEnum(audioQualityFormatKey, AudioQualityFormat.Auto)
         showLikeButton = preferences.getBoolean(showLikeButtonBackgroundPlayerKey, true)
         showDownloadButton = preferences.getBoolean(showDownloadButtonBackgroundPlayerKey, true)
+        if (preferences.getBoolean(crossfadeEnabledKey, false)) {
+            preferences.edit { putBoolean(crossfadeEnabledKey, false) }
+        }
 
         val cacheSize =
             preferences.getEnum(exoPlayerDiskCacheMaxSizeKey, ExoPlayerDiskCacheMaxSize.`2GB`)
@@ -499,6 +501,7 @@ class PlayerServiceModern : MediaLibraryService(),
             renderersFactory = createRendersFactory(),
         )
         player = playerSet.player
+        sessionPlayer = player
 
         // FIX: Request audio focus ONCE. Abandon any stale focus from previous crashed
         // instance before requesting to prevent the OS immediately sending AUDIOFOCUS_LOSS.
@@ -526,86 +529,10 @@ class PlayerServiceModern : MediaLibraryService(),
             Timber.d("PlayerServiceModern audio focus request result=%s granted=%s", focusRequestResult, audioFocusGranted)
         }
 
-        crossfadeOverlayPlayer = playerSet.crossfadeOverlayPlayer
-
-        crossFadeMediaPlayer = CrossFadeManager(
-            currentPlayer = player,
-            nextPlayer = crossfadeOverlayPlayer,
-            targetVolumeProvider = { preferences.getFloat(playbackVolumeKey, 1f) },
-            onPlayersSwapped = ::onCrossfadePlayersSwapped,
-            onCrossfadeActiveChanged = { isActive ->
-                if (isServiceReady) {
-                    syncPlaybackWakeLockState()
-                    if (!isActive && ::stablePlayerBridge.isInitialized) {
-                        stablePlayerBridge.refreshState()
-                    }
-                }
-            },
-        ).apply {
-            updateConfig(
-                enabled = preferences.getBoolean(crossfadeEnabledKey, false),
-                crossfadeDurationMs = preferences.getInt(crossfadeDurationSecondsKey, 21) * 1000L
-            )
-            onDisplayItemChanged = { mediaItem ->
-                if (mediaItem != null) {
-                    currentMediaItem.value = mediaItem
-                    requestArtworkPlaybackSurfaceRefresh(mediaItem)
-                    if (::stablePlayerBridge.isInitialized) {
-                        stablePlayerBridge.refreshState()
-                    }
-                }
-            }
-        }
-        stablePlayerBridge = DelegatingExoPlayer(player).also {
-            it.setDisplayStateProvider { crossFadeMediaPlayer.uiState.value }
-            it.setCrossfadeEnabledProvider { preferences.getBoolean(crossfadeEnabledKey, false) }
-            it.setPlaybackStateProvider { crossFadeMediaPlayer.reportedPlaybackState() }
-            it.setIsPlayingProvider { crossFadeMediaPlayer.reportedIsPlaying() }
-            it.setIsLoadingProvider {
-                crossFadeMediaPlayer.reportedPlaybackState() == Player.STATE_BUFFERING
-            }
-        }
-        sessionPlayer = stablePlayerBridge.player
         sleepTimer = SleepTimer(coroutineScope, sessionPlayer)
         sessionPlayer.addListener(sleepTimer)
         player.addListener(this@PlayerServiceModern)
         player.addAnalyticsListener(playbackStatsListener)
-        crossfadeOverlayPlayer.addListener(object : Player.Listener {
-            override fun onPlaybackStateChanged(playbackState: Int) {
-                if (!isServiceReady) return
-                syncPlaybackWakeLockState()
-                if (::stablePlayerBridge.isInitialized && crossFadeMediaPlayer.isTransitioningPlayback()) {
-                    stablePlayerBridge.refreshState()
-                }
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                if (!isServiceReady) return
-                syncPlaybackWakeLockState()
-                if (::stablePlayerBridge.isInitialized && crossFadeMediaPlayer.isTransitioningPlayback()) {
-                    stablePlayerBridge.refreshState()
-                }
-            }
-
-            override fun onPlayerError(error: PlaybackException) {
-                if (!isServiceReady) return
-                if (crossFadeMediaPlayer.recoverFromSecondaryError()) {
-                    Timber.w(
-                        error,
-                        "Recovered from secondary crossfade player error for mediaId=%s",
-                        crossfadeOverlayPlayer.currentMediaItem?.mediaId
-                    )
-                    val fallbackMediaItem = displayedMediaItem() ?: player.currentMediaItem
-                    currentMediaItem.value = fallbackMediaItem
-                    requestArtworkPlaybackSurfaceRefresh(fallbackMediaItem, minIntervalMs = 0L)
-                    if (::stablePlayerBridge.isInitialized) {
-                        stablePlayerBridge.refreshState()
-                    }
-                    syncPlaybackWakeLockState()
-                    showSmartMessage("Incoming song had a source issue. Finishing the current song smoothly.")
-                }
-            }
-        })
 
         val forwardingPlayer =
             object : ForwardingPlayer(sessionPlayer) {
@@ -648,7 +575,6 @@ class PlayerServiceModern : MediaLibraryService(),
                 )
                 .build()
         mediaLibrarySessionCallback.observeRepository(mediaSession)
-        observeCrossfadeNotificationState()
         player.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
         player.repeatMode = preferences.getEnum(queueLoopTypeKey, QueueLoopType.Default).type
 
@@ -882,10 +808,6 @@ override fun onDestroy() {
             if (::player.isInitialized) {
                 player.removeListener(this)
             }
-            if (::crossFadeMediaPlayer.isInitialized) {
-                runCatching { crossFadeMediaPlayer.release() }
-                    .onFailure { Timber.e(it, "Failed to release crossFadeMediaPlayer") }
-            }
             cacheCompletionJob?.cancel()
             if (::player.isInitialized) {
                 runCatching { player.stop() }
@@ -987,11 +909,8 @@ private fun releasePlaybackWakeLock() {
 
 private fun shouldHoldPlaybackWakeLock(): Boolean {
     if (!isServiceReady) return false
-    val crossfadeWantsWakeLock =
-        ::crossFadeMediaPlayer.isInitialized && crossFadeMediaPlayer.shouldHoldWakeLock()
     return player.isPlaying ||
-        (player.playWhenReady && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING)) ||
-        crossfadeWantsWakeLock
+        (player.playWhenReady && (player.playbackState == Player.STATE_READY || player.playbackState == Player.STATE_BUFFERING))
 }
 
 private fun syncPlaybackWakeLockState() {
@@ -1024,7 +943,6 @@ private fun syncPlaybackWakeLockState() {
                 sharedPreferences?.let {
                     val enabled = it.getBoolean(key, false)
                     player.skipSilenceEnabled = enabled
-                    crossfadeOverlayPlayer.skipSilenceEnabled = enabled
                 }
             }
 
@@ -1032,15 +950,12 @@ private fun syncPlaybackWakeLockState() {
                 player.repeatMode =
                     sharedPreferences?.getEnum(queueLoopTypeKey, QueueLoopType.Default)?.type
                         ?: QueueLoopType.Default.type
-                crossfadeOverlayPlayer.repeatMode = Player.REPEAT_MODE_OFF
             }
 
             crossfadeEnabledKey, crossfadeDurationSecondsKey -> {
-                crossFadeMediaPlayer.updateConfig(
-                    enabled = preferences.getBoolean(crossfadeEnabledKey, false),
-                    crossfadeDurationMs =
-                        preferences.getInt(crossfadeDurationSecondsKey, 21) * 1000L
-                )
+                if (preferences.getBoolean(crossfadeEnabledKey, false)) {
+                    preferences.edit { putBoolean(crossfadeEnabledKey, false) }
+                }
             }
 
             bassboostLevelKey, bassboostEnabledKey -> maybeBassBoost()
@@ -1066,7 +981,6 @@ private fun syncPlaybackWakeLockState() {
 
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (!isServiceReady) return
-        crossFadeMediaPlayer.onPrimaryMediaItemTransition(mediaItem)
         currentSongRetryCount = 0
         waitingForNetwork.value = false
         resumeOnNetworkRestore = false
@@ -1104,7 +1018,6 @@ private fun syncPlaybackWakeLockState() {
         if (reason == Player.TIMELINE_CHANGE_REASON_PLAYLIST_CHANGED) {
             maybeSavePlayerQueue()
         }
-        crossFadeMediaPlayer.onPrimaryTimelineChanged()
     }
 
     override fun onShuffleModeEnabledChanged(shuffleModeEnabled: Boolean) {
@@ -1123,7 +1036,6 @@ private fun syncPlaybackWakeLockState() {
 override fun onIsPlayingChanged(isPlaying: Boolean) {
     if (!isServiceReady) return
     try {
-        crossFadeMediaPlayer.onPrimaryIsPlayingChanged(isPlaying)
         if (isPlaying) {
             acquirePlaybackWakeLock()
         } else {
@@ -1314,11 +1226,12 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             return
         }
 
-        if (!preferences.getBoolean(skipMediaOnErrorKey, true) || !player.hasNextMediaItem())
+        if (!preferences.getBoolean(skipMediaOnErrorKey, true))
             return
 
         val prev = player.currentMediaItem ?: return
-        player.playNext()
+        val skipped = player.skipBrokenMediaItem("onPlayerError ${error.errorCodeName}")
+        if (!skipped) return
 
         showSmartMessage(
             message = getString(
@@ -1422,7 +1335,6 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         if (!isServiceReady) return
         if (events.containsAny(Player.EVENT_PLAYBACK_STATE_CHANGED, Player.EVENT_PLAY_WHEN_READY_CHANGED)) {
             capturePlaybackSnapshot()
-            crossFadeMediaPlayer.onPrimaryPlayWhenReadyChanged(player.playWhenReady)
             syncPlaybackWakeLockState()
             val isBufferingOrReady = player.playbackState == Player.STATE_BUFFERING || player.playbackState == Player.STATE_READY
             if (isBufferingOrReady && player.playWhenReady) {
@@ -1433,105 +1345,12 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                     waitingForNetwork.value = false
                 }
             }
-
-            val crossfadeEnabled = ::crossFadeMediaPlayer.isInitialized && crossFadeMediaPlayer.uiState.value.isEnabled
-            val currentMediaId = player.currentMediaItem?.mediaId
-            val now = SystemClock.elapsedRealtime()
-            if (
-                !crossfadeEnabled &&
-                player.playbackState == Player.STATE_ENDED &&
-                player.mediaItemCount > 1 &&
-                player.currentMediaItemIndex in 0 until (player.mediaItemCount - 1) &&
-                currentMediaId != null &&
-                (lastEndedRecoveryMediaId != currentMediaId || now - lastEndedRecoveryMs > 2_500L)
-            ) {
-                lastEndedRecoveryMediaId = currentMediaId
-                lastEndedRecoveryMs = now
-                handler.post {
-                    if (
-                        isServiceReady &&
-                        !crossFadeMediaPlayer.uiState.value.isEnabled &&
-                        player.playbackState == Player.STATE_ENDED &&
-                        player.currentMediaItem?.mediaId == currentMediaId &&
-                        player.currentMediaItemIndex in 0 until (player.mediaItemCount - 1)
-                    ) {
-                        player.playNext()
-                    }
-                }
-            }
         }
     }
 
     private fun ensureWakeLockHeld() {
         if (!isServiceReady) return
         syncPlaybackWakeLockState()
-    }
-
-    private fun onCrossfadePlayersSwapped(
-        newCurrentPlayer: ExoPlayer,
-        newNextPlayer: ExoPlayer,
-    ) {
-        if (!isServiceReady) return
-        if (player === newCurrentPlayer && crossfadeOverlayPlayer === newNextPlayer) return
-
-        player.removeListener(this@PlayerServiceModern)
-        player.removeAnalyticsListener(playbackStatsListener)
-
-        player = newCurrentPlayer
-        crossfadeOverlayPlayer = newNextPlayer
-
-        player.addListener(this@PlayerServiceModern)
-        player.addAnalyticsListener(playbackStatsListener)
-        stablePlayerBridge.updateDelegate(player)
-        stablePlayerBridge.refreshState()
-
-        currentMediaItem.value = player.currentMediaItem
-        player.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
-        crossfadeOverlayPlayer.skipSilenceEnabled = preferences.getBoolean(skipSilenceKey, false)
-        maybeNormalizeVolume()
-        maybeBassBoost()
-        maybeReverb()
-        syncPlaybackWakeLockState()
-        if (player.playbackState == Player.STATE_BUFFERING) {
-            applyRecoveryDecision(
-                playbackRecoveryHelper.onPlaybackStateChanged(
-                    playbackState = player.playbackState,
-                    snapshot = recoverySnapshot(),
-                )
-            )
-        }
-        requestPlaybackSurfaceRefresh(player.currentMediaItem)
-        coroutineScope.launch(Dispatchers.Main) {
-            delay(150)
-            requestPlaybackSurfaceRefresh(player.currentMediaItem, minIntervalMs = 0L)
-        }
-    }
-
-    private fun observeCrossfadeNotificationState() {
-        coroutineScope.launch {
-            crossFadeMediaPlayer.uiState.collectLatest { state ->
-                if (!isServiceReady) return@collectLatest
-                if (!state.isEnabled || state.displayMediaItem == null) {
-                    lastReportedNotificationMediaId = null
-                    return@collectLatest
-                }
-
-                val displayMediaItem = state.displayMediaItem
-                val mediaId = displayMediaItem.mediaId
-                if (mediaId == lastReportedNotificationMediaId) {
-                    return@collectLatest
-                }
-
-                lastReportedNotificationMediaId = mediaId
-                currentMediaItem.value = displayMediaItem
-
-                if (!::mediaSession.isInitialized || !::bitmapProvider.isInitialized) {
-                    return@collectLatest
-                }
-
-                requestArtworkPlaybackSurfaceRefresh(displayMediaItem)
-            }
-        }
     }
 
     private fun loadFromRadio(reason: Int) {
@@ -1906,8 +1725,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             )
             .setOngoing(
                 sessionPlayer.playWhenReady ||
-                    sessionPlayer.isPlaying ||
-                    crossFadeMediaPlayer.uiState.value.isEnabled
+                    sessionPlayer.isPlaying
             )
             .setContentIntent(
                 activityPendingIntent<MainActivity>(flags = PendingIntent.FLAG_UPDATE_CURRENT) {
@@ -2092,7 +1910,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         val status = Triple(
             cleanPrefix(cleanPrefix(displayMediaMetadata.title.toString())),
             cleanPrefix(cleanPrefix(displayMediaMetadata.artist.toString())),
-            binder.player.isPlaying || crossFadeMediaPlayer.uiState.value.isActive
+            binder.player.isPlaying
         )
 
         val actions = Triple(
@@ -2141,12 +1959,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
     }
 
     private fun displayedMediaItem(): MediaItem? {
-        val crossfadeState = if (::crossFadeMediaPlayer.isInitialized) crossFadeMediaPlayer.uiState.value else null
-        return if (crossfadeState?.isEnabled == true) {
-            crossfadeState.displayMediaItem ?: player.currentMediaItem
-        } else {
-            player.currentMediaItem
-        }
+        return player.currentMediaItem
     }
 
     private data class PresenceSnapshot(
@@ -2157,20 +1970,17 @@ override fun onPlaybackStateChanged(playbackState: Int) {
     )
 
     private fun currentPresenceSnapshot(): PresenceSnapshot {
-        val crossfadeState = if (::crossFadeMediaPlayer.isInitialized) crossFadeMediaPlayer.uiState.value else null
         val displayMediaItem = displayedMediaItem()
         val duration = when {
-            crossfadeState?.isEnabled == true && crossfadeState.displayDuration > 0L -> crossfadeState.displayDuration
             sessionPlayer.duration > 0L -> sessionPlayer.duration
             player.duration > 0L -> player.duration
             else -> 0L
         }
         val position = when {
-            crossfadeState?.isEnabled == true -> crossfadeState.displayPosition.coerceAtLeast(0L)
             sessionPlayer.currentPosition >= 0L -> sessionPlayer.currentPosition
             else -> player.currentPosition.coerceAtLeast(0L)
         }.coerceIn(0L, duration.coerceAtLeast(1L))
-        val isPlaying = crossfadeState?.isActive == true || sessionPlayer.isPlaying || player.isPlaying
+        val isPlaying = sessionPlayer.isPlaying || player.isPlaying
 
         return PresenceSnapshot(
             mediaItem = displayMediaItem,
@@ -2280,7 +2090,6 @@ override fun onPlaybackStateChanged(playbackState: Int) {
     ) {
         if (!isServiceReady) return
         capturePlaybackSnapshot()
-        crossFadeMediaPlayer.onPrimaryPositionDiscontinuity(reason)
         Timber.d("PlayerServiceModern onPositionDiscontinuity oldPosition ${oldPosition.mediaItemIndex} newPosition ${newPosition.mediaItemIndex} reason $reason")
         if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SKIP) {
             if (preferences.getBoolean(isDiscordPresenceEnabledKey, false)) {
@@ -2447,13 +2256,10 @@ override fun onPlaybackStateChanged(playbackState: Int) {
     private fun shouldKeepServiceAlive(): Boolean {
         if (!isServiceReady) return false
         val hasMediaItem = player.currentMediaItem != null || displayedMediaItem() != null
-        val crossfadeKeepingPlaybackAlive =
-            ::crossFadeMediaPlayer.isInitialized && crossFadeMediaPlayer.shouldHoldWakeLock()
         return player.isPlaying ||
             player.playWhenReady ||
             player.playbackState == Player.STATE_BUFFERING ||
             player.playbackState == Player.STATE_READY ||
-            crossfadeKeepingPlaybackAlive ||
             hasMediaItem ||
             player.mediaItemCount > 0
     }
@@ -2532,23 +2338,16 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             get() = timerJob?.millisLeft
 
         val crossfadeUiState: StateFlow<CrossfadeUiState>
-            get() = crossFadeMediaPlayer.uiState
+            get() = this@PlayerServiceModern.crossfadeUiState
 
         val displayedMediaItem: MediaItem?
             get() = this@PlayerServiceModern.displayedMediaItem()
 
         val displayedPositionAndDuration: Pair<Long, Long>
             get() {
-                val crossfadeState = crossFadeMediaPlayer.uiState.value
-                return if (crossfadeState.isEnabled && crossfadeState.displayDuration > 0L) {
-                    val duration = crossfadeState.displayDuration.coerceAtLeast(1L)
-                    val position = crossfadeState.displayPosition.coerceIn(0L, duration)
-                    position to duration
-                } else {
-                    val duration = player.duration.coerceAtLeast(1L)
-                    val position = player.currentPosition.coerceIn(0L, duration)
-                    position to duration
-                }
+                val duration = player.duration.coerceAtLeast(1L)
+                val position = player.currentPosition.coerceIn(0L, duration)
+                return position to duration
             }
 
         fun startSleepTimer(delayMillis: Long) {
@@ -2671,14 +2470,12 @@ override fun onPlaybackStateChanged(playbackState: Int) {
 
         @MainThread
         fun gracefulPause() {
-            crossFadeMediaPlayer.pauseForUiInteraction()
             val duration = preferences.getEnum(playbackFadeAudioDurationKey, DurationInMilliseconds.Disabled)
             player.fadeOutEffect(duration.asMillis)
         }
 
         @MainThread
         fun gracefulPlay() {
-            crossFadeMediaPlayer.playForUiInteraction()
             val duration = preferences.getEnum(playbackFadeAudioDurationKey, DurationInMilliseconds.Disabled)
             player.fadeInEffect(duration.asMillis)
         }

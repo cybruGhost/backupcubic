@@ -97,8 +97,6 @@ import app.it.fast4x.rimusic.utils.customThemeLight_accentKey
 import app.it.fast4x.rimusic.utils.customThemeLight_iconButtonPlayerKey
 import app.it.fast4x.rimusic.utils.customThemeLight_textDisabledKey
 import app.it.fast4x.rimusic.utils.customThemeLight_textSecondaryKey
-import app.it.fast4x.rimusic.utils.crossfadeDurationSecondsKey
-import app.it.fast4x.rimusic.utils.crossfadeEnabledKey
 import app.it.fast4x.rimusic.utils.disableClosingPlayerSwipingDownKey
 import app.it.fast4x.rimusic.utils.discoverKey
 import app.it.fast4x.rimusic.utils.enablePictureInPictureAutoKey
@@ -225,8 +223,6 @@ fun GeneralSettings(
     var resetCustomDarkThemeDialog  by rememberSaveable { mutableStateOf(false) }
 
     var playbackFadeAudioDuration    by rememberPreference(playbackFadeAudioDurationKey, DurationInMilliseconds.Disabled)
-    var crossfadeEnabled             by rememberPreference(crossfadeEnabledKey, false)
-    var crossfadeDurationSeconds     by rememberPreference(crossfadeDurationSecondsKey, 21)
     var excludeSongWithDurationLimit by rememberPreference(excludeSongsWithDurationLimitKey, DurationInMinutes.Disabled)
     var playlistindicator            by rememberPreference(playlistindicatorKey, false)
     var nowPlayingIndicator          by rememberPreference(nowPlayingIndicatorKey, MusicAnimationType.Bubbles)
@@ -372,60 +368,6 @@ fun GeneralSettings(
         }
 
         Spacer(modifier = Modifier.height(16.dp))
-
-        val crossfadePresets = remember { listOf(8, 12, 15, 18, 21, 24, 30) }
-        AnimatedVisibility(
-            visible = search.inputValue.isBlank() ||
-                stringResource(R.string.crossfade_title).contains(search.inputValue, true) ||
-                stringResource(R.string.crossfade_duration_title).contains(search.inputValue, true),
-            enter = androidx.compose.animation.fadeIn(animationSpec = tween(660)) +
-                androidx.compose.animation.scaleIn(animationSpec = tween(660), initialScale = 0.9f)
-        ) {
-            SettingsSectionCard(
-                title = stringResource(R.string.crossfade_title),
-                icon = R.drawable.volume_up,
-                content = {
-                    OtherSwitchSettingEntry(
-                        title = stringResource(R.string.crossfade_title),
-                        text = stringResource(R.string.crossfade_description),
-                        isChecked = crossfadeEnabled,
-                        onCheckedChange = { crossfadeEnabled = it },
-                        icon = R.drawable.volume_up
-                    )
-
-                    AnimatedVisibility(visible = crossfadeEnabled) {
-                        Column(
-                            modifier = Modifier.padding(start = 25.dp, end = 12.dp, top = 4.dp, bottom = 8.dp)
-                        ) {
-                            OtherSettingsEntry(
-                                title = stringResource(R.string.crossfade_duration_title),
-                                text = stringResource(R.string.crossfade_duration_value, crossfadeDurationSeconds),
-                                onClick = {
-                                    val currentIndex = crossfadePresets.indexOf(crossfadeDurationSeconds)
-                                    val nextIndex = if (currentIndex == -1) 0 else (currentIndex + 1) % crossfadePresets.size
-                                    crossfadeDurationSeconds = crossfadePresets[nextIndex]
-                                },
-                                icon = R.drawable.time
-                            )
-
-                            Slider(
-                                value = crossfadeDurationSeconds.toFloat(),
-                                onValueChange = { crossfadeDurationSeconds = it.roundToInt() },
-                                valueRange = 5f..30f,
-                                steps = 24,
-                                modifier = Modifier.fillMaxWidth()
-                            )
-
-                            SettingsDescription(
-                                text = stringResource(R.string.crossfade_duration_hint),
-                                modifier = Modifier.padding(start = 25.dp, top = 4.dp),
-                                textAlign = TextAlign.Start
-                            )
-                        }
-                    }
-                }
-            )
-        }
 
         Spacer(modifier = Modifier.height(16.dp))
 

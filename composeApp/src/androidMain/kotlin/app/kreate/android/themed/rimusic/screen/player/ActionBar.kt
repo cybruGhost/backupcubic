@@ -172,7 +172,7 @@ fun BoxScope.ActionBar(
     val binder = LocalPlayerServiceBinder.current ?: return
     val menuState = LocalMenuState.current
 
-    val mediaItem = binder.player.currentMediaItem ?: return
+    val mediaItem = binder.displayedMediaItem ?: binder.player.currentMediaItem ?: return
 
     val playerBackgroundColors by rememberPreference( playerBackgroundColorsKey, PlayerBackgroundColors.BlurredCoverColor )
     val blackGradient by rememberPreference( blackgradientKey, false )
@@ -362,7 +362,7 @@ fun BoxScope.ActionBar(
                             }
                         }
 
-                        if (mediaItemAtIndex == null) return@HorizontalPager
+                        val currentPreviewItem = mediaItemAtIndex ?: return@HorizontalPager
 
                         Row(
                             horizontalArrangement = Arrangement.Center,
@@ -375,7 +375,7 @@ fun BoxScope.ActionBar(
                                     },
                                     onLongClick = {
                                         if ( actualQueueIndex >= 0 ) {
-                                            binder.player.addNext( mediaItemAtIndex )
+                                            binder.player.addNext( currentPreviewItem )
                                             Toaster.s( R.string.addednext )
                                         }
                                     }
@@ -385,7 +385,7 @@ fun BoxScope.ActionBar(
                             if ( showAlbumCover )
                                 Box( Modifier.align(Alignment.CenterVertically) ) {
                                     ImageCacheFactory.Thumbnail(
-                                        thumbnailUrl = mediaItemAtIndex.mediaMetadata
+                                        thumbnailUrl = currentPreviewItem.mediaMetadata
                                                                        .artworkUri
                                                                        .toString(),
                                         contentDescription = "song_pos_$index",
@@ -410,7 +410,7 @@ fun BoxScope.ActionBar(
                                 Box {
                                     val titleText by remember {
                                         derivedStateOf {
-                                            cleanPrefix( mediaItemAtIndex.mediaMetadata.title.toString() )
+                                            cleanPrefix( currentPreviewItem.mediaMetadata.title.toString() )
                                         }
                                     }
 
@@ -446,7 +446,7 @@ fun BoxScope.ActionBar(
                                 Box {
                                     val artistsText by remember {
                                         derivedStateOf {
-                                            cleanPrefix( mediaItemAtIndex.mediaMetadata.artist.toString() )
+                                            cleanPrefix( currentPreviewItem.mediaMetadata.artist.toString() )
                                         }
                                     }
 
@@ -765,7 +765,7 @@ fun BoxScope.ActionBar(
                         icon = R.drawable.ellipsis_vertical,
                         color = colorPalette().accent,
                         onClick = {
-                            val currentMediaItem = binder.player.currentMediaItem
+                            val currentMediaItem = binder.displayedMediaItem ?: binder.player.currentMediaItem
                             if (currentMediaItem != null) {
                                 menuState.display {
                                     PlayerMenu(

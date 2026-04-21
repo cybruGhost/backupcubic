@@ -172,6 +172,8 @@ import app.it.fast4x.rimusic.utils.medium
 import app.it.fast4x.rimusic.utils.otherLanguageAppKey
 import app.it.fast4x.rimusic.utils.playNext
 import app.it.fast4x.rimusic.utils.playPrevious
+import app.it.fast4x.rimusic.utils.pickBestLrcLibTrack
+import app.it.fast4x.rimusic.utils.plainLyricsFromTimedText
 import app.it.fast4x.rimusic.utils.playerBackgroundColorsKey
 import app.it.fast4x.rimusic.utils.playerEnableLyricsPopupMessageKey
 import app.it.fast4x.rimusic.utils.rememberPreference
@@ -490,15 +492,6 @@ fun Lyrics(
                     duration = withContext(Dispatchers.Main) { durationProvider() }
                 }
                 return duration
-            }
-
-            fun plainLyricsFromTimedText(timedLyrics: String?): String? {
-                return timedLyrics
-                    ?.lineSequence()
-                    ?.map { line -> line.replace(Regex("""\[[^\]]*]"""), "").trim() }
-                    ?.filter { it.isNotBlank() }
-                    ?.joinToString("\n")
-                    ?.ifBlank { null }
             }
 
             fun applyLyrics(updatedLyrics: Lyrics) {
@@ -822,7 +815,7 @@ fun Lyrics(
                                         lyricsTable.upsert(
                                             Lyrics(
                                                 songId = mediaId,
-                                                fixed = currentLyrics?.fixed,
+                                                fixed = currentLyrics?.fixed ?: plainLyricsFromTimedText(it?.text),
                                                 synced = it?.text.orEmpty()
                                             )
                                         )
@@ -1231,12 +1224,15 @@ fun SelectLyricFromTrack(
                     } ${stringResource(R.string.id)} ${it.id}) ",
                     onClick = {
                         menuState.hide()
+                        val syncedLyrics = it.syncedLyrics?.takeIf(String::isNotBlank)
+                        val fixedLyrics = it.plainLyrics?.takeIf(String::isNotBlank)
+                            ?: plainLyricsFromTimedText(syncedLyrics)
                         Database.asyncTransaction {
                             lyricsTable.upsert(
                                 Lyrics(
                                     songId = mediaId,
-                                    fixed = lyrics?.fixed,
-                                    synced = it.syncedLyrics.orEmpty()
+                                    fixed = fixedLyrics ?: lyrics?.fixed,
+                                    synced = syncedLyrics
                                 )
                             )
                         }
@@ -1355,7 +1351,10 @@ fun SelectLyricFromTrack(
                 }
 
                         tracks.clear()
-                        tracks.addAll(it)
+                        val durationMs = durationProvider().takeIf { value -> value != C.TIME_UNSET } ?: 0L
+                        val bestTrack = pickBestLrcLibTrack(it, title, durationMs)
+                        bestTrack?.let { match -> tracks.add(match) }
+                        tracks.addAll(it.filterNot { track -> track.id == bestTrack?.id })
                         loading = false
                         error = false
                     }?.onFailure {
@@ -1606,12 +1605,9 @@ fun SelectLyricFromTrack(
 
                     val synchronizedLyrics = remember(text) {
                         val sentences = LrcLib.Lyrics(text).sentences
-
-                        run {
-                            invalidLrc = false
-                            SynchronizedLyrics(sentences) {
-                                player.currentPosition + 50L //- (lyrics?.startTime ?: 0L)
-                            }
+                        invalidLrc = sentences.size <= 1
+                        SynchronizedLyrics(sentences) {
+                            player.currentPosition + 50L
                         }
                     }
 

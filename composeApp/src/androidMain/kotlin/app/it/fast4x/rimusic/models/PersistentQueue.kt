@@ -1,14 +1,11 @@
 package app.it.fast4x.rimusic.models
 
-import android.content.ContentUris
-import android.provider.MediaStore
 import androidx.core.net.toUri
 import androidx.core.os.bundleOf
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
 import app.it.fast4x.rimusic.service.modern.LOCAL_KEY_PREFIX
-import app.it.fast4x.rimusic.utils.plainLyricsFromTimedText
 import app.it.fast4x.rimusic.utils.resolveLocalMediaUri
 import app.it.fast4x.rimusic.utils.sanitizePlaybackUri
 import java.io.Serializable
