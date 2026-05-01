@@ -14,7 +14,7 @@ object SecureApiConfig {
     }
 
     val ytmSessionEndpoint: String by lazy {
-        reveal("-mty//:sptth", "oreh-noisses", "ppa.elbavol.", "ses-mty/ipa/", "nois")
+        "https://ytm-cookie-sparkle.lovable.app/api/ytm-session"
     }
 
     val spotifyCanvasApi: String by lazy {

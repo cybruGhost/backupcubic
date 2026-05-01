@@ -8,7 +8,9 @@ import androidx.compose.ui.res.stringResource
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
 import app.it.fast4x.rimusic.appRunningInBackground
+import androidx.compose.ui.platform.LocalContext
 import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSong
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import it.fast4x.innertube.Innertube
@@ -33,6 +35,7 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import android.widget.Toast
 import app.it.fast4x.rimusic.cleanPrefix
 import timber.log.Timber
 
@@ -55,9 +58,17 @@ private data class SessionLibraryScope(
     val pageId: String?
 )
 
+private val SessionLibraryScope.isBrandAccount: Boolean
+    get() = !pageId.isNullOrBlank()
+
+private val SessionLibraryScope.requiresScopedSessionResults: Boolean
+    get() = !pageId.isNullOrBlank()
+
 private data class PlaylistSyncSong(
     val song: app.it.fast4x.rimusic.models.Song,
-    val setVideoId: String? = null
+    val setVideoId: String? = null,
+    val artists: List<Artist> = emptyList(),
+    val album: Album? = null
 )
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -82,6 +93,43 @@ private fun parseRemoteSongCount(songCount: String, subtitle: String): Int =
     songCount.trim().toIntOrNull()
         ?: Regex("(\\d+)").find(subtitle)?.groupValues?.getOrNull(1)?.toIntOrNull()
         ?: 0
+
+private fun YtmSong.asArtists(): List<Artist> {
+    val names = artistsText.ifBlank { artist }
+        .split(",")
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+    val refs = artists
+        .mapNotNull { ref ->
+            ref.id.takeIf { it.isNotBlank() }?.let { id ->
+                Artist(id = id, name = ref.name.ifBlank { names.firstOrNull() }, isYoutubeArtist = true)
+            }
+        }
+    val idRefs = artistIds
+        .mapIndexedNotNull { index, id ->
+            id.takeIf { it.isNotBlank() }?.let {
+                Artist(id = it, name = names.getOrNull(index) ?: names.firstOrNull(), isYoutubeArtist = true)
+            }
+        }
+    val singleRef = artistId
+        .takeIf { it.isNotBlank() }
+        ?.let { Artist(id = it, name = names.firstOrNull(), isYoutubeArtist = true) }
+        ?.let(::listOf)
+        .orEmpty()
+
+    return (refs + idRefs + singleRef).distinctBy { it.id }
+}
+
+private fun YtmSong.asAlbum(): Album? {
+    val id = albumId.takeIf { it.isNotBlank() } ?: return null
+    return Album(
+        id = id,
+        title = album.takeIf { it.isNotBlank() },
+        authorsText = artistsText.takeIf { it.isNotBlank() } ?: artist.takeIf { it.isNotBlank() },
+        thumbnailUrl = thumbnailUrl.takeIf { it.isNotBlank() } ?: thumbnail.takeIf { it.isNotBlank() },
+        isYoutubeAlbum = true
+    )
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Generic safe YTM call wrapper — always off the main thread
@@ -256,7 +304,9 @@ private suspend fun fetchRemotePlaylistSongs(
                     thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail.ifBlank { null } },
                     totalPlayTimeMs = 1L,
                 ),
-                setVideoId = remoteSong.setVideoId.ifBlank { null }
+                setVideoId = remoteSong.setVideoId.ifBlank { null },
+                artists = remoteSong.asArtists(),
+                album = remoteSong.asAlbum()
             )
         }
     }
@@ -265,6 +315,17 @@ private suspend fun fetchRemotePlaylistSongs(
         return@withContext sessionSongs
             .filter { it.song.id.isNotBlank() && it.song.title.isNotBlank() }
             .distinctBy { it.song.id }
+    }
+
+    if (sessionScope?.requiresScopedSessionResults == true) {
+        Timber.w(
+            "Skipping unscoped playlist fallback for scoped session authUser=%s pageId=%s playlistId=%s browseId=%s",
+            sessionScope.authUser,
+            sessionScope.pageId,
+            playlistId,
+            browseId
+        )
+        return@withContext emptyList()
     }
 
     // Fallback: use YtMusic API
@@ -327,7 +388,19 @@ private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
                 Database.asyncTransaction {
                     val playlistId = if (playlist.id > 0) { playlistTable.update(playlist); playlist.id } else playlistTable.insert(playlist)
                     if (remoteSongs.isNotEmpty()) {
-                        remoteSongs.forEach { songTable.insertIgnore(it.song) }
+                        remoteSongs.forEach { remoteSong ->
+                            songTable.insertIgnore(remoteSong.song)
+                            remoteSong.artists.forEach { artist ->
+                                artistTable.upsert(artist)
+                                songArtistMapTable.insertIgnore(
+                                    app.it.fast4x.rimusic.models.SongArtistMap(remoteSong.song.id, artist.id)
+                                )
+                            }
+                            remoteSong.album?.let { album ->
+                                albumTable.insertIgnore(album)
+                                songAlbumMapTable.map(remoteSong.song.id, album.id)
+                            }
+                        }
                         songPlaylistMapTable.clear(playlistId)
                         songPlaylistMapTable.updateReplace(remoteSongs.mapIndexed { i, remoteSong ->
                             app.it.fast4x.rimusic.models.SongPlaylistMap(
@@ -514,7 +587,7 @@ suspend fun importYTMLikedSongs(): Boolean = withContext(Dispatchers.IO) {
     val sessionSongs = safeYtmCall("sessionLikedSongs") {
         YtmSessionApi.fetchLikedSongs(sessionScope.cookie, sessionScope.authUser, sessionScope.pageId)
     }
-    val fallbackSongs = if (sessionSongs.isNullOrEmpty()) {
+    val fallbackSongs = if (sessionSongs.isNullOrEmpty() && !sessionScope.requiresScopedSessionResults) {
         fetchRemotePlaylistSongs(sessionScope = sessionScope, playlistId = "LM", browseId = "LM")
     } else emptyList()
 
@@ -538,6 +611,16 @@ suspend fun importYTMLikedSongs(): Boolean = withContext(Dispatchers.IO) {
                     likedAt = localSong?.likedAt?.takeIf { it > 0 } ?: System.currentTimeMillis(),
                 )
                 Database.songTable.upsert(normalizedSong)
+                remoteSong.asArtists().forEach { artist ->
+                    Database.artistTable.upsert(artist)
+                    Database.songArtistMapTable.insertIgnore(
+                        app.it.fast4x.rimusic.models.SongArtistMap(normalizedSong.id, artist.id)
+                    )
+                }
+                remoteSong.asAlbum()?.let { album ->
+                    Database.albumTable.insertIgnore(album)
+                    Database.songAlbumMapTable.map(normalizedSong.id, album.id)
+                }
             }
         } else {
             fallbackSongs.forEach { remoteSong ->
@@ -615,12 +698,32 @@ suspend fun removeYTSongFromPlaylist(songId: String, playlistBrowseId: String, p
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
-fun autoSyncToolbutton(messageId: Int): MenuIcon = object : MenuIcon, DynamicColor, Descriptive {
-    override var isFirstColor: Boolean by rememberPreference(autosyncKey, false)
-    override val iconId: Int = R.drawable.sync
-    override val messageId: Int = messageId
-    override val menuIconTitle: String
-        @Composable get() = stringResource(messageId)
+fun autoSyncToolbutton(
+    messageId: Int,
+    onSyncNow: (() -> Unit)? = null
+): MenuIcon {
 
-    override fun onShortClick() { isFirstColor = !isFirstColor }
+    val context = LocalContext.current  // ✅ get it here
+
+    return object : MenuIcon, DynamicColor, Descriptive {
+        override var isFirstColor: Boolean by rememberPreference(autosyncKey, false)
+        override val iconId: Int = R.drawable.sync
+        override val messageId: Int = messageId
+        override val menuIconTitle: String
+            @Composable get() = stringResource(messageId)
+
+        override fun onShortClick() {
+            if (onSyncNow != null) onSyncNow() else isFirstColor = !isFirstColor
+        }
+
+        override fun onLongClick() {
+            isFirstColor = !isFirstColor
+
+            Toast.makeText(
+                context,
+                context.getString(messageId),
+                Toast.LENGTH_SHORT
+            ).show()
+        }
+    }
 }

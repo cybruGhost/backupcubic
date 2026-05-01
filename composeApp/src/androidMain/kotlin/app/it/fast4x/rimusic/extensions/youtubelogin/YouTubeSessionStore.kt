@@ -207,7 +207,7 @@ object YouTubeSessionStore {
                     val key = part.substring(0, index).trim()
                     val value = part.substring(index + 1).trim()
                     if (key.isBlank() || value.isBlank()) return@forEach
-                    if (key !in merged) merged[key] = value
+                    merged[key] = value
                 }
         }
 
@@ -334,6 +334,8 @@ object YouTubeSessionStore {
             cookie = normalizeCookieString(cookie),
             visitorData = visitorData.trim(),
             dataSyncId = dataSyncId.trim(),
+            authUser = authUser.trim().takeUnless { it.equals("null", ignoreCase = true) }.orEmpty(),
+            pageId = pageId.trim().takeUnless { it.equals("null", ignoreCase = true) }.orEmpty(),
             sessionId = sessionId.ifBlank {
                 "ytmusic-${listOf(identitySeed, authUser.trim(), pageId.trim()).joinToString("|").sha1().take(12)}"
             },

@@ -95,11 +95,24 @@ object MyDownloadHelper {
     var downloads = MutableStateFlow<Map<String, Download>>(emptyMap())
     private val mutableProgresses = MutableStateFlow<Map<String, Float>>(emptyMap())
     val progresses = mutableProgresses.asStateFlow()
+    private val mutableBulkDownloadIds = MutableStateFlow<Set<String>>(emptySet())
+    val bulkDownloadIds = mutableBulkDownloadIds.asStateFlow()
     private var progressLoopStarted = false
     private val mirrorJobs = mutableSetOf<String>()
 
     fun getDownload(songId: String): Flow<Download?> {
         return downloads.map { it[songId] }
+    }
+
+    fun startBulkDownloadSession(songIds: Collection<String>) {
+        mutableBulkDownloadIds.value = songIds
+            .map(String::trim)
+            .filter(String::isNotBlank)
+            .toSet()
+    }
+
+    fun clearBulkDownloadSession() {
+        mutableBulkDownloadIds.value = emptySet()
     }
 
     @SuppressLint("LongLogTag")
@@ -180,13 +193,28 @@ object MyDownloadHelper {
     fun getCustomDownloadFolderLabel(context: Context): String =
         context.preferences.getString(CUSTOM_DOWNLOAD_PATH_KEY, "").orEmpty()
 
-    private fun defaultDownloadRootDirectory(context: Context): File =
-        when(context.preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)) {
-            ExoPlayerCacheLocation.System -> {
-                context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-            }
-            ExoPlayerCacheLocation.Private -> context.filesDir
+private fun defaultDownloadRootDirectory(context: Context): File {
+    // Priority 1: Legacy "RiMusic/Downloads" folder (for backward compatibility)
+    val legacyDir = File(Environment.getExternalStorageDirectory(), ROOT_DOWNLOAD_DIR)
+    if (legacyDir.exists() && legacyDir.isDirectory) {
+        return legacyDir
+    }
+
+    // Priority 2: Custom user‑selected folder (SAF)
+    val customUri = getCustomDownloadTreeUri(context)
+    if (customUri != null) {
+        return DocumentFile.fromTreeUri(context, customUri)?.uri?.path?.let { File(it) }
+            ?: context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)!!
+    }
+
+    // Priority 3: App‑specific external music directory (default for new installs)
+    return when (context.preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)) {
+        ExoPlayerCacheLocation.System -> {
+            context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         }
+        ExoPlayerCacheLocation.Private -> context.filesDir
+    }
+}
 
     @Synchronized
     fun getDownloadCache(context: Context): Cache {
@@ -233,6 +261,7 @@ object MyDownloadHelper {
 
         if (!MyDownloadHelper::downloadManager.isInitialized) {
             downloadManager = createDownloadManager(context)
+            getDownloads()
             if (!progressLoopStarted) {
                 progressLoopStarted = true
                 coroutineScope.launch {
@@ -394,6 +423,26 @@ object MyDownloadHelper {
                 set(download.request.id, download)
             }
         }
+        trimBulkDownloadSession()
+    }
+
+    private fun trimBulkDownloadSession() {
+        val currentIds = mutableBulkDownloadIds.value
+        if (currentIds.isEmpty()) return
+
+        val activeIds = currentIds.filterTo(mutableSetOf()) { songId ->
+            when (downloads.value[songId]?.state) {
+                Download.STATE_QUEUED,
+                Download.STATE_DOWNLOADING,
+                Download.STATE_RESTARTING,
+                Download.STATE_STOPPED -> true
+                else -> false
+            }
+        }
+
+        if (activeIds != currentIds) {
+            mutableBulkDownloadIds.value = activeIds
+        }
     }
 
     @Synchronized
@@ -421,20 +470,26 @@ object MyDownloadHelper {
             .setData("${mediaItem.mediaMetadata.artist ?: ""} - ${mediaItem.mediaMetadata.title ?: ""}".encodeToByteArray()) // Title in notification
             .build()
 
-        Database.upsert(mediaItem)
+       coroutineScope.launch(Dispatchers.IO) {
+    Database.upsert(mediaItem)
+}
 
          val imageUrl = mediaItem.mediaMetadata.artworkUri?.toString()?.thumbnail(1000)?.toUri()
 
-        coroutineScope.launch {
-            context.download<MyDownloadService>(downloadRequest).exceptionOrNull()?.let {
-                if (it is CancellationException) throw it
-                Timber.e("MyDownloadHelper scheduleDownload exception ${it.stackTraceToString()}")
-                println("MyDownloadHelper scheduleDownload exception ${it.stackTraceToString()}")
-            }
-            downloadSyncedLyrics(mediaItem.asSong)
-            ImageCacheFactory.preloadImage(mediaItem.mediaMetadata.artworkUri?.toString())
-        }
+coroutineScope.launch {
+    // 1. Enqueue the download (non‑blocking)
+    context.download<MyDownloadService>(downloadRequest).exceptionOrNull()?.let {
+        if (it is CancellationException) throw it
+        Timber.e("MyDownloadHelper scheduleDownload exception ${it.stackTraceToString()}")
     }
+
+    // 2. Do the rest in a separate coroutine – they don’t need to finish for the download to start
+    launch {
+        downloadSyncedLyrics(mediaItem.asSong)
+        ImageCacheFactory.preloadImage(mediaItem.mediaMetadata.artworkUri?.toString())
+    }
+}
+}
 
     fun removeDownload(context: Context, mediaItem: MediaItem) {
         if (mediaItem.isLocal) return
@@ -445,6 +500,32 @@ object MyDownloadHelper {
                 Timber.e(it.stackTraceToString())
                 println("MyDownloadHelper removeDownload exception ${it.stackTraceToString()}")
             }
+        }
+    }
+
+    fun redownloadSong(context: Context, mediaItem: MediaItem) {
+        if (mediaItem.isLocal) return
+
+        if (!isNetworkConnected(context)) {
+            Toaster.noInternet()
+            return
+        }
+
+        coroutineScope.launch {
+            runCatching { getDownloadCache(context).removeResource(mediaItem.mediaId) }
+                .onFailure { Timber.w(it, "Failed clearing corrupt cache for %s", mediaItem.mediaId) }
+
+            Database.asyncTransaction {
+                formatTable.deleteBySongId(mediaItem.mediaId)
+            }
+
+            context.removeDownload<MyDownloadService>(mediaItem.mediaId).exceptionOrNull()?.let {
+                if (it is CancellationException) throw it
+                Timber.w(it, "Failed removing old download before re-download for %s", mediaItem.mediaId)
+            }
+
+            delay(350)
+            addDownload(context, mediaItem)
         }
     }
 

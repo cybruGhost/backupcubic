@@ -104,6 +104,7 @@ import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.restartActivityKey
 import app.it.fast4x.rimusic.utils.thumbnailRoundnessKey
 import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
+import app.it.fast4x.rimusic.utils.loadedDataKey
 import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
 import app.it.fast4x.rimusic.utils.ytAccountEmailKey
 import app.it.fast4x.rimusic.utils.ytAccountNameKey
@@ -238,26 +239,32 @@ AnimatedVisibility(
                 savedSessions = YouTubeSessionStore.getSessions(context)
             }
 
-            fun markSelectedLinkedAccounts(
+            fun markActiveLinkedAccounts(
                 accounts: List<YtmLinkedAccount>,
                 session: YoutubeSession?
             ): List<YtmLinkedAccount> {
-                val currentAuthUser = session?.authUser?.trim().orEmpty()
-                val currentPageId = session?.pageId?.trim().orEmpty()
+                val activeAuthUser = session?.authUser.orEmpty()
+                val activePageId = session?.pageId.orEmpty()
+                val hasExplicitScope = activeAuthUser.isNotBlank() || activePageId.isNotBlank()
+                return accounts.map { account ->
+                    val matchesScope = account.authUser == activeAuthUser &&
+                        account.pageId.orEmpty() == activePageId
+                    account.copy(isSelected = if (hasExplicitScope) matchesScope else account.isSelected)
+                }
+            }
 
-                return accounts
-                    .map { account ->
-                        val matchesCurrentSession = when {
-                            currentAuthUser.isBlank() -> account.isSelected
-                            currentPageId.isNotBlank() -> {
-                                account.authUser.trim() == currentAuthUser &&
-                                    account.pageId.trim() == currentPageId
-                            }
-                            else -> account.authUser.trim() == currentAuthUser
-                        }
-                        account.copy(isSelected = matchesCurrentSession || account.isSelected && currentAuthUser.isBlank())
-                    }
-                    .sortedByDescending { it.isSelected }
+            fun resolveScopedAccount(
+                accounts: List<YtmLinkedAccount>,
+                session: YoutubeSession?
+            ): YtmLinkedAccount? {
+                val activeAuthUser = session?.authUser.orEmpty()
+                val activePageId = session?.pageId.orEmpty()
+                return accounts.firstOrNull { account ->
+                    activeAuthUser.isNotBlank() &&
+                        account.authUser == activeAuthUser &&
+                        account.pageId == activePageId
+                } ?: accounts.firstOrNull { it.isSelected }
+                    ?: accounts.firstOrNull()
             }
 
             fun clearAccountScopedUiCaches() {
@@ -268,6 +275,7 @@ AnimatedVisibility(
                     .putString("quickPicsHomePageChipParams", "")
                     .putString("quickPicsSessionHomeFeedSessionId", "")
                     .putString("quickPicsSessionHomeFeedAccountHandle", "")
+                    .putBoolean(loadedDataKey, false)
                     .apply()
             }
 
@@ -279,32 +287,40 @@ AnimatedVisibility(
                 }
                 isRefreshingAccountInfo = true
                 return try {
-                    val currentStoredSession = YouTubeSessionStore.getCurrentSession(context)
                     val accountInfo = YtmSessionApi.fetchAccountInfo(cookie).getOrThrow()
                     val accounts = YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList())
-                    val selectedAccount =
-                        accounts.firstOrNull { account ->
-                            account.authUser == currentStoredSession?.authUser &&
-                                account.pageId == currentStoredSession?.pageId
+                    val currentScopedSession = YouTubeSessionStore.getCurrentSession(context)
+                    val scopedAccount = resolveScopedAccount(accounts, currentScopedSession)
+                    val switched = scopedAccount?.let { account ->
+                        account.authUser.takeIf { it.isNotBlank() }?.let { authUser ->
+                            runCatching {
+                                YtmSessionApi.switchAccount(
+                                    cookies = cookie,
+                                    authUser = authUser,
+                                    pageId = account.pageId.ifBlank { null }
+                                ).getOrThrow()
+                            }.getOrNull()
                         }
-                            ?: accounts.firstOrNull { it.isSelected }
+                    }
 
                     val refreshedSession = YouTubeSessionStore.saveSession(
                         context = context,
                         session = YoutubeSession(
-                            cookie = cookie,
-                            visitorData = visitorData,
-                            dataSyncId = dataSyncId,
-                            authUser = selectedAccount?.authUser
-                                ?.takeIf { it.isNotBlank() }
-                                ?: currentStoredSession?.authUser.orEmpty(),
-                            pageId = selectedAccount?.pageId
-                                ?.takeIf { it.isNotBlank() }
-                                ?: currentStoredSession?.pageId.orEmpty(),
-                            accountName = accountInfo.accountName,
-                            accountEmail = accountInfo.accountEmail,
-                            accountChannelHandle = accountInfo.accountChannelHandle,
-                            accountThumbnail = accountInfo.accountThumbnail,
+                            cookie = switched?.cookie?.ifBlank { cookie } ?: cookie,
+                            visitorData = switched?.visitorData?.ifBlank { visitorData } ?: visitorData,
+                            dataSyncId = switched?.dataSyncId?.ifBlank { dataSyncId } ?: dataSyncId,
+                            authUser = switched?.authUser?.ifBlank { scopedAccount?.authUser.orEmpty() }
+                                ?: scopedAccount?.authUser.orEmpty(),
+                            pageId = switched?.pageId?.ifBlank { scopedAccount?.pageId.orEmpty() }
+                                ?: scopedAccount?.pageId.orEmpty(),
+                            accountName = switched?.accountName?.ifBlank { accountInfo.accountName }
+                                ?: accountInfo.accountName,
+                            accountEmail = switched?.accountEmail?.ifBlank { accountInfo.accountEmail }
+                                ?: accountInfo.accountEmail,
+                            accountChannelHandle = switched?.accountChannelHandle?.ifBlank { accountInfo.accountChannelHandle }
+                                ?: accountInfo.accountChannelHandle,
+                            accountThumbnail = switched?.accountThumbnail?.ifBlank { accountInfo.accountThumbnail }
+                                ?: accountInfo.accountThumbnail,
                             lastAccountRefreshAt = if (accountInfo.hasSession) {
                                 System.currentTimeMillis()
                             } else {
@@ -313,9 +329,8 @@ AnimatedVisibility(
                         ),
                         makePreferred = true
                     )
-
                     applySession(refreshedSession)
-                    linkedAccounts = markSelectedLinkedAccounts(accounts, refreshedSession)
+                    linkedAccounts = markActiveLinkedAccounts(accounts, refreshedSession)
                     if (showToast) Toaster.i("YouTube Music account refreshed")
                     true
                 } catch (e: Exception) {
@@ -359,7 +374,7 @@ AnimatedVisibility(
 
                     applySession(nextSession)
                     clearAccountScopedUiCaches()
-                    linkedAccounts = markSelectedLinkedAccounts(
+                    linkedAccounts = markActiveLinkedAccounts(
                         YtmSessionApi.listAccounts(nextSession.cookie).getOrDefault(emptyList()),
                         nextSession
                     )
@@ -401,16 +416,21 @@ AnimatedVisibility(
                 val currentSession = YouTubeSessionStore.applyCurrentSession(context)
                 applySession(currentSession)
                 if (isLoggedIn && YouTubeSessionStore.shouldRefreshAccount(currentSession)) {
-                    refreshSessionFromApi(showToast = false)
+                    scope.launch {
+                        refreshSessionFromApi(showToast = false)
+                    }
                 } else if (isLoggedIn && linkedAccounts.isEmpty()) {
-                    linkedAccounts = markSelectedLinkedAccounts(
-                        YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList()),
-                        currentSession
-                    )
+                    scope.launch {
+                        linkedAccounts = markActiveLinkedAccounts(
+                            YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList()),
+                            currentSession
+                        )
+                    }
                 } else if (!isLoggedIn) {
                     linkedAccounts = emptyList()
                 }
             }
+
 
                     OtherSwitchSettingEntry(
                         title = stringResource(R.string.enable_youtube_music_login),
@@ -614,6 +634,43 @@ AnimatedVisibility(
                                 }
                             }
 
+                            if (isLoggedIn) {
+                                Card(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    colors = CardDefaults.cardColors(
+                                        containerColor = colorPalette().background1
+                                    )
+                                ) {
+                                    Column(
+                                        modifier = Modifier
+                                            .fillMaxWidth()
+                                            .padding(14.dp),
+                                        verticalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        val activeSession = YouTubeSessionStore.getCurrentSession(context)
+                                        Text(
+                                            text = "Active YouTube scope",
+                                            style = typography().s.copy(fontWeight = FontWeight.SemiBold),
+                                            color = colorPalette().text
+                                        )
+                                        Text(
+                                            text = listOf(
+                                                "Session: ${currentSessionId.ifBlank { "none" }}",
+                                                "Auth user: ${activeSession?.authUser?.ifBlank { "0" } ?: "0"}",
+                                                "Page ID: ${activeSession?.pageId?.ifBlank { "personal channel" } ?: "personal channel"}"
+                                            ).joinToString("\n"),
+                                            style = typography().xs,
+                                            color = colorPalette().textSecondary
+                                        )
+                                        Text(
+                                            text = "Refresh, home feed, likes, playlists, and history now follow this exact scope.",
+                                            style = typography().xxs,
+                                            color = colorPalette().textDisabled
+                                        )
+                                    }
+                                }
+                            }
+
                             linkedAccounts.forEach { linkedAccount ->
                                     OtherSettingsEntry(
                                         title = buildString {
@@ -661,10 +718,14 @@ AnimatedVisibility(
                                             )
                                             applySession(switchedSession)
                                             clearAccountScopedUiCaches()
-                                            linkedAccounts = markSelectedLinkedAccounts(
-                                                linkedAccounts,
-                                                switchedSession
-                                            )
+                                            scope.launch {
+                                                linkedAccounts = markActiveLinkedAccounts(
+                                                    YtmSessionApi.listAccounts(cookie).getOrDefault(emptyList()),
+                                                    switchedSession
+                                                )
+                                                syncSelectedYtmAccountData()
+                                            }
+                                            restartService = true
                                             Toaster.i("Reused saved YouTube session")
                                         }
                                     )

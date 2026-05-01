@@ -258,7 +258,6 @@ private fun YtmHomeCard(
         AsyncImage(
             model = ImageRequest.Builder(LocalContext.current)
                 .data(thumbnailUrl)
-                .crossfade(true)
                 .build(),
             contentDescription = title,
             contentScale = ContentScale.Crop,
@@ -802,16 +801,18 @@ fun HomeQuickPicks(
                         )
                 if (shouldFetchSessionHomeFeed) {
                     val session = YouTubeSessionStore.applyCurrentSession(context)
+                        ?.let { YtmSessionApi.ensureScopedSession(it) }
                     val cookie = session?.cookie?.takeIf { it.isNotBlank() }
                     if (cookie.isNullOrBlank()) {
                         Result.success(null)
                     } else {
                         YouTubeRequestThrottler.run {
-                            YtmSessionApi.fetchHomeFeed(
+                            YtmSessionApi.fetchAllHomeFeed(
                                 cookies = cookie,
                                 authUser = session.authUser.ifBlank { null },
-                                pageId = session.pageId.ifBlank { null }
-                            )
+                                pageId = session.pageId.ifBlank { null },
+                                maxPages = 50
+                            ).map { it.sections }
                         }
                     }
                 } else {

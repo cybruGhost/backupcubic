@@ -74,6 +74,8 @@ import app.it.fast4x.rimusic.utils.forcePlay
 import app.it.fast4x.rimusic.utils.historyTypeKey
 import app.it.fast4x.rimusic.utils.parentalControlEnabledKey
 import app.it.fast4x.rimusic.utils.rememberPreference
+import app.it.fast4x.rimusic.utils.ytAccountChannelHandleKey
+import app.it.fast4x.rimusic.utils.ytCookieKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -102,6 +104,16 @@ fun HistoryList(
 
     val parentalControlEnabled by rememberPreference(parentalControlEnabledKey, false)
     val disableScrollingText by rememberPreference(disableScrollingTextKey, false)
+    val activeYouTubeCookie by rememberPreference(ytCookieKey, "")
+    val activeYouTubeAccountHandle by rememberPreference(ytAccountChannelHandleKey, "")
+    val activeYouTubeSession = YouTubeSessionStore.getCurrentSession(context)
+    val activeYouTubeSessionId = activeYouTubeSession?.sessionId.orEmpty()
+    val activeYouTubeAccountIdentity = listOf(
+        activeYouTubeSessionId,
+        activeYouTubeSession?.authUser.orEmpty(),
+        activeYouTubeSession?.pageId.orEmpty(),
+        activeYouTubeAccountHandle
+    ).joinToString("|")
 
     val search = Search(lazyListState)
 
@@ -151,12 +163,15 @@ fun HistoryList(
     }
 
     var historyPage by persist<Result<HistoryPage>>("home/history/pageResult")
-    LaunchedEffect(historyType) {
+    LaunchedEffect(historyType, activeYouTubeCookie, activeYouTubeAccountIdentity) {
         if (historyType == HistoryType.YTMHistory && isYouTubeLoggedIn()) {
             isYTMLoading = true
             ytmHistoryLoadError = null
-            YouTubeSessionStore.applyCurrentSession()
-            val currentSession = YouTubeSessionStore.getCurrentSession(context)
+            ytmHistorySongs = emptyList()
+            historyPage = null
+            val currentSession = YouTubeSessionStore.applyCurrentSession(context)
+                ?.let { YtmSessionApi.ensureScopedSession(it) }
+            val requiresScopedSessionHistory = !currentSession?.pageId.isNullOrBlank()
 
             val sessionHistory = currentSession?.cookie
                 ?.takeIf { it.isNotBlank() }
@@ -186,6 +201,9 @@ fun HistoryList(
                     }
                     .filter { it.mediaId.isNotBlank() }
                     .distinctBy { it.mediaId }
+            } else if (requiresScopedSessionHistory) {
+                ytmHistorySongs = emptyList()
+                ytmHistoryLoadError = "No history returned for the selected YouTube account."
             } else {
                 historyPage = runCatching {
                     withTimeout(20_000L) {

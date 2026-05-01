@@ -23,6 +23,7 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -42,6 +43,8 @@ import app.it.fast4x.rimusic.enums.PlaylistsType
 import app.it.fast4x.rimusic.enums.UiType
 import app.it.fast4x.rimusic.models.Playlist
 import app.it.fast4x.rimusic.models.PlaylistPreview
+import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.ui.components.ButtonsRow
 import app.it.fast4x.rimusic.ui.components.navigation.header.TabToolBar
 import app.it.fast4x.rimusic.ui.components.tab.ItemSize
@@ -64,7 +67,9 @@ import app.it.fast4x.rimusic.utils.showFloatingIconKey
 import app.it.fast4x.rimusic.utils.showMonthlyPlaylistsKey
 import app.it.fast4x.rimusic.utils.showPinnedPlaylistsKey
 import app.it.fast4x.rimusic.utils.showPipedPlaylistsKey
+import app.it.fast4x.rimusic.utils.syncSelectedYtmAccountData
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.launch
 import app.kreate.android.me.knighthat.component.Sort
 import app.kreate.android.me.knighthat.component.playlist.NewPlaylistDialog
 import app.kreate.android.me.knighthat.component.tab.CsvImportConversionHost
@@ -72,6 +77,7 @@ import app.kreate.android.me.knighthat.component.tab.ImportSongsFromCSV
 import app.kreate.android.me.knighthat.component.tab.Search
 import app.kreate.android.me.knighthat.component.tab.SongShuffler
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.Randomizer
+import app.kreate.android.me.knighthat.utils.Toaster
 
 @ExperimentalMaterial3Api
 @UnstableApi
@@ -86,6 +92,12 @@ fun HomeLibrary(
 ) {
     // Essentials
     val lazyGridState = rememberLazyGridState()
+    val syncScope = rememberCoroutineScope()
+
+    suspend fun repairYtmScope() {
+        YouTubeSessionStore.applyCurrentSession()
+            ?.let { YtmSessionApi.ensureScopedSession(it) }
+    }
 
     // Non-vital
     var playlistType by rememberPreference(playlistTypeKey, PlaylistsType.Playlist)
@@ -153,10 +165,17 @@ fun HomeLibrary(
         PlaylistsType.MonthlyPlaylist to stringResource(R.string.monthly_playlists)
     // END - Additional playlists
 
-LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
+    LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
         if (!showPinnedPlaylists && playlistType == PlaylistsType.PinnedPlaylist) playlistType = PlaylistsType.Playlist
         if (!showMonthlyPlaylists && playlistType == PlaylistsType.MonthlyPlaylist) playlistType = PlaylistsType.Playlist
         if (!showPipedPlaylists && playlistType == PlaylistsType.PipedPlaylist) playlistType = PlaylistsType.Playlist
+    }
+
+    LaunchedEffect(playlistType) {
+        if (playlistType == PlaylistsType.YTPlaylist) {
+            repairYtmScope()
+            syncSelectedYtmAccountData()
+        }
     }
     // START - New playlist
     newPlaylistDialog.Render()
@@ -174,7 +193,13 @@ LaunchedEffect(showPinnedPlaylists, showMonthlyPlaylists, showPipedPlaylists) {
         override fun onClick(index: Int) = onPlaylistClick( itemsOnDisplay[index].playlist )
     }
 
-    val sync = autoSyncToolbutton(R.string.sync)
+    val sync = autoSyncToolbutton(R.string.sync) {
+        syncScope.launch {
+            repairYtmScope()
+            val synced = syncSelectedYtmAccountData()
+            if (!synced) Toaster.i("No new YouTube Music changes were synced")
+        }
+    }
 
     Box(
         modifier = Modifier

@@ -21,9 +21,7 @@ import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.enums.DurationInMinutes
 import app.it.fast4x.rimusic.service.MyDownloadHelper
 import app.it.fast4x.rimusic.service.modern.LOCAL_KEY_PREFIX
-import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.first
 import app.kreate.android.me.knighthat.utils.Toaster
@@ -365,15 +363,10 @@ fun Player.forcePlayAtIndex(mediaItems: List<MediaItem>, mediaItemIndex: Int) {
     val selectedItem = cleanedMediaItems.getOrNull(safeIndex) ?: return
     if (!ensurePlayableOrNotify(selectedItem)) return
 
-    // This will prevent UI from freezing up during conversion
-    CoroutineScope( Dispatchers.Default ).launch {
-        runBlocking( Dispatchers.Main ) {
-            if (!safeSetMediaItems( cleanedMediaItems, safeIndex, C.TIME_UNSET )) return@runBlocking
-            if (!safePrepare()) return@runBlocking
-            restoreGlobalVolume()
-            playWhenReady = true
-        }
-    }
+    if (!safeSetMediaItems(cleanedMediaItems, safeIndex, C.TIME_UNSET)) return
+    if (!safePrepare()) return
+    restoreGlobalVolume()
+    playWhenReady = true
 }
 @UnstableApi
 fun Player.forcePlayFromBeginning(mediaItems: List<MediaItem>) =
