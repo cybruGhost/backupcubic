@@ -41,6 +41,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateListOf
@@ -119,6 +120,8 @@ import app.it.fast4x.rimusic.utils.showFloatingIconKey
 import app.it.fast4x.rimusic.utils.showMyTopPlaylistKey
 import app.it.fast4x.rimusic.utils.showOnDevicePlaylistKey
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import timber.log.Timber
@@ -415,11 +418,17 @@ private fun DownloadedPlaylistFloatingTool(
     var hasCustomStorage by remember { mutableStateOf(MyDownloadHelper.hasCustomDownloadStorage(context)) }
     var customFolderLabel by remember { mutableStateOf(MyDownloadHelper.getCustomDownloadFolderLabel(context)) }
     var showActions by remember { mutableStateOf(false) }
-    var showExportWarning by remember { mutableStateOf(false) }
+    var showMigrateWarning by remember { mutableStateOf(false) }
     var pendingStorageTarget by remember { mutableStateOf<DownloadStorageTarget?>(null) }
     var showMoveExistingPrompt by remember { mutableStateOf(false) }
     var showDisableStoragePrompt by remember { mutableStateOf(false) }
-    var operationState by remember { mutableStateOf<DownloadStorageOperationState?>(null) }
+
+    // ── KEY FIX: use MutableStateFlow so background-thread updates are
+    //            delivered atomically to the Compose main-thread collector.
+    //            Plain `mutableStateOf` assigned from a coroutine on IO can
+    //            race with recomposition and cause the dialog to flash in/out.
+    val operationStateFlow = remember { MutableStateFlow<DownloadStorageOperationState?>(null) }
+    val operationState by operationStateFlow.asStateFlow().collectAsState()
 
     var offsetX by rememberSaveable { mutableFloatStateOf(Float.NaN) }
     var offsetY by rememberSaveable { mutableFloatStateOf(Float.NaN) }
@@ -428,6 +437,13 @@ private fun DownloadedPlaylistFloatingTool(
         hasCustomStorage = customDownloadUri.isNotBlank()
         customFolderLabel = customDownloadPath
     }
+
+    // Helper: post a state update safely onto the main thread regardless of
+    // which dispatcher the caller is on, so Compose always sees a consistent value.
+    suspend fun postOperationState(state: DownloadStorageOperationState?) =
+        withContext(Dispatchers.Main.immediate) {
+            operationStateFlow.value = state
+        }
 
     val exportLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.OpenDocumentTree()
@@ -448,10 +464,12 @@ private fun DownloadedPlaylistFloatingTool(
         }
 
         coroutineScope.launch {
-            operationState = DownloadStorageOperationState(
-                title = context.getString(R.string.downloaded_tools_export_title),
-                message = context.getString(R.string.downloaded_tools_export_preparing),
-                progress = 0f,
+            postOperationState(
+                DownloadStorageOperationState(
+                    title = context.getString(R.string.downloaded_tools_export_title),
+                    message = context.getString(R.string.downloaded_tools_export_preparing),
+                    progress = 0f,
+                )
             )
 
             val result = runCatching {
@@ -461,22 +479,30 @@ private fun DownloadedPlaylistFloatingTool(
                     songs = downloadedSongs,
                     treeUri = uri
                 ) { current, total, title ->
-                    operationState = DownloadStorageOperationState(
-                        title = context.getString(R.string.downloaded_tools_export_title),
-                        message = context.getString(R.string.downloaded_tools_export_copying),
-                        currentItem = title,
-                        progress = if (total <= 0) null else current.toFloat() / total.toFloat(),
-                    )
+                    // Progress updates from IO thread — postOperationState
+                    // switches to Main.immediate before writing the flow.
+                    coroutineScope.launch {
+                        postOperationState(
+                            DownloadStorageOperationState(
+                                title = context.getString(R.string.downloaded_tools_export_title),
+                                message = context.getString(R.string.downloaded_tools_export_copying),
+                                currentItem = title,
+                                progress = if (total <= 0) null
+                                            else current.toFloat() / total.toFloat(),
+                            )
+                        )
+                    }
                 }
             }
 
-            operationState = null
+            // Clear the dialog only after the operation is fully done.
+            postOperationState(null)
 
             result.onSuccess { summary ->
                 when {
                     summary.exportedCount > 0 -> Toaster.s(R.string.downloaded_tools_export_completed)
-                    summary.skippedCount > 0 -> Toaster.i(R.string.downloaded_tools_export_none_available)
-                    else -> Toaster.i(R.string.downloaded_tools_no_songs)
+                    summary.skippedCount > 0  -> Toaster.i(R.string.downloaded_tools_export_none_available)
+                    else                      -> Toaster.i(R.string.downloaded_tools_no_songs)
                 }
             }.onFailure { throwable ->
                 Timber.e(throwable, "Failed exporting downloaded songs")
@@ -516,12 +542,8 @@ private fun DownloadedPlaylistFloatingTool(
         val maxX = (constraints.maxWidth - fabSizePx - horizontalPaddingPx).coerceAtLeast(horizontalPaddingPx)
         val maxY = (constraints.maxHeight - fabSizePx - verticalPaddingPx).coerceAtLeast(verticalPaddingPx)
 
-        if (offsetX.isNaN()) {
-            offsetX = maxX
-        }
-        if (offsetY.isNaN()) {
-            offsetY = maxY
-        }
+        if (offsetX.isNaN()) offsetX = maxX
+        if (offsetY.isNaN()) offsetY = maxY
 
         FloatingActionButton(
             onClick = { showActions = true },
@@ -541,7 +563,7 @@ private fun DownloadedPlaylistFloatingTool(
                 }
                 .pointerInput(maxX, maxY) {
                     detectDragGestures(
-                        onDrag = { change, dragAmount ->
+                        onDrag = { _, dragAmount ->
                             offsetX = (offsetX + dragAmount.x).coerceIn(horizontalPaddingPx, maxX)
                             offsetY = (offsetY + dragAmount.y).coerceIn(verticalPaddingPx / 2f, maxY)
                         }
@@ -591,22 +613,16 @@ private fun DownloadedPlaylistFloatingTool(
                         subtitle = stringResource(R.string.downloaded_tools_export_action_subtitle)
                     ) {
                         showActions = false
-                        showExportWarning = true
+                        showMigrateWarning = true
                     }
                     DownloadedSongsActionTile(
                         title = stringResource(
-                            if (hasCustomStorage) {
-                                R.string.downloaded_tools_change_storage_action
-                            } else {
-                                R.string.downloaded_tools_set_storage_action
-                            }
+                            if (hasCustomStorage) R.string.downloaded_tools_change_storage_action
+                            else R.string.downloaded_tools_set_storage_action
                         ),
                         subtitle = stringResource(
-                            if (hasCustomStorage) {
-                                R.string.downloaded_tools_change_storage_action_subtitle
-                            } else {
-                                R.string.downloaded_tools_set_storage_action_subtitle
-                            }
+                            if (hasCustomStorage) R.string.downloaded_tools_change_storage_action_subtitle
+                            else R.string.downloaded_tools_set_storage_action_subtitle
                         )
                     ) {
                         showActions = false
@@ -632,9 +648,9 @@ private fun DownloadedPlaylistFloatingTool(
         )
     }
 
-    if (showExportWarning) {
+    if (showMigrateWarning) {
         AlertDialog(
-            onDismissRequest = { showExportWarning = false },
+            onDismissRequest = { showMigrateWarning = false },
             containerColor = colorPalette().background1,
             titleContentColor = colorPalette().text,
             textContentColor = colorPalette().textSecondary,
@@ -653,7 +669,7 @@ private fun DownloadedPlaylistFloatingTool(
             confirmButton = {
                 TextButton(
                     onClick = {
-                        showExportWarning = false
+                        showMigrateWarning = false
                         exportLauncher.launch(null)
                     }
                 ) {
@@ -661,7 +677,7 @@ private fun DownloadedPlaylistFloatingTool(
                 }
             },
             dismissButton = {
-                TextButton(onClick = { showExportWarning = false }) {
+                TextButton(onClick = { showMigrateWarning = false }) {
                     Text(stringResource(R.string.cancel), color = colorPalette().text)
                 }
             }
@@ -691,15 +707,17 @@ private fun DownloadedPlaylistFloatingTool(
                     onClick = {
                         showDisableStoragePrompt = false
                         coroutineScope.launch {
-                            operationState = DownloadStorageOperationState(
-                                title = context.getString(R.string.downloaded_tools_disable_storage_title),
-                                message = context.getString(R.string.downloaded_tools_disable_storage_progress)
+                            postOperationState(
+                                DownloadStorageOperationState(
+                                    title = context.getString(R.string.downloaded_tools_disable_storage_title),
+                                    message = context.getString(R.string.downloaded_tools_disable_storage_progress)
+                                )
                             )
                             withContext(Dispatchers.IO) {
                                 MyDownloadHelper.clearCustomDownloadStorage(context)
                                 MyDownloadHelper.reinitializeDownloadStorage(context)
                             }
-                            operationState = null
+                            postOperationState(null)
                             hasCustomStorage = false
                             customFolderLabel = ""
                             Toaster.s(R.string.downloaded_tools_disable_storage_done)
@@ -761,9 +779,9 @@ private fun DownloadedPlaylistFloatingTool(
                                 target = target,
                                 songs = songs.fastDistinctBy(Song::id),
                                 moveExisting = true,
-                                onProgress = { state -> operationState = state }
+                                onProgress = { state -> postOperationState(state) }
                             )
-                            operationState = null
+                            postOperationState(null)
                             hasCustomStorage = MyDownloadHelper.hasCustomDownloadStorage(context)
                             customFolderLabel = MyDownloadHelper.getCustomDownloadFolderLabel(context)
                             RestartAppDialog.showDialog()
@@ -786,9 +804,9 @@ private fun DownloadedPlaylistFloatingTool(
                                     target = target,
                                     songs = songs.fastDistinctBy(Song::id),
                                     moveExisting = false,
-                                    onProgress = { state -> operationState = state }
+                                    onProgress = { state -> postOperationState(state) }
                                 )
-                                operationState = null
+                                postOperationState(null)
                                 hasCustomStorage = MyDownloadHelper.hasCustomDownloadStorage(context)
                                 customFolderLabel = MyDownloadHelper.getCustomDownloadFolderLabel(context)
                                 RestartAppDialog.showDialog()
@@ -796,29 +814,6 @@ private fun DownloadedPlaylistFloatingTool(
                         }
                     ) {
                         Text(stringResource(R.string.downloaded_tools_future_only), color = colorPalette().text)
-                    }
-                    TextButton(
-                        onClick = {
-                            val target = pendingStorageTarget ?: return@TextButton
-                            showMoveExistingPrompt = false
-                            pendingStorageTarget = null
-                            coroutineScope.launch {
-                                applyDownloadStorageSelection(
-                                    context = context,
-                                    target = target,
-                                    songs = songs.fastDistinctBy(Song::id),
-                                    moveExisting = false,
-                                    onProgress = { state -> operationState = state }
-                                )
-                                operationState = null
-                                hasCustomStorage = MyDownloadHelper.hasCustomDownloadStorage(context)
-                                customFolderLabel = MyDownloadHelper.getCustomDownloadFolderLabel(context)
-                                Toaster.i(R.string.downloaded_tools_continue_anyway_done)
-                                RestartAppDialog.showDialog()
-                            }
-                        }
-                    ) {
-                        Text(stringResource(R.string.downloaded_tools_continue_anyway), color = colorPalette().accent)
                     }
                     TextButton(
                         onClick = {
@@ -833,6 +828,9 @@ private fun DownloadedPlaylistFloatingTool(
         )
     }
 
+    // Progress dialog — driven by the StateFlow so it never flickers.
+    // onDismissRequest is intentionally empty: the operation is non-cancellable
+    // once started, so tapping outside does nothing.
     val activeOperation = operationState
     if (activeOperation != null) {
         AlertDialog(
@@ -871,7 +869,6 @@ private fun DownloadedPlaylistFloatingTool(
             confirmButton = {}
         )
     }
-
 }
 
 @Composable
@@ -937,22 +934,16 @@ private fun DownloadStorageStatusCard(
             ) {
                 Text(
                     text = stringResource(
-                        if (isExpanded) {
-                            R.string.downloaded_tools_status_title_expanded
-                        } else {
-                            R.string.downloaded_tools_status_title_collapsed
-                        }
+                        if (isExpanded) R.string.downloaded_tools_status_title_expanded
+                        else R.string.downloaded_tools_status_title_collapsed
                     ),
                     style = typography().xs.semiBold,
                     color = colorPalette().text
                 )
                 Text(
                     text = stringResource(
-                        if (isExpanded) {
-                            R.string.downloaded_tools_hide_details
-                        } else {
-                            R.string.downloaded_tools_show_details
-                        }
+                        if (isExpanded) R.string.downloaded_tools_hide_details
+                        else R.string.downloaded_tools_show_details
                     ),
                     style = typography().xxs,
                     color = colorPalette().accent
@@ -991,7 +982,7 @@ private suspend fun applyDownloadStorageSelection(
     target: DownloadStorageTarget,
     songs: List<Song>,
     moveExisting: Boolean,
-    onProgress: (DownloadStorageOperationState) -> Unit,
+    onProgress: suspend (DownloadStorageOperationState) -> Unit,
 ) {
     val result = withContext(Dispatchers.IO) {
         runCatching {
@@ -1009,14 +1000,17 @@ private suspend fun applyDownloadStorageSelection(
                     songs = songs,
                     treeUri = target.treeUri
                 ) { current, total, title ->
-                    onProgress(
-                        DownloadStorageOperationState(
-                            title = context.getString(R.string.downloaded_tools_copy_existing_title),
-                            message = context.getString(R.string.downloaded_tools_copy_existing_progress),
-                            currentItem = title,
-                            progress = if (total <= 0) null else current.toFloat() / total.toFloat()
+                    // onProgress already switches to Main.immediate via postOperationState
+                    kotlinx.coroutines.runBlocking {
+                        onProgress(
+                            DownloadStorageOperationState(
+                                title = context.getString(R.string.downloaded_tools_copy_existing_title),
+                                message = context.getString(R.string.downloaded_tools_copy_existing_progress),
+                                currentItem = title,
+                                progress = if (total <= 0) null else current.toFloat() / total.toFloat()
+                            )
                         )
-                    )
+                    }
                 }
             }
 
@@ -1027,20 +1021,16 @@ private suspend fun applyDownloadStorageSelection(
 
             MyDownloadHelper.reinitializeDownloadStorage(context)
 
-            if (moveExisting) {
-                context.getString(R.string.downloaded_tools_storage_updated_with_copy)
-            } else {
-                context.getString(R.string.downloaded_tools_storage_updated_future_only)
-            }
+            if (moveExisting) context.getString(R.string.downloaded_tools_storage_updated_with_copy)
+            else context.getString(R.string.downloaded_tools_storage_updated_future_only)
         }
     }
 
-    result.onSuccess { message ->
-        Toaster.s(message)
-    }.onFailure { throwable ->
-        Timber.e(throwable, "Failed to update download storage")
-        Toaster.e(throwable.message ?: context.getString(R.string.downloaded_tools_storage_update_failed))
-    }
+    result.onSuccess { message -> Toaster.s(message) }
+        .onFailure { throwable ->
+            Timber.e(throwable, "Failed to update download storage")
+            Toaster.e(throwable.message ?: context.getString(R.string.downloaded_tools_storage_update_failed))
+        }
 }
 
 @UnstableApi
@@ -1086,10 +1076,7 @@ private suspend fun exportDownloadedSongsToTree(
         exportedCount++
     }
 
-    ExportSummary(
-        exportedCount = exportedCount,
-        skippedCount = skippedCount
-    )
+    ExportSummary(exportedCount = exportedCount, skippedCount = skippedCount)
 }
 
 private fun resolveTreeUriToFile(context: Context, treeUri: Uri): File? {
@@ -1104,12 +1091,10 @@ private fun resolveTreeUriToFile(context: Context, treeUri: Uri): File? {
             val root = Environment.getExternalStorageDirectory()
             if (relativePath.isBlank()) root else root.resolve(relativePath)
         }
-
         "home" -> {
             val documentsDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS)
             if (relativePath.isBlank()) documentsDir else documentsDir.resolve(relativePath)
         }
-
         else -> {
             context.getExternalFilesDirs(null)
                 .filterNotNull()

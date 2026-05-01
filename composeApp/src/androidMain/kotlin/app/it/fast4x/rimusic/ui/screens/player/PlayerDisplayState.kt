@@ -96,12 +96,12 @@ fun rememberDisplayedPlayerState(
         currentMediaItem,
     ) {
         derivedStateOf {
-            if (crossfadeUiState.isEnabled) {
+            if (crossfadeUiState.isActive || crossfadeUiState.isHighlightActive) {
                 crossfadeUiState.displayMediaItem
                     ?: binder.displayedMediaItem
                     ?: currentMediaItem
             } else {
-                binder.displayedMediaItem ?: currentMediaItem
+                currentMediaItem ?: binder.displayedMediaItem
             }
         }
     }

@@ -20,7 +20,10 @@ import it.fast4x.innertube.requests.ArtistPage
 import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.enums.PlayerPosition
 import app.it.fast4x.rimusic.enums.TransitionEffect
+import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
+import app.it.fast4x.rimusic.extensions.youtubelogin.YtmSessionApi
 import app.it.fast4x.rimusic.models.Artist
+import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.utils.asMediaItem
 import app.it.fast4x.rimusic.utils.playerPositionKey
 import app.it.fast4x.rimusic.utils.rememberPreference
@@ -68,6 +71,49 @@ fun ArtistScreenModern(
     }
     var artistPage: ArtistPage? by remember { mutableStateOf( null ) }
     LaunchedEffect( Unit ) {
+        val session = YouTubeSessionStore.applyCurrentSession()
+        val apiArtist = session
+            ?.takeIf { it.cookie.isNotBlank() }
+            ?.let {
+                YtmSessionApi.fetchArtist(
+                    cookies = it.cookie,
+                    artistId = browseId,
+                    authUser = it.authUser.ifBlank { null },
+                    pageId = it.pageId.ifBlank { null }
+                ).getOrNull()
+            }
+            ?: YtmSessionApi.fetchArtist("", browseId, guest = true).getOrNull()
+
+        if (apiArtist != null) {
+            val onlineArtist = Artist(
+                id = browseId,
+                name = PropUtils.retainIfModified(localArtist?.name, apiArtist.name),
+                thumbnailUrl = PropUtils.retainIfModified(
+                    localArtist?.thumbnailUrl,
+                    apiArtist.thumbnailUrl.ifBlank { apiArtist.thumbnail }
+                ),
+                timestamp = localArtist?.timestamp ?: System.currentTimeMillis(),
+                bookmarkedAt = localArtist?.bookmarkedAt,
+                isYoutubeArtist = true
+            )
+            val songs = (apiArtist.songs + apiArtist.videos)
+                .distinctBy { it.videoId }
+                .map { track ->
+                    Song(
+                        id = track.videoId,
+                        title = track.title,
+                        artistsText = apiArtist.name,
+                        durationText = track.duration.takeIf { it.isNotBlank() },
+                        thumbnailUrl = track.thumbnailUrl.ifBlank { track.thumbnail }.takeIf { it.isNotBlank() }
+                    )
+                }
+
+            Database.asyncTransaction {
+                artistTable.upsert(onlineArtist)
+                mapIgnore(onlineArtist, *songs.toTypedArray())
+            }
+        }
+
         YtMusic.getArtistPage( browseId )
                .onSuccess { online ->
                    artistPage = online
@@ -123,13 +169,15 @@ fun ArtistScreenModern(
     ) { currentTabIndex ->
         when (currentTabIndex) {
             0 -> {
-                if (artistPage == null) {
+                if (artistPage == null && localArtist == null) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
                         Loader()
                     }
+                } else if (artistPage == null) {
+                    ArtistLocalSongs(navController, localArtist, artistPage, thumbnailPainter)
                 } else {
                     ArtistDetails(navController, localArtist, artistPage, thumbnailPainter)
                 }

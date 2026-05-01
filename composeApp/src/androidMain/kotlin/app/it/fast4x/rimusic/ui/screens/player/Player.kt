@@ -118,6 +118,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
 import androidx.palette.graphics.Palette
 import app.kreate.android.R
@@ -294,6 +295,7 @@ import androidx.media3.ui.PlayerView
 import androidx.media3.common.MimeTypes
 import app.it.fast4x.rimusic.ui.screens.spotify.CanvasPlayerManager
 import androidx.compose.material3.CircularProgressIndicator
+import app.it.fast4x.rimusic.service.MyDownloadHelper
 
 // ─────────────────────────────────────────────────────────────
 // FIX 1 helper: network availability check.
@@ -408,6 +410,7 @@ private fun PlayerContent(
 
     val fadeAdjuster = FadeAdjuster()
     fadeAdjuster.setContext(context)
+    val currentSongDownloadState by binder.service.currentSongStateDownload.collectAsState()
 
     LaunchedEffect(playbackFadeAudioDuration) {
         fadeAdjuster.setDuration(playbackFadeAudioDuration.milliSeconds)
@@ -491,6 +494,9 @@ private fun PlayerContent(
     var retryWithAlternateSourcesNonce by remember { mutableIntStateOf(0) }
     var lastSearchFallbackMediaId by remember { mutableStateOf<String?>(null) }
     var playbackErrorMessage by remember { mutableStateOf<String?>(null) }
+    val hasNetworkConnection = isNetworkAvailable(context)
+    val currentErrorItem = binder.displayedMediaItem ?: binder.player.currentMediaItem
+    val isCurrentSongDownloaded = currentSongDownloadState == Download.STATE_COMPLETED
 
     fun PagerState.offsetForPage(page: Int) = (currentPage - page) + currentPageOffsetFraction
 
@@ -543,6 +549,8 @@ private fun PlayerContent(
                     context = context,
                     error = playbackException,
                     isLocal = binder.player.currentWindow?.mediaItem?.isLocal == true,
+                    isDownloaded = isCurrentSongDownloaded,
+                    isNetworkAvailable = hasNetworkConnection,
                 )
                 // If the error is a network error and we were mid-stream, ExoPlayer
                 // will retry automatically when the network comes back. We don't
@@ -557,13 +565,15 @@ private fun PlayerContent(
     //   offline, we skip the search and let ExoPlayer retry on its own.
     LaunchedEffect(playerError, alternateSourceRetryEnabled, retryWithAlternateSourcesNonce) {
         if (alternateSourceRetryEnabled && playerError != null) {
+            val currentItem = binder.displayedMediaItem ?: binder.player.currentMediaItem ?: return@LaunchedEffect
+            if (currentItem.isLocal || isCurrentSongDownloaded) return@LaunchedEffect
+
             // ── FIX 1: Do NOT attempt any HTTP if we are offline.
             //   This prevents UnknownHostException / IOException from crashing
             //   the player when the network drops mid-stream.
             if (!isNetworkAvailable(context)) return@LaunchedEffect
 
             try {
-                val currentItem = binder.displayedMediaItem ?: binder.player.currentMediaItem ?: return@LaunchedEffect
                 val currentMediaId = currentItem.mediaId
 
                 if (currentMediaId == lastSearchFallbackMediaId) return@LaunchedEffect
@@ -2244,13 +2254,33 @@ private fun PlayerContent(
             isDisplayed = playbackErrorMessage != null,
             messageProvider = { playbackErrorMessage.orEmpty() },
             onDismiss = { playbackErrorMessage = null },
-            actionLabel = if (playerError != null) stringResource(R.string.retry_with_other_sources) else null,
-            actionHint = if (playerError != null) stringResource(R.string.retry_with_other_sources_hint) else null,
+            actionLabel = when {
+                playerError != null && isCurrentSongDownloaded && hasNetworkConnection ->
+                    stringResource(R.string.redownload_song)
+                playerError != null && !isCurrentSongDownloaded && hasNetworkConnection && alternateSourceRetryEnabled ->
+                    stringResource(R.string.retry_with_other_sources)
+                else -> null
+            },
+            actionHint = when {
+                playerError != null && isCurrentSongDownloaded && hasNetworkConnection ->
+                    stringResource(R.string.redownload_song_hint)
+                playerError != null && isCurrentSongDownloaded ->
+                    stringResource(R.string.downloaded_song_corrupt_offline_message)
+                playerError != null && !isCurrentSongDownloaded && hasNetworkConnection && alternateSourceRetryEnabled ->
+                    stringResource(R.string.retry_with_other_sources_hint)
+                else -> null
+            },
             onAction = if (playerError != null) {
                 {
                     playbackErrorMessage = null
-                    lastSearchFallbackMediaId = null
-                    retryWithAlternateSourcesNonce++
+                    currentErrorItem?.let { mediaItem ->
+                        if (isCurrentSongDownloaded) {
+                            MyDownloadHelper.redownloadSong(context, mediaItem)
+                        } else {
+                            lastSearchFallbackMediaId = null
+                            retryWithAlternateSourcesNonce++
+                        }
+                    }
                 }
             } else null,
         )

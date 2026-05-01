@@ -1080,6 +1080,9 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 deepestCause?.javaClass?.simpleName?.contains("Codec", ignoreCase = true) == true
         val isExtractorDriftIssue = isExtractorDriftError(error, deepestCause)
         val shouldTryCurrentSongRecovery = shouldRecoverCurrentSong(error, deepestCause)
+        val isDownloadedCurrentSong =
+            currentSongStateDownload.value == Download.STATE_COMPLETED ||
+                (currentMediaId.isNotBlank() && MyDownloadHelper.isSongDownloaded(currentMediaId))
 
         Timber.e(
             error,
@@ -1139,14 +1142,14 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 return
             }
 
-            if (player.hasNextMediaItem()) {
-                val prev = player.currentMediaItem
-                player.playNext()
-                showSmartMessage("Source failed for ${prev?.mediaMetadata?.title ?: "this song"}. Skipped to the next track.")
+            player.pause()
+            player.playWhenReady = false
+            if (isDownloadedCurrentSong) {
+                showSmartMessage("This downloaded song looks corrupted. Re-download it when internet is available.")
             } else {
-                player.pause()
-                Toaster.e("This song source failed. It looks like an extractor/source issue, not your internet.")
+                showSmartMessage("This song source failed. Playback has been paused so you can retry or choose another source.")
             }
+            Toaster.e("This song source failed. Playback paused.")
             return
         }
 

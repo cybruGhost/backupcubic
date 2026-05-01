@@ -155,31 +155,31 @@ private fun isAcceptedSection(title: String): Boolean {
 }
 
 private fun YtmHomeSectionItem.asPlayableSong(): Song? {
-    val mediaId = videoId.trim()
+    val mediaId = videoId.trim().ifBlank { id.trim() }
     val cleanedTitle = title.trim()
     if (mediaId.isBlank() || cleanedTitle.isBlank()) return null
     return Song(
         id = mediaId,
         title = cleanedTitle,
-        artistsText = subtitle.trim().ifBlank { null },
+        artistsText = artistsText.trim().ifBlank { subtitle.trim().ifBlank { null } },
         durationText = null,
-        thumbnailUrl = thumbnail.trim().ifBlank { null },
+        thumbnailUrl = thumbnailUrl.trim().ifBlank { thumbnail.trim().ifBlank { null } },
         totalPlayTimeMs = 1L
     )
 }
 
 private fun YtmHomeSectionItem.asAlbum(): Album = Album(
-    id = browseId.ifBlank { playlistId.ifBlank { title.trim() } },
+    id = browseId.ifBlank { albumId.ifBlank { playlistId.ifBlank { id.ifBlank { title.trim() } } } },
     title = title.trim().ifBlank { null },
-    thumbnailUrl = thumbnail.trim().ifBlank { null },
-    authorsText = subtitle.trim().ifBlank { null },
+    thumbnailUrl = thumbnailUrl.trim().ifBlank { thumbnail.trim().ifBlank { null } },
+    authorsText = artistsText.trim().ifBlank { subtitle.trim().ifBlank { null } },
     isYoutubeAlbum = true
 )
 
 private fun YtmHomeSectionItem.asArtist(): Artist = Artist(
-    id = browseId.ifBlank { title.trim() },
+    id = browseId.ifBlank { artistId.ifBlank { artistIds.firstOrNull().orEmpty().ifBlank { id.ifBlank { title.trim() } } } },
     name = title.trim().ifBlank { null },
-    thumbnailUrl = thumbnail.trim().ifBlank { null },
+    thumbnailUrl = thumbnailUrl.trim().ifBlank { thumbnail.trim().ifBlank { null } },
     isYoutubeArtist = true
 )
 
@@ -214,7 +214,7 @@ private fun YtmPlaylistsFooter(
         LazyRow(
             contentPadding = PaddingValues(start = 8.dp, end = 8.dp, bottom = 4.dp)
         ) {
-            items(playlists.take(12), key = { it.playlistId.ifBlank { it.title } }) { playlist ->
+            items(playlists, key = { it.playlistId.ifBlank { it.title } }) { playlist ->
                 PlaylistItem(
                     browseId = playlist.playlistId,
                     thumbnailContent = {
@@ -443,6 +443,7 @@ fun HomePage(
             return
         }
         val currentSession = YouTubeSessionStore.applyCurrentSession(context)
+            ?.let { YtmSessionApi.ensureScopedSession(it) }
         val cookie = currentSession?.cookie?.takeIf { it.isNotBlank() }
         if (cookie.isNullOrBlank()) {
             homePageResult = Result.success(null)
@@ -453,11 +454,12 @@ fun HomePage(
         coroutineScope {
             val homeDeferred = async(Dispatchers.IO) {
                 YouTubeRequestThrottler.run {
-                    YtmSessionApi.fetchHomeFeed(
+                    YtmSessionApi.fetchAllHomeFeed(
                         cookies = cookie,
                         authUser = currentSession.authUser.ifBlank { null },
-                        pageId = currentSession.pageId.ifBlank { null }
-                    )
+                        pageId = currentSession.pageId.ifBlank { null },
+                        maxPages = 50
+                    ).map { it.sections }
                 }
             }
             val playlistsDeferred = async(Dispatchers.IO) {
@@ -636,7 +638,6 @@ fun HomePage(
                                         YtmHomeSectionStyle.SongGrid -> {
                                             val gridItems = section.items
                                                 .filter { it.type == "song" || it.type == "video" }
-                                                .let { items -> if (isExpanded) items else items.take(8) }
                                             if (gridItems.isNotEmpty()) {
                                                 val rowCount = (gridItems.size + 1) / 2
                                                 val rowHeight = songThumbnailSizeDp + 24.dp
@@ -678,7 +679,6 @@ fun HomePage(
                                         YtmHomeSectionStyle.VideoRail -> {
                                             val railItems = section.items
                                                 .filter { it.type == "song" || it.type == "video" }
-                                                .let { items -> if (isExpanded) items else items.take(18) }
                                             LazyRow(
                                                 contentPadding = PaddingValues(start = 8.dp, top = 0.dp, end = 8.dp + endInsetDp, bottom = 0.dp)
                                             ) {
@@ -707,7 +707,6 @@ fun HomePage(
                                         YtmHomeSectionStyle.AlbumRail -> {
                                             val albumItems = section.items
                                                 .filter { it.type == "album" }
-                                                .let { items -> if (isExpanded) items else items.take(18) }
                                             LazyRow(
                                                 contentPadding = PaddingValues(start = 8.dp, top = 0.dp, end = 8.dp + endInsetDp, bottom = 0.dp)
                                             ) {
@@ -730,7 +729,6 @@ fun HomePage(
                                         YtmHomeSectionStyle.ArtistRail -> {
                                             val artistItems = section.items
                                                 .filter { it.type == "artist" }
-                                                .let { items -> if (isExpanded) items else items.take(18) }
                                             LazyRow(
                                                 contentPadding = PaddingValues(start = 8.dp, top = 0.dp, end = 8.dp + endInsetDp, bottom = 0.dp)
                                             ) {
@@ -751,7 +749,6 @@ fun HomePage(
                                         YtmHomeSectionStyle.PlaylistRail -> {
                                             val playlistItems = section.items
                                                 .filter { it.type == "playlist" }
-                                                .let { items -> if (isExpanded) items else items.take(18) }
                                             LazyRow(
                                                 contentPadding = PaddingValues(start = 8.dp, top = 0.dp, end = 8.dp + endInsetDp, bottom = 0.dp)
                                             ) {

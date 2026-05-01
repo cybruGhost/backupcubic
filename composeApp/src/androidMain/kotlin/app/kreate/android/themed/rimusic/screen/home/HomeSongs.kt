@@ -4,6 +4,8 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -15,11 +17,14 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.Surface
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
@@ -35,6 +40,7 @@ import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
+import app.kreate.android.R
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.models.bodies.NextBody
 import it.fast4x.innertube.requests.relatedSongs
@@ -395,6 +401,14 @@ fun HomeSongs(
     deleteDownloadsDialog.Render()
     //</editor-fold>
 
+    val bulkDownloadIds by MyDownloadHelper.bulkDownloadIds.collectAsState()
+    val downloadProgresses by MyDownloadHelper.progresses.collectAsState()
+    val downloadStates by MyDownloadHelper.downloads.collectAsState()
+
+    val visibleBulkDownloadSongs = remember(itemsOnDisplay, bulkDownloadIds) {
+        itemsOnDisplay.filter { it.id in bulkDownloadIds }
+    }
+
     LazyColumn(
         state = lazyListState,
         userScrollEnabled = !isLoading,
@@ -403,6 +417,81 @@ fun HomeSongs(
             .background(colorPalette().background0)
             .fillMaxSize()
     ) {
+        if (visibleBulkDownloadSongs.isNotEmpty()) {
+            val total = visibleBulkDownloadSongs.size
+            val completed = visibleBulkDownloadSongs.count { song ->
+                downloadStates[song.id]?.state == Download.STATE_COMPLETED
+            }
+            val active = visibleBulkDownloadSongs.count { song ->
+                downloadStates[song.id]?.state in setOf(
+                    Download.STATE_DOWNLOADING,
+                    Download.STATE_QUEUED,
+                    Download.STATE_RESTARTING
+                )
+            }
+            val progress = (
+                visibleBulkDownloadSongs.sumOf { song ->
+                    when (downloadStates[song.id]?.state) {
+                        Download.STATE_COMPLETED -> 1.0
+                        Download.STATE_DOWNLOADING -> downloadProgresses[song.id]?.toDouble() ?: 0.0
+                        else -> 0.0
+                    }
+                }.toFloat() / total.toFloat()
+                ).coerceIn(0f, 1f)
+
+            item(key = "bulk_download_progress") {
+                Surface(
+                    color = colorPalette().background1,
+                    shape = thumbnailShape(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                ) {
+                    Column(
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        BasicText(
+                            text = context.getString(R.string.download_all_progress_title, completed, total),
+                            style = typography().xs.semiBold,
+                            maxLines = 1
+                        )
+                        BasicText(
+                            text = context.getString(R.string.download_all_progress_subtitle, active),
+                            style = typography().xxs.color(colorPalette().textSecondary),
+                            maxLines = 2,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        LinearProgressIndicator(
+                            progress = { progress },
+                            color = colorPalette().accent,
+                            trackColor = colorPalette().background3,
+                            modifier = Modifier.fillMaxWidth()
+                        )
+                        visibleBulkDownloadSongs
+                            .firstOrNull { song ->
+                                downloadStates[song.id]?.state in setOf(
+                                    Download.STATE_DOWNLOADING,
+                                    Download.STATE_QUEUED,
+                                    Download.STATE_RESTARTING
+                                )
+                            }
+                            ?.let { activeSong ->
+                                BasicText(
+                                    text = context.getString(
+                                        R.string.download_all_progress_current_song,
+                                        activeSong.title
+                                    ),
+                                    style = typography().xxs.color(colorPalette().text),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                    }
+                }
+            }
+        }
+
         if( isLoading )
             items(
                 count = 20,

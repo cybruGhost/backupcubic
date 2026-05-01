@@ -30,7 +30,6 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.ErrorResult
 import coil3.request.ImageRequest
 import coil3.request.allowHardware
-import coil3.request.crossfade
 import coil3.request.SuccessResult
 import coil3.toBitmap
 import it.fast4x.innertube.models.Thumbnail
@@ -189,7 +188,6 @@ object ImageCacheFactory {
 
     val LOADER: ImageLoader by lazy {
         ImageLoader.Builder(appContext())
-            .crossfade(true)
             .memoryCache { MemoryCache.Builder().maxSizePercent(appContext(), 0.15).strongReferencesEnabled(true).build() }
             .diskCache(DISK_CACHE)
             .components {
