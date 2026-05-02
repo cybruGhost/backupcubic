@@ -10,7 +10,6 @@ import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 
 data class PlayerSet(
     val player: ExoPlayer,
-    val crossfadeOverlayPlayer: ExoPlayer,
 )
 
 object PlayerInitializer {
@@ -30,13 +29,6 @@ object PlayerInitializer {
                     .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
             )
         }
-        val crossfadeTrackSelector = DefaultTrackSelector(context).apply {
-            setParameters(
-                buildUponParameters()
-                    .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
-            )
-        }
-
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
             .setRenderersFactory(renderersFactory)
@@ -49,16 +41,6 @@ object PlayerInitializer {
             .setSeekForwardIncrementMs(5000)
             .build()
 
-        val crossfadeOverlayPlayer = ExoPlayer.Builder(context)
-            .setMediaSourceFactory(mediaSourceFactory)
-            .setRenderersFactory(renderersFactory)
-            .setTrackSelector(crossfadeTrackSelector)
-            .setHandleAudioBecomingNoisy(false)
-            .setWakeMode(C.WAKE_MODE_NETWORK)
-            .setAudioAttributes(audioAttributes, false)
-            .setUsePlatformDiagnostics(false)
-            .build()
-
-        return PlayerSet(player, crossfadeOverlayPlayer)
+        return PlayerSet(player)
     }
 }

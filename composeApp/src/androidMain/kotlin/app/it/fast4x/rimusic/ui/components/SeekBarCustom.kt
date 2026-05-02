@@ -18,7 +18,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -55,7 +54,6 @@ fun SeekBarCustom(
     scrubberRadius: Dp = 2.dp,
     shape: Shape = RectangleShape,
     drawSteps: Boolean = false,
-    crossfadePalette: List<Color>? = null,
 ) {
     var _barHeight = barHeight
     var _backbarHeight = barHeight
@@ -90,7 +88,6 @@ fun SeekBarCustom(
     val currentBarHeight by transition.animateDp(label = "") { if (it) _scrubberRadius else _barHeight }
     val currentScrubberRadius by transition.animateDp(label = "") { if (it) 8.dp else _scrubberRadius }
     val progressFraction = customSeekBarFraction(value, minimumValue, maximumValue)
-    val progressBrush = crossfadePalette?.takeIf { it.isNotEmpty() }?.let(Brush::horizontalGradient)
 
     Box(
         modifier = modifier
@@ -179,13 +176,7 @@ fun SeekBarCustom(
             modifier = Modifier
                 .height(currentBarHeight)
                 .fillMaxWidth(progressFraction)
-                .let { progressModifier ->
-                    if (progressBrush != null) {
-                        progressModifier.background(brush = progressBrush, shape = shape)
-                    } else {
-                        progressModifier.background(color = color, shape = shape)
-                    }
-                }
+                .background(color = color, shape = shape)
                 .align(Alignment.CenterStart)
         )
     }

@@ -29,7 +29,6 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ripple
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -38,8 +37,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.media3.common.C
@@ -79,7 +76,6 @@ fun GetSeekBar(
     ) {
     val binder = LocalPlayerServiceBinder.current
     binder?.player ?: return
-    val crossfadeUiState by binder.crossfadeUiState.collectAsState()
     val playerTimelineType by rememberPreference(playerTimelineTypeKey, PlayerTimelineType.FakeAudioBar)
     var scrubbingPosition by remember(mediaId) {
         mutableStateOf<Long?>(null)
@@ -93,22 +89,8 @@ fun GetSeekBar(
     LaunchedEffect(mediaId) {
         if (compositionLaunched) animatedPosition.animateTo(0f)
     }
-    val effectivePosition = if (
-        crossfadeUiState.isEnabled &&
-        binder.displayedMediaItem?.mediaId == mediaId
-    ) {
-        binder.displayedPositionAndDuration.first
-    } else {
-        position
-    }
-    val effectiveDuration = if (
-        crossfadeUiState.isEnabled &&
-        binder.displayedMediaItem?.mediaId == mediaId
-    ) {
-        binder.displayedPositionAndDuration.second
-    } else {
-        duration
-    }
+    val effectivePosition = position
+    val effectiveDuration = duration
     val safeDuration = effectiveDuration.coerceAtLeast(1L)
 
     LaunchedEffect(effectivePosition) {
@@ -120,48 +102,12 @@ fun GetSeekBar(
                 )
             )
     }
-    val crossfadePalette = if (crossfadeUiState.isHighlightActive) {
-        listOf(
-            Color(0xFF2EE59D),
-            Color(0xFF8B5CF6),
-            Color(0xFFF472B6),
-            Color(0xFFFB7185),
-        )
-    } else {
-        null
-    }
     Row(
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .padding(horizontal = 10.dp)
             .fillMaxWidth()
-            .drawWithContent {
-                drawContent()
-                if (crossfadePalette != null) {
-                    val safeProgress = crossfadeUiState.progress.coerceIn(0f, 1f)
-                    val glowAlpha = ((1f - safeProgress) * 0.38f).coerceIn(0f, 0.38f)
-                    val sweepWidth = size.width * 0.55f
-                    val travel = size.width + sweepWidth
-                    val startX = (travel * safeProgress) - sweepWidth
-                    val endX = startX + sweepWidth
-                    drawRect(
-                        brush = Brush.horizontalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                crossfadePalette[0].copy(alpha = glowAlpha * 0.7f),
-                                crossfadePalette[1].copy(alpha = glowAlpha),
-                                crossfadePalette[2].copy(alpha = glowAlpha),
-                                crossfadePalette[3].copy(alpha = glowAlpha * 0.7f),
-                                Color.Transparent,
-                            ),
-                            startX = startX,
-                            endX = endX
-                        ),
-                        alpha = 1f
-                    )
-                }
-            }
     ) {
 
         if (effectiveDuration == C.TIME_UNSET)
@@ -199,7 +145,6 @@ fun GetSeekBar(
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                crossfadePalette = crossfadePalette,
             )
 
         if (playerTimelineType == PlayerTimelineType.Default)
@@ -224,7 +169,6 @@ fun GetSeekBar(
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                crossfadePalette = crossfadePalette,
             )
 
         if (playerTimelineType == PlayerTimelineType.ThinBar)
@@ -249,7 +193,6 @@ fun GetSeekBar(
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                crossfadePalette = crossfadePalette,
             )
 
       //  update the Wavy section:
@@ -308,7 +251,7 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                 progressPercentage = ProgressPercentage.safeValue(
                     (effectivePosition.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f)
                 ),
-                playedColor = crossfadePalette?.firstOrNull() ?: colorPalette().accent,
+                playedColor = colorPalette().accent,
                 notPlayedColor = if (transparentbar) Color.Transparent else colorPalette().textSecondary,
                 waveInteraction = {
                     scrubbingPosition = (it.value * safeDuration.toFloat()).toLong()
@@ -342,7 +285,6 @@ if (playerTimelineType == PlayerTimelineType.Wavy) {
                 color = colorPalette().collapsedPlayerProgressBar,
                 backgroundColor = colorPalette().textSecondary,
                 shape = RoundedCornerShape(8.dp),
-                crossfadePalette = crossfadePalette,
             )
 
 

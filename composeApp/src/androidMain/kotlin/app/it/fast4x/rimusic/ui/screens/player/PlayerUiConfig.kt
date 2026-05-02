@@ -160,7 +160,7 @@ internal fun rememberPlayerUiConfig(): PlayerUiConfig {
         showTotalTimeQueue = rememberPreference(showTotalTimeQueueKey, true).value,
         backgroundProgress = rememberPreference(backgroundProgressKey, BackgroundProgress.MiniPlayer).value,
         queueLoopState = queueLoopState,
-        playerType = rememberPreference(playerTypeKey, PlayerType.Modern).value,
+        playerType = rememberPreference(playerTypeKey, PlayerType.Essential).value,
         queueType = rememberPreference(queueTypeKey, QueueType.Essential).value,
         noblur = rememberPreference(noblurKey, true).value,
         fadingedge = rememberPreference(fadingedgeKey, false).value,

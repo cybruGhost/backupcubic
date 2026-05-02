@@ -419,7 +419,6 @@ private fun PlayerContent(
     if (binder.player.currentTimeline.windowCount == 0) return
 
     val displayedPlayerState = rememberDisplayedPlayerState(binder)
-    val crossfadeUiState = displayedPlayerState.crossfadeUiState
     val shouldBePlaying = displayedPlayerState.shouldBePlaying
 
     // ── FIX 3: isBuffering comes from the single source of truth (DisplayState),
@@ -776,7 +775,6 @@ private fun PlayerContent(
     val displayedMediaItemIndex = remember(
         mediaItems,
         mediaItem.mediaId,
-        crossfadeUiState.displayMediaItem?.mediaId,
         binder.player.currentMediaItemIndex
     ) {
         mediaItems.indexOfFirst { queuedItem -> queuedItem.mediaId == mediaItem.mediaId }
@@ -967,18 +965,7 @@ private fun PlayerContent(
     }
 
     val color = colorPalette()
-    val progressOverlayBrush = if (crossfadeUiState.isHighlightActive) {
-        Brush.horizontalGradient(
-            listOf(
-                Color(0xFF2EE59D),
-                Color(0xFF8B5CF6),
-                Color(0xFFF472B6),
-                Color(0xFFFB7185),
-            )
-        )
-    } else {
-        null
-    }
+    val progressOverlayBrush: Brush? = null
     var dynamicColorPalette by remember { mutableStateOf(color) }
     var dominant by remember { mutableStateOf(0) }
     var vibrant by remember { mutableStateOf(0) }

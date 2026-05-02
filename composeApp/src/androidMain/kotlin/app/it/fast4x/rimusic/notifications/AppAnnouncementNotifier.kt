@@ -85,11 +85,11 @@ object AppAnnouncementNotifier {
         val showText: Boolean,
         val category: Category,
         val frequencyHours: Long,
-        val imageUrl: String?,
+        val image_url: String?,
     ) {
         /** Fingerprint — changes whenever visible content changes. */
         val signature: String
-            get() = listOf(title, contents, url, category.key, imageUrl.orEmpty(), showText, showImage)
+            get() = listOf(title, contents, url, category.key, image_url.orEmpty(), showText, showImage)
                 .joinToString("|")
     }
 
@@ -147,7 +147,7 @@ object AppAnnouncementNotifier {
                 showText       = n.optBoolean("show_text", true),
                 category       = Category.from(n.optString("category", "announcement")),
                 frequencyHours = n.optLong("frequency_hours").takeIf { it > 0L } ?: 24L,
-                imageUrl       = n.optString("imageUrl")
+                image_url       = n.optString("image_url")
                     .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) },
             )
         } finally {
@@ -202,7 +202,7 @@ object AppAnnouncementNotifier {
         }
 
         // ── Rich style selection ──────────────────────────────────────────────
-        val image = p.imageUrl
+        val image = p.image_url
             ?.takeIf { p.showImage }
             ?.let(::loadBitmap)
 

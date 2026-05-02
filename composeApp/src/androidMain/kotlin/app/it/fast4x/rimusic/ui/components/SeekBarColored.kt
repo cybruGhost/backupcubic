@@ -20,7 +20,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.graphics.Shape
@@ -55,7 +54,6 @@ fun SeekBarColored(
     scrubberColor: Color = color,
     scrubberRadius: Dp = 6.dp,
     shape: Shape = RectangleShape,
-    crossfadePalette: List<Color>? = null,
 ) {
 
     val (colorPalette, typography) = LocalAppearance.current
@@ -69,21 +67,13 @@ fun SeekBarColored(
     val currentScrubberRadius by transition.animateDp(label = "") { if (it) 0.dp else scrubberRadius }
 
     val progressFraction = coloredSeekBarFraction(value, minimumValue, maximumValue)
-    val barColor = if (!crossfadePalette.isNullOrEmpty()) {
-        val paletteIndex = ((crossfadePalette.size - 1) * progressFraction).toInt().coerceIn(0, crossfadePalette.lastIndex)
-        crossfadePalette[paletteIndex]
-    } else when {
+    val barColor = when {
         value >= 0 && value <= maximumValue / 5 -> colorPalette.text
         value >= maximumValue / 5 && value <= maximumValue / 4 -> colorPalette.background0
         value >= maximumValue / 4 && value <= maximumValue / 3 -> colorPalette.textDisabled
         value >= maximumValue / 3 && value <= maximumValue / 2 -> colorPalette.background2
         value >= maximumValue / 2 && value <= maximumValue -> colorPalette.accent
         else -> colorPalette.text
-    }
-    val crossfadeBrush = if (!crossfadePalette.isNullOrEmpty()) {
-        Brush.horizontalGradient(crossfadePalette)
-    } else {
-        null
     }
 
     Box(
@@ -157,23 +147,13 @@ fun SeekBarColored(
                 .align(Alignment.Center)
         )
 
-        if (crossfadeBrush != null) {
-            Spacer(
-                modifier = Modifier
-                    .height(currentBarHeight)
-                    .fillMaxWidth(progressFraction)
-                    .background(brush = crossfadeBrush, shape = shape)
-                    .align(Alignment.CenterStart)
-            )
-        } else {
-            Spacer(
-                modifier = Modifier
-                    .height(currentBarHeight)
-                    .fillMaxWidth(progressFraction)
-                    .background(color = barColor, shape = shape)
-                    .align(Alignment.CenterStart)
-            )
-        }
+        Spacer(
+            modifier = Modifier
+                .height(currentBarHeight)
+                .fillMaxWidth(progressFraction)
+                .background(color = barColor, shape = shape)
+                .align(Alignment.CenterStart)
+        )
     }
 
 

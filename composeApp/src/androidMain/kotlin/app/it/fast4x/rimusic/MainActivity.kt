@@ -134,7 +134,6 @@ import app.it.fast4x.rimusic.service.MyDownloadHelper
 import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 import app.it.fast4x.rimusic.ui.components.CustomModalBottomSheet
 import app.it.fast4x.rimusic.ui.components.LocalMenuState
-import app.it.fast4x.rimusic.ui.components.themed.CrossfadeContainer
 import app.it.fast4x.rimusic.ui.screens.AppNavigation
 import app.it.fast4x.rimusic.ui.screens.player.MiniPlayer
 import app.it.fast4x.rimusic.ui.screens.player.Player
@@ -967,8 +966,9 @@ class MainActivity :
                             intent.action = null
                         }
 
-                        CrossfadeContainer(state = pipState.value) { isCurrentInPip ->
-                            Timber.d("MainActivity pipState ${pipState.value} CrossfadeContainer isCurrentInPip $isCurrentInPip ")
+                        run {
+                            val isCurrentInPip = pipState.value
+                            Timber.d("MainActivity pipState ${pipState.value} isCurrentInPip $isCurrentInPip ")
                             val pipModule by rememberPreference(pipModuleKey, PipModule.Cover)
                     if (isCurrentInPip) {
                         Box(
