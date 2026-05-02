@@ -714,8 +714,7 @@ fun SpotifyCanvasWorker() {
 
     val isCanvasEnabled by rememberPreference("spotifyCanvasEnabled", false)
     val showLogs by rememberPreference("showSpotifyCanvasLogs", false)
-    val crossfadeUiState by binder.crossfadeUiState.collectAsState()
-    val displayedMediaItem = crossfadeUiState.displayMediaItem ?: binder.displayedMediaItem ?: binder.player.currentMediaItem
+    val displayedMediaItem = binder.displayedMediaItem ?: binder.player.currentMediaItem
 
     LaunchedEffect(isCanvasEnabled) {
         if (isCanvasEnabled && !SpotifyApiConfig.isConfigLoaded) {

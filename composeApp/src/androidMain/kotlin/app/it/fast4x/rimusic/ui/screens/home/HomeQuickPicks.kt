@@ -204,7 +204,7 @@ data class NotificationData(
     val is_force: Boolean,
     val force_update: Boolean,
     val isUpdate: Boolean,
-    val imageUrl: String? = null,
+    val image_url: String? = null,
     val showImage: Boolean = true,
     val showText: Boolean = true
 )
@@ -768,7 +768,7 @@ fun HomeQuickPicks(
                                 is_force = notificationJson.getBoolean("is_force"),
                                 force_update = notificationJson.getBoolean("force_update"),
                                 isUpdate = notificationJson.getBoolean("isUpdate"),
-                                imageUrl = notificationJson.optString("imageUrl").takeUnless {
+                                image_url = notificationJson.optString("image_url").takeUnless {
                                     it.isBlank() || it.equals("null", ignoreCase = true)
                                 },
                                 showImage = notificationJson.optBoolean("show_image", true),
@@ -2487,10 +2487,10 @@ private fun RemoteConfigQuickPicksCard(
                 .padding(16.dp)
         ) {
             if (notification.showImage) {
-                notification.imageUrl?.takeIf { it.isNotBlank() }?.let { imageUrl ->
+                notification.image_url?.takeIf { it.isNotBlank() }?.let { image_url ->
                     AsyncImage(
                         model = ImageRequest.Builder(context)
-                            .data(imageUrl)
+                            .data(image_url)
                             .crossfade(true)
                             .build(),
                         contentDescription = notification.title,

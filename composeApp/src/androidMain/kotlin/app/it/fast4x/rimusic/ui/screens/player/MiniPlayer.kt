@@ -188,8 +188,7 @@ fun MiniPlayer(
     val hapticFeedback = LocalHapticFeedback.current
 
     val displayedPlayerState = rememberDisplayedPlayerState(binder)
-    val crossfadeUiState     = displayedPlayerState.crossfadeUiState
-    val isCrossfading        = crossfadeUiState.isHighlightActive
+    val isCrossfading        = false
 
     // ── Error state ───────────────────────────────────────────────────────────
     var playerError by remember { mutableStateOf<PlaybackException?>(binder.player.playerError) }
@@ -426,8 +425,8 @@ fun MiniPlayer(
                 modifier = Modifier.height(Dimensions.miniPlayerHeight)
             ) {
                 val currentArtwork = mediaItem.mediaMetadata.artworkUri?.toString()
-                val incomingArtwork = crossfadeUiState.incomingMediaItem?.mediaMetadata?.artworkUri?.toString()
-                val crossfadeArtProgress = crossfadeUiState.progress.coerceIn(0f, 1f)
+                val incomingArtwork: String? = null
+                val crossfadeArtProgress = 0f
                 val thumbnailShape = thumbnailShape()
 
                 Box(

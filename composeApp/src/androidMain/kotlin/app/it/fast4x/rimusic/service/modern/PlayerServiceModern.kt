@@ -131,8 +131,6 @@ import app.it.fast4x.rimusic.utils.bassboostLevelKey
 import app.it.fast4x.rimusic.utils.broadCastPendingIntent
 import app.it.fast4x.rimusic.utils.closebackgroundPlayerKey
 import app.it.fast4x.rimusic.utils.collect
-import app.it.fast4x.rimusic.utils.crossfadeDurationSecondsKey
-import app.it.fast4x.rimusic.utils.crossfadeEnabledKey
 import app.it.fast4x.rimusic.utils.discordPersonalAccessTokenKey
 import app.it.fast4x.rimusic.utils.enableWallpaperKey
 import app.it.fast4x.rimusic.utils.encryptedPreferences
@@ -252,7 +250,6 @@ class PlayerServiceModern : MediaLibraryService(),
         MediaLibrarySessionCallback(this, Database, MyDownloadHelper)
     lateinit var player: ExoPlayer
     private lateinit var sessionPlayer: ExoPlayer
-    private val crossfadeUiState = MutableStateFlow(CrossfadeUiState())
     lateinit var cache: Cache
     lateinit var downloadCache: Cache
     private lateinit var audioVolumeObserver: AudioVolumeObserver
@@ -457,9 +454,6 @@ class PlayerServiceModern : MediaLibraryService(),
         audioQualityFormat = preferences.getEnum(audioQualityFormatKey, AudioQualityFormat.Auto)
         showLikeButton = preferences.getBoolean(showLikeButtonBackgroundPlayerKey, true)
         showDownloadButton = preferences.getBoolean(showDownloadButtonBackgroundPlayerKey, true)
-        if (preferences.getBoolean(crossfadeEnabledKey, false)) {
-            preferences.edit { putBoolean(crossfadeEnabledKey, false) }
-        }
 
         val cacheSize =
             preferences.getEnum(exoPlayerDiskCacheMaxSizeKey, ExoPlayerDiskCacheMaxSize.`2GB`)
@@ -952,12 +946,6 @@ private fun syncPlaybackWakeLockState() {
                         ?: QueueLoopType.Default.type
             }
 
-            crossfadeEnabledKey, crossfadeDurationSecondsKey -> {
-                if (preferences.getBoolean(crossfadeEnabledKey, false)) {
-                    preferences.edit { putBoolean(crossfadeEnabledKey, false) }
-                }
-            }
-
             bassboostLevelKey, bassboostEnabledKey -> maybeBassBoost()
             audioReverbPresetKey -> maybeReverb()
         }
@@ -1324,9 +1312,8 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             Player.STATE_IDLE -> {
                 syncPlaybackWakeLockState()
                 // Do not clear the queue here. Media3 can transiently report IDLE during
-                // recovery/crossfade edges, and clearing items from this callback can make
-                // the player UI disappear or the service stop even though playback should
-                // simply pause and remain resumable.
+                // recovery, and clearing items from this callback can make the player UI
+                // disappear or the service stop even though playback should simply pause.
             }
         }
     } catch (e: Exception) {
@@ -2339,9 +2326,6 @@ override fun onPlaybackStateChanged(playbackState: Int) {
 
         val sleepTimerMillisLeft: StateFlow<Long?>?
             get() = timerJob?.millisLeft
-
-        val crossfadeUiState: StateFlow<CrossfadeUiState>
-            get() = this@PlayerServiceModern.crossfadeUiState
 
         val displayedMediaItem: MediaItem?
             get() = this@PlayerServiceModern.displayedMediaItem()
