@@ -72,6 +72,7 @@ import app.it.fast4x.rimusic.ui.screens.settings.SettingsScreen
 import app.it.fast4x.rimusic.ui.screens.spotify.SpotifyLoginWebView
 import app.it.fast4x.rimusic.ui.screens.statistics.StatisticsScreen
 import app.it.fast4x.rimusic.utils.clearPreference
+import app.it.fast4x.rimusic.utils.ApplyDiscoverToQueue
 import app.it.fast4x.rimusic.utils.homeScreenTabIndexKey
 import app.it.fast4x.rimusic.utils.pauseSearchHistoryKey
 import app.it.fast4x.rimusic.utils.preferences
@@ -101,6 +102,7 @@ fun AppNavigation(
 ) {
     val transitionEffect by rememberPreference(transitionEffectKey, TransitionEffect.SlideHorizontal)
      val appearance = app.it.fast4x.rimusic.ui.styling.LocalAppearance.current
+    ApplyDiscoverToQueue()
 
     @Composable
     fun modalBottomSheetPage(content: @Composable () -> Unit) {

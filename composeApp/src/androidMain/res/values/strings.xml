@@ -502,6 +502,7 @@
 <string name="info_includes_excludes_songs_on_the_device">Includes/excludes songs on the device</string>
 <string name="info_enqueue_songs">Enqueue songs</string>
 <string name="info_download_all_songs">Download all songs</string>
+<string name="delete_all_downloaded_songs">Delete all downloaded songs</string>
 <string name="info_remove_all_downloaded_songs">Remove all downloaded songs</string>
 <string name="info_start_radio">Start radio</string>
 <string name="info_translation">Translation</string>
@@ -733,6 +734,7 @@
 <string name="event_volumekeysinfo">Volume UP next and volume DOWN previous song</string>
 <string name="paste">Paste</string>
 <string name="searches_no_suggestions">No suggestions</string>
+<string name="search_youtube_channels">Search YouTube channels</string>
 <string name="action_bar_show_discover_button">Show Enable Discover&#x1F31F;</string>
 <string name="playertype">Player type</string>
 <string name="noblur">Remove background blur when lyrics is disabled</string>
@@ -751,6 +753,8 @@
  <string name="discover_has_been_applied_to_radio">Jennie &#x1F31F; has applied to radio, removed songs: %s</string>
 <string name="songs_number_to_show">Songs displayed</string>
 <string name="discover_has_been_applied_to_queue">Jennie &#x1F31F; has applied to queue, removed songs: %s</string>
+<string name="discover_queue_no_changes">Discovery checked the queue. Nothing needed removing.</string>
+<string name="discover_loading_more_songs">Discovery is loading more songs.</string>
 <string name="player_pause_on_volume_zero">Pause on volume zero</string>
 <string name="info_pauses_player_when_volume_zero">Pause the song when the volume reaches 0 and resume it when the volume is greater than 0</string>
 <string name="quality">Quality</string>
@@ -914,6 +918,8 @@
 <string name="colorpalette">Color Palette</string>
 <string name="customcolor">Custom Color</string>
 <string name="lyricsanimate">Animate Lyrics Size</string>
+<string name="karaoke_animation">Karaoke animation</string>
+<string name="karaoke_animation_description">Light synced-line focus with default lyrics preserved when off</string>
 <string name="yt_playlists">YT/YTM</string>
 <string name="lyricsSizeSecondary">Long Press to change the size</string>
 <string name="home">Home</string>
@@ -1104,6 +1110,8 @@
 <string name="ui_settings_description">The user interface section contains settings to modify the global interface and navigation</string>
 <string name="pause_between_songs_description">Add a pause between songs</string>
 <string name="notifications">Notifications</string>
+<string name="new_releases_notifications">New release notifications</string>
+<string name="new_releases_notifications_description">Notify me about new music releases, at most once per day.</string>
 <string name="playback">Playback</string>
 <string name="player_controls">Player Controls</string>
 <string name="queue_management">Queue Management</string>

@@ -1,6 +1,10 @@
 package app.it.fast4x.rimusic.utils
 
 object SecureApiConfig {
+    private const val API_URL =
+        "https://dywyagjcuvxtjgtksyjn.supabase.co/functions/v1/app-config" +
+        "?app=cubic_music&key=system_notification"
+
     private fun reveal(vararg fragments: String): String = buildString {
         fragments.forEach { append(it.reversed()) }
     }
@@ -12,6 +16,9 @@ object SecureApiConfig {
     val cubicNotificationConfigUrl: String by lazy {
         "$cubicAppConfigBaseUrl?app=cubic_music&key=notification"
     }
+
+    val cubicSystemNotificationConfigUrl: String
+        get() = API_URL
 
     val ytmSessionEndpoint: String by lazy {
         "https://ytm-cookie-sparkle.lovable.app/api/ytm-session"

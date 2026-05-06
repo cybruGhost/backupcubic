@@ -12,6 +12,9 @@ import androidx.core.app.NotificationManagerCompat
 import app.kreate.android.BuildConfig
 import app.kreate.android.R
 import app.it.fast4x.rimusic.MainActivity
+import app.it.fast4x.rimusic.utils.SecureApiConfig
+import app.it.fast4x.rimusic.utils.newReleaseNotificationsEnabledKey
+import app.it.fast4x.rimusic.utils.preferences
 import org.json.JSONObject
 import timber.log.Timber
 import java.net.HttpURLConnection
@@ -25,7 +28,7 @@ import java.util.concurrent.Executors
  * rich, adaptive Android notifications with full category support.
  *
  * Endpoint:
- *   https://dywyagjcuvxtjgtksyjn.supabase.co/functions/v1/app-config
+ *   https://....../functions/v1/app-config
  *     ?app=cubic_music&key=system_notification
  *
  * Supported categories (maps to Android notification style + priority):
@@ -47,6 +50,7 @@ object AppAnnouncementNotifier {
         Category.EMERGENCY    to 2003,
         Category.UPDATE       to 2004,
         Category.CALLOUT      to 2005,
+        Category.NEW_RELEASE  to 2006,
     )
 
     // ── Storage ───────────────────────────────────────────────────────────────
@@ -55,10 +59,6 @@ object AppAnnouncementNotifier {
     private const val KEY_LAST_SHOWN_AT    = "last_shown_at"
 
     // ── API ───────────────────────────────────────────────────────────────────
-    private const val API_URL =
-        "https://dywyagjcuvxtjgtksyjn.supabase.co/functions/v1/app-config" +
-        "?app=cubic_music&key=system_notification"
-
     private val executor = Executors.newSingleThreadExecutor()
 
     // ── Category enum ─────────────────────────────────────────────────────────
@@ -67,11 +67,14 @@ object AppAnnouncementNotifier {
         PROMO("promo"),
         EMERGENCY("emergency"),
         UPDATE("update"),
-        CALLOUT("callout");
+        CALLOUT("callout"),
+        NEW_RELEASE("new_release");
 
         companion object {
-            fun from(raw: String): Category =
-                entries.firstOrNull { it.key == raw.lowercase().trim() } ?: ANNOUNCEMENT
+            fun from(raw: String): Category {
+                val normalized = raw.lowercase().trim().replace('-', '_').replace(' ', '_')
+                return entries.firstOrNull { it.key == normalized } ?: ANNOUNCEMENT
+            }
         }
     }
 
@@ -99,12 +102,16 @@ object AppAnnouncementNotifier {
             runCatching {
                 val payload = fetchPayload() ?: return@runCatching
                 if (!payload.show) return@runCatching
+                if (payload.category == Category.NEW_RELEASE &&
+                    !context.preferences.getBoolean(newReleaseNotificationsEnabledKey, false)
+                ) return@runCatching
 
                 val prefs      = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
                 val lastSig    = prefs.getString(KEY_LAST_SIGNATURE, null)
                 val lastShown  = prefs.getLong(KEY_LAST_SHOWN_AT, 0L)
                 val now        = System.currentTimeMillis()
-                val freqMs     = payload.frequencyHours.coerceAtLeast(1L) * 3_600_000L
+                val minHours   = if (payload.category == Category.NEW_RELEASE) 24L else 1L
+                val freqMs     = payload.frequencyHours.coerceAtLeast(minHours) * 3_600_000L
 
                 if (payload.signature == lastSig && now - lastShown < freqMs) return@runCatching
 
@@ -123,7 +130,7 @@ object AppAnnouncementNotifier {
 
     // ── Fetch & parse ─────────────────────────────────────────────────────────
     private fun fetchPayload(): Payload? {
-        val conn = URL(API_URL).openConnection() as HttpURLConnection
+        val conn = URL(SecureApiConfig.cubicSystemNotificationConfigUrl).openConnection() as HttpURLConnection
         return try {
             conn.requestMethod  = "GET"
             conn.connectTimeout = 5_000
@@ -176,10 +183,14 @@ object AppAnnouncementNotifier {
             p.showText && p.contents.isNotBlank() -> p.contents.replace('\n', ' ')
             else                                  -> cfg.defaultText
         }
+        val displayHeading = cfg.emoji
+            .takeIf(String::isNotBlank)
+            ?.let { "$it  $displayTitle" }
+            ?: displayTitle
 
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(cfg.smallIcon)
-            .setContentTitle("${cfg.emoji}  $displayTitle")
+            .setContentTitle(displayHeading)
             .setContentText(displayText)
             .setPriority(cfg.priority)
             .setCategory(cfg.androidCategory)
@@ -214,7 +225,7 @@ object AppAnnouncementNotifier {
                     NotificationCompat.BigPictureStyle()
                         .bigPicture(image)
                         .bigLargeIcon(null as Bitmap?)
-                        .setBigContentTitle("${cfg.emoji}  $displayTitle")
+                        .setBigContentTitle(displayHeading)
                         .setSummaryText(
                             p.contents.takeIf { p.showText && it.isNotBlank() }
                         )
@@ -224,7 +235,7 @@ object AppAnnouncementNotifier {
             // Callout → InboxStyle (treats newline-separated lines as bullets)
             p.category == Category.CALLOUT && p.contents.contains('\n') -> {
                 val style = NotificationCompat.InboxStyle()
-                    .setBigContentTitle("${cfg.emoji}  $displayTitle")
+                    .setBigContentTitle(displayHeading)
                 p.contents.lines().take(6).forEach { style.addLine(it) }
                 builder.setStyle(style)
             }
@@ -233,7 +244,7 @@ object AppAnnouncementNotifier {
             p.showText && p.contents.isNotBlank() -> {
                 builder.setStyle(
                     NotificationCompat.BigTextStyle()
-                        .setBigContentTitle("${cfg.emoji}  $displayTitle")
+                        .setBigContentTitle(displayHeading)
                         .bigText(p.contents)
                 )
             }
@@ -328,6 +339,20 @@ object AppAnnouncementNotifier {
             actionLabel     = null,
             actionIcon      = 0,
         )
+
+        Category.NEW_RELEASE -> CategoryConfig(
+            emoji           = "",
+            defaultTitle    = context.getString(R.string.new_releases_notifications),
+            defaultText     = context.getString(R.string.new_releases_notifications_description),
+            priority        = NotificationCompat.PRIORITY_DEFAULT,
+            androidCategory = NotificationCompat.CATEGORY_RECOMMENDATION,
+            smallIcon       = R.drawable.album,
+            accentColor     = 0xFF34A853.toInt(),
+            colorized       = false,
+            isOngoing       = false,
+            actionLabel     = context.getString(R.string.new_albums),
+            actionIcon      = R.drawable.album,
+        )
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -343,3 +368,4 @@ object AppAnnouncementNotifier {
         }
     }.getOrNull()
 }
+// u see this app ha my configs and  mostly features use my servers to make sure the app works.  as this is open source then you guys may just remove what u dont like but first try to understand my code coz it gets nasty
