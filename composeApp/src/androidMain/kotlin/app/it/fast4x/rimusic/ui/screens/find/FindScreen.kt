@@ -69,6 +69,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import androidx.media3.exoplayer.offline.Download
+import app.cubic.android.core.network.isNetworkConnected
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.recognition.AudioRecorder
@@ -142,6 +143,10 @@ fun FindScreen(
 
     fun startListening() {
         if (state is FindUiState.Listening) return
+        if (!context.isNetworkConnected) {
+            state = FindUiState.Error(context.getString(R.string.error_no_internet))
+            return
+        }
         suggestions.clear(); suggestionsError = null; isLoadingSuggestions = false
         state = FindUiState.Listening; isMatching = false; lastAttemptSecond = 0
         recorder.start()
@@ -179,6 +184,11 @@ fun FindScreen(
     LaunchedEffect(state) {
         val success = state as? FindUiState.Success ?: return@LaunchedEffect
         suggestions.clear(); isLoadingSuggestions = true; suggestionsError = null
+        if (!context.isNetworkConnected) {
+            suggestionsError = context.getString(R.string.error_no_internet)
+            isLoadingSuggestions = false
+            return@LaunchedEffect
+        }
         val query = listOf(success.track.title, success.track.subtitle)
             .filter { it.isNotBlank() }.joinToString(" ")
         val result = withContext(Dispatchers.IO) {

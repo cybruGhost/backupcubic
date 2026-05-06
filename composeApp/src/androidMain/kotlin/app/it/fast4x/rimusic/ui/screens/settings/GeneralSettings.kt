@@ -115,6 +115,7 @@ import app.it.fast4x.rimusic.utils.maxSongsInQueueKey
 import app.it.fast4x.rimusic.utils.minimumSilenceDurationKey
 import app.it.fast4x.rimusic.utils.navigationBarPositionKey
 import app.it.fast4x.rimusic.utils.navigationBarTypeKey
+import app.it.fast4x.rimusic.utils.newReleaseNotificationsEnabledKey
 import app.it.fast4x.rimusic.utils.notificationTypeKey
 import app.it.fast4x.rimusic.utils.nowPlayingIndicatorKey
 import app.it.fast4x.rimusic.utils.pauseBetweenSongsKey
@@ -245,6 +246,7 @@ fun GeneralSettings(
     var pipModule              by rememberPreference(pipModuleKey, PipModule.Cover)
     var jumpPrevious           by rememberPreference(jumpPreviousKey, "3")
     var notificationType       by rememberPreference(notificationTypeKey, NotificationType.Default)
+    var newReleaseNotificationsEnabled by rememberPreference(newReleaseNotificationsEnabledKey, false)
     var showCommentsButton     by rememberPreference("show_comments_button", true)
 
     Column(
@@ -1135,6 +1137,15 @@ fun GeneralSettings(
                             valueText       = { it.textName },
                             values          = NotificationType.values().toList(),
                             onDismiss       = { showNotificationTypeDialog = false }
+                        )
+                    }
+                    if (search.inputValue.isBlank() || stringResource(R.string.new_releases_notifications).contains(search.inputValue, true)) {
+                        OtherSwitchSettingEntry(
+                            title = stringResource(R.string.new_releases_notifications),
+                            text = stringResource(R.string.new_releases_notifications_description),
+                            isChecked = newReleaseNotificationsEnabled,
+                            onCheckedChange = { newReleaseNotificationsEnabled = it },
+                            icon = R.drawable.album
                         )
                     }
                 }

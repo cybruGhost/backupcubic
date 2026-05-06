@@ -165,6 +165,7 @@ import app.it.fast4x.rimusic.utils.lyricsColorKey
 import app.it.fast4x.rimusic.utils.lyricsFontSizeKey
 import app.it.fast4x.rimusic.utils.lyricsHighlightKey
 import app.it.fast4x.rimusic.utils.lyricsOutlineKey
+import app.it.fast4x.rimusic.utils.lyricsKaraokeEnabledKey
 import app.it.fast4x.rimusic.utils.lyricsSizeAnimateKey
 import app.it.fast4x.rimusic.utils.lyricsSizeKey
 import app.it.fast4x.rimusic.utils.lyricsSizeLKey
@@ -410,6 +411,7 @@ fun Lyrics(
         var lyricsHighlight by rememberPreference(lyricsHighlightKey, LyricsHighlight.None)
         var lyricsAlignment by rememberPreference(lyricsAlignmentKey, LyricsAlignment.Center)
         var lyricsSizeAnimate by rememberPreference(lyricsSizeAnimateKey, true)
+        var lyricsKaraokeEnabled by rememberPreference(lyricsKaraokeEnabledKey, false)
         val mediaMetadata = mediaMetadataProvider()
         var artistName by rememberSaveable(mediaId) { mutableStateOf(cleanPrefix(mediaMetadata.artist?.toString().orEmpty()))}
         var title by rememberSaveable(mediaId) { mutableStateOf(cleanPrefix(mediaMetadata.title?.toString().orEmpty()))}
@@ -1785,13 +1787,29 @@ fun SelectLyricFromTrack(
                                 }
                             }
                             val animateSizeText by animateFloatAsState(
-                                targetValue = if (index == synchronizedLyrics.index) 1.05f else 0.85f,
-                                animationSpec = tween(500, easing = LinearOutSlowInEasing),
+                                targetValue = when {
+                                    lyricsKaraokeEnabled && index == synchronizedLyrics.index -> 1.02f
+                                    lyricsKaraokeEnabled -> 0.92f
+                                    index == synchronizedLyrics.index -> 1.05f
+                                    else -> 0.85f
+                                },
+                                animationSpec = tween(
+                                    durationMillis = if (lyricsKaraokeEnabled) 220 else 500,
+                                    easing = LinearOutSlowInEasing
+                                ),
                                 label = ""
                             )
                             val animateOpacity by animateFloatAsState(
-                                targetValue = if (index == synchronizedLyrics.index) 1f else 0.6f,
-                                animationSpec = tween(500, easing = LinearOutSlowInEasing),
+                                targetValue = when {
+                                    lyricsKaraokeEnabled && index == synchronizedLyrics.index -> 1f
+                                    lyricsKaraokeEnabled -> 0.38f
+                                    index == synchronizedLyrics.index -> 1f
+                                    else -> 0.6f
+                                },
+                                animationSpec = tween(
+                                    durationMillis = if (lyricsKaraokeEnabled) 220 else 500,
+                                    easing = LinearOutSlowInEasing
+                                ),
                                 label = ""
                             )
                             //Rainbow Shimmer
@@ -2955,6 +2973,16 @@ fun SelectLyricFromTrack(
                                         )
 
                                         if (!showlyricsthumbnail && isShowingSynchronizedLyrics) {
+                                            MenuEntry(
+                                                icon = if (lyricsKaraokeEnabled) R.drawable.checkmark else R.drawable.text,
+                                                text = stringResource(R.string.karaoke_animation),
+                                                secondaryText = stringResource(R.string.karaoke_animation_description),
+                                                enabled = true,
+                                                onClick = {
+                                                    menuState.hide()
+                                                    lyricsKaraokeEnabled = !lyricsKaraokeEnabled
+                                                }
+                                            )
                                             MenuEntry(
                                                 icon = if (lyricsSizeAnimate) R.drawable.checkmark else R.drawable.close,
                                                 text = stringResource(R.string.lyricsanimate),

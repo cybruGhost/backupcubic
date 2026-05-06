@@ -1,9 +1,11 @@
 package app.it.fast4x.rimusic.ui.screens.search
 
+import android.net.Uri
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -50,12 +52,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.paint
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -176,6 +180,7 @@ fun OnlineSearch(
     val historyIconPainter = painterResource(R.drawable.history)
 
     val coroutineScope = rememberCoroutineScope()
+    val uriHandler = LocalUriHandler.current
 
     val focusRequester = remember {
         FocusRequester()
@@ -400,6 +405,17 @@ fun OnlineSearch(
                 }
             } else {
                 // Search results section (unchanged)
+                item(key = "youtube_channel_search") {
+                    YouTubeChannelSearchCard(
+                        query = textFieldValue.text,
+                        onClick = {
+                            uriHandler.openUri(
+                                "https://www.youtube.com/results?search_query=${Uri.encode(textFieldValue.text)}&sp=EgIQAg%253D%253D"
+                            )
+                        }
+                    )
+                }
+
                 when (searchDisplayOrder) {
                     SearchDisplayOrder.SuggestionsFirst -> {
                         // Suggestions section
@@ -716,8 +732,20 @@ fun MoodAndGenreCard(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .clip(thumbnailRoundness.shape)
-            .background(moodColor)
+            .clip(RoundedCornerShape(8.dp))
+            .background(
+                Brush.linearGradient(
+                    listOf(
+                        colorPalette().background1,
+                        moodColor.copy(alpha = 0.22f)
+                    )
+                )
+            )
+            .border(
+                width = 1.dp,
+                color = colorPalette().textDisabled.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp)
+            )
             .clickable { onClick() }
     ) {
         Image(
@@ -725,19 +753,74 @@ fun MoodAndGenreCard(
             contentDescription = null,
             contentScale = ContentScale.Crop,
             modifier = Modifier
-                .size(48.dp)
+                .size(52.dp)
                 .align(Alignment.BottomEnd)
-                .padding(end = 4.dp, bottom = 4.dp)
+                .padding(end = 6.dp, bottom = 6.dp)
         )
 
         Text(
             text = mood.title,
-            style = typography().xs.semiBold.copy(color = Color.White, fontSize = 13.sp),
+            style = typography().xs.semiBold.copy(color = colorPalette().text, fontSize = 13.sp),
             maxLines = 2,
             overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .align(Alignment.TopStart)
-                .padding(8.dp)
+                .padding(10.dp)
+        )
+    }
+}
+
+@Composable
+private fun YouTubeChannelSearchCard(
+    query: String,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 12.dp, vertical = 6.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(colorPalette().background1)
+            .border(
+                width = 1.dp,
+                color = colorPalette().textDisabled.copy(alpha = 0.12f),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 12.dp)
+    ) {
+        Icon(
+            painter = painterResource(R.drawable.logo_youtube),
+            contentDescription = null,
+            tint = Color.Unspecified,
+            modifier = Modifier.size(22.dp)
+        )
+        Column(
+            modifier = Modifier
+                .padding(start = 12.dp)
+                .weight(1f)
+        ) {
+            Text(
+                text = stringResource(R.string.search_youtube_channels),
+                style = typography().s.semiBold,
+                color = colorPalette().text,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Text(
+                text = query,
+                style = typography().xs.secondary,
+                color = colorPalette().textSecondary,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        Icon(
+            painter = painterResource(R.drawable.up_right_arrow),
+            contentDescription = null,
+            tint = colorPalette().textSecondary,
+            modifier = Modifier.size(18.dp)
         )
     }
 }

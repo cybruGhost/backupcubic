@@ -1123,13 +1123,11 @@ AnimatedVisibility(
                                     false -> {
                                         isTokenValid = false
                                         showTokenError = true
-                                        discordPersonalAccessToken = ""
-                                        discordUsername = ""
-                                        discordAvatar = ""
+                                        isDiscordPresenceEnabled = false
                                         Toaster.e(R.string.discord_token_text_invalid)
                                     }
                                     null -> { // Network error
-                                        isTokenValid = false
+                                        isTokenValid = true
                                         showTokenError = false
                                     }
                                 }
