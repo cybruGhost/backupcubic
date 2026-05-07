@@ -3,11 +3,7 @@ package app.it.fast4x.rimusic.ui.components.themed
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.platform.LocalContext
@@ -61,35 +57,23 @@ fun CacheSpaceIndicator(
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
 
-    val imageDiskCacheSize = remember {
-        ImageCacheFactory.getCacheSize()
-    }
+    val imageDiskCacheSize = ImageCacheFactory.getCacheSize()
+    val cachedSongsDiskCacheSize = binder?.cache?.cacheSpace
+    val downloadedSongsDiskCacheSize = binder?.downloadCache?.cacheSpace
 
-    val cachedSongsDiskCacheSize = remember {
-        binder?.cache?.cacheSpace
-    }
-
-    val downloadedSongsDiskCacheSize = remember {
-        binder?.downloadCache?.cacheSpace
-    }
-
-    val progressValue = remember { mutableStateOf(0f) }
-
-    LaunchedEffect (Unit, cacheType) {
-        progressValue.value =
+    val progressValue =
         when (cacheType) {
-            CacheType.Images -> imageDiskCacheSize?.toFloat()
-                ?.div(coilDiskCacheMaxSize.bytes.coerceAtLeast(1)) ?: 0.0f
+            CacheType.Images -> imageDiskCacheSize.toFloat()
+                .div(coilDiskCacheMaxSize.bytes.coerceAtLeast(1))
             CacheType.CachedSongs -> cachedSongsDiskCacheSize?.toFloat()
                 ?.div(exoPlayerDiskCacheMaxSize.bytes.coerceAtLeast(1)) ?: 0.0f
             CacheType.DownloadedSongs -> downloadedSongsDiskCacheSize?.toFloat()
                 ?.div(exoPlayerDiskDownloadCacheMaxSize.bytes.coerceAtLeast(1)) ?: 0.0f
         }
-    }
 
     if (!circularIndicator)
         ProgressIndicator(
-            progress = progressValue.value,
+            progress = progressValue,
             strokeCap = StrokeCap.Round,
             modifier = Modifier
                 .fillMaxWidth()
@@ -98,7 +82,7 @@ fun CacheSpaceIndicator(
         )
     else
         ProgressIndicatorCircular(
-            progress = progressValue.value,
+            progress = progressValue,
             strokeCap = StrokeCap.Round,
             modifier = Modifier
                 .fillMaxWidth()

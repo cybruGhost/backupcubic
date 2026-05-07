@@ -51,6 +51,7 @@ import app.it.fast4x.rimusic.models.Playlist
 import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.Descriptive
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.MenuIcon
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import app.it.fast4x.rimusic.utils.asSong
 import app.it.fast4x.rimusic.utils.formatAsDuration
 import app.kreate.android.R
@@ -250,7 +251,7 @@ class ImportSongsFromCSV(
             repeat(maxRetries) { attempt ->
                 try {
                     val encoded = URLEncoder.encode(query, "UTF-8")
-                    val connection = (URL("https://yt.omada.cafe/api/v1/search?q=$encoded&type=video").openConnection() as HttpURLConnection).apply {
+                    val connection = (URL("${SecureApiConfig.resolveOmadaSearchApi()}?q=$encoded&type=video").openConnection() as HttpURLConnection).apply {
                         requestMethod = "GET"
                         connectTimeout = 15_000
                         readTimeout = 15_000
