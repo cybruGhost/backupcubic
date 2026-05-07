@@ -184,6 +184,7 @@ import app.it.fast4x.rimusic.ui.styling.dynamicColorPaletteOf
 import app.it.fast4x.rimusic.ui.styling.favoritesOverlay
 import app.it.fast4x.rimusic.utils.DisposableListener
 import app.it.fast4x.rimusic.utils.SearchYoutubeEntity
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import app.it.fast4x.rimusic.utils.VerticalfadingEdge2
 import app.it.fast4x.rimusic.utils.VinylSizeKey
 import app.it.fast4x.rimusic.utils.albumCoverRotationKey
@@ -256,6 +257,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.withContext
 import app.kreate.android.me.knighthat.component.player.BlurAdjuster
 import app.kreate.android.me.knighthat.utils.Toaster
 import it.fast4x.innertube.Innertube
@@ -695,7 +697,7 @@ private fun PlayerContent(
 
                         val encodedQuery = URLEncoder.encode(query, "UTF-8")
                         val result = runCatching {
-                            val connection = URL("https://yt.omada.cafe/api/v1/search?q=$encodedQuery")
+                            val connection = URL("${SecureApiConfig.resolveOmadaSearchApi()}?q=$encodedQuery")
                                 .openConnection() as HttpURLConnection
                             connection.requestMethod = "GET"
                             connection.connectTimeout = 8000
@@ -741,7 +743,9 @@ private fun PlayerContent(
                     return null
                 }
 
-                val replacementItem = findReplacement() ?: return@LaunchedEffect
+                val replacementItem = withContext(Dispatchers.IO) {
+                    findReplacement()
+                } ?: return@LaunchedEffect
                 lastSearchFallbackMediaId = currentMediaId
 
                 val wasPlaying = binder.player.isPlaying
@@ -1477,8 +1481,7 @@ private fun PlayerContent(
                                         val pageSpacing = thumbnailSpacingL.toInt() * 0.01 * (screenWidth) - (2.5 * playerThumbnailSizeL.size.dp)
 
                                         LaunchedEffect(pagerState, displayedMediaItemIndex) {
-                                            if (appRunningInBackground || isShowingLyrics) pagerState.scrollToPage(displayedMediaItemIndex)
-                                            else pagerState.animateScrollToPage(displayedMediaItemIndex)
+                                            pagerState.scrollToPage(displayedMediaItemIndex)
                                         }
 
                                         LaunchedEffect(pagerState) {
@@ -2611,7 +2614,6 @@ data class CanvasPlayerState(val canvasUrl: String?, val mediaItemId: String?) {
 fun PagerState.LaunchedEffectScrollToPage(index: Int) {
     val pagerState = this
     LaunchedEffect(pagerState, index) {
-        if (!appRunningInBackground) pagerState.animateScrollToPage(index)
-        else pagerState.scrollToPage(index)
+        pagerState.scrollToPage(index)
     }
 }

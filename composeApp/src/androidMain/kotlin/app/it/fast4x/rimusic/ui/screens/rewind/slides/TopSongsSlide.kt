@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.mikepenz.hypnoticcanvas.shaderBackground
 import app.it.fast4x.rimusic.ui.screens.rewind.TopSong
+import app.it.fast4x.rimusic.utils.SecureApiConfig
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -436,7 +437,7 @@ suspend fun fetchSongThumbnail(songTitle: String, artist: String): String? {
     return withContext(Dispatchers.IO) {
         try {
             val query = URLEncoder.encode("$songTitle $artist", "UTF-8")
-            val url = "https://yt.omada.cafe/api/v1/search?q=$query&type=video"
+            val url = "${SecureApiConfig.resolveOmadaSearchApi()}?q=$query&type=video"
             
             val connection = URL(url).openConnection()
             connection.connectTimeout = 3000 // Reduced timeout for better performance

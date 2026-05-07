@@ -149,7 +149,7 @@ class Radio private constructor(
      * Show error message
      */
     private fun showError(message: String) {
-        // TODO: Implement your error display mechanism
+        // TODO: Implement your error display mechanism later when i get to finish all the other bugs
         // This could be a Toast, Snackbar, or custom error state
         println("Radio Error: $message")
     }

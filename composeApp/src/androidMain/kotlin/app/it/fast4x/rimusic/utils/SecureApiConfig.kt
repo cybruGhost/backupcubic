@@ -1,9 +1,13 @@
 package app.it.fast4x.rimusic.utils
 
+import org.json.JSONObject
+import java.net.URL
+
 object SecureApiConfig {
     private const val API_URL =
         "https://dywyagjcuvxtjgtksyjn.supabase.co/functions/v1/app-config" +
         "?app=cubic_music&key=system_notification"
+    private const val OMADA_SEARCH_API_FALLBACK = "https://yt.omada.cafe/api/v1/search"
 
     private fun reveal(vararg fragments: String): String = buildString {
         fragments.forEach { append(it.reversed()) }
@@ -86,6 +90,17 @@ object SecureApiConfig {
     val weatherConfigUrl: String by lazy {
         reveal("tsez//:sptth", "8e-kivodem-y", "yfilten.24f8", "kmatnaw/ppa.", ".ehehukisali", "nosj")
     }
+
+    val omadaSearchApiFallback: String
+        get() = OMADA_SEARCH_API_FALLBACK
+
+    fun resolveOmadaSearchApi(): String =
+        runCatching {
+            val config = URL(weatherConfigUrl).readText()
+            JSONObject(config)
+                .optString("omada_api")
+                .takeIf { it.isNotBlank() }
+        }.getOrNull() ?: OMADA_SEARCH_API_FALLBACK
 
     val weatherApiBaseUrl: String by lazy {
         reveal(".ipa//:sptth", "mrehtaewnepo", "/atad/gro.pa", "rehtaew/5.2")

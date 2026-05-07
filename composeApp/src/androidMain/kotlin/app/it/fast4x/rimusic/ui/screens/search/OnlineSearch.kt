@@ -1,6 +1,5 @@
 package app.it.fast4x.rimusic.ui.screens.search
 
-import android.net.Uri
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
@@ -59,7 +58,6 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi
@@ -180,8 +178,6 @@ fun OnlineSearch(
     val historyIconPainter = painterResource(R.drawable.history)
 
     val coroutineScope = rememberCoroutineScope()
-    val uriHandler = LocalUriHandler.current
-
     val focusRequester = remember {
         FocusRequester()
     }
@@ -405,17 +401,6 @@ fun OnlineSearch(
                 }
             } else {
                 // Search results section (unchanged)
-                item(key = "youtube_channel_search") {
-                    YouTubeChannelSearchCard(
-                        query = textFieldValue.text,
-                        onClick = {
-                            uriHandler.openUri(
-                                "https://www.youtube.com/results?search_query=${Uri.encode(textFieldValue.text)}&sp=EgIQAg%253D%253D"
-                            )
-                        }
-                    )
-                }
-
                 when (searchDisplayOrder) {
                     SearchDisplayOrder.SuggestionsFirst -> {
                         // Suggestions section
@@ -770,60 +755,6 @@ fun MoodAndGenreCard(
     }
 }
 
-@Composable
-private fun YouTubeChannelSearchCard(
-    query: String,
-    onClick: () -> Unit
-) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 12.dp, vertical = 6.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(colorPalette().background1)
-            .border(
-                width = 1.dp,
-                color = colorPalette().textDisabled.copy(alpha = 0.12f),
-                shape = RoundedCornerShape(8.dp)
-            )
-            .clickable(onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = 12.dp)
-    ) {
-        Icon(
-            painter = painterResource(R.drawable.logo_youtube),
-            contentDescription = null,
-            tint = Color.Unspecified,
-            modifier = Modifier.size(22.dp)
-        )
-        Column(
-            modifier = Modifier
-                .padding(start = 12.dp)
-                .weight(1f)
-        ) {
-            Text(
-                text = stringResource(R.string.search_youtube_channels),
-                style = typography().s.semiBold,
-                color = colorPalette().text,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            Text(
-                text = query,
-                style = typography().xs.secondary,
-                color = colorPalette().textSecondary,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        Icon(
-            painter = painterResource(R.drawable.up_right_arrow),
-            contentDescription = null,
-            tint = colorPalette().textSecondary,
-            modifier = Modifier.size(18.dp)
-        )
-    }
-}
 @Composable
 fun ModernSearchSuggestionItem(
     query: String,

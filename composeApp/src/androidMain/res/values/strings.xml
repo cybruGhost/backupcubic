@@ -734,7 +734,8 @@
 <string name="event_volumekeysinfo">Volume UP next and volume DOWN previous song</string>
 <string name="paste">Paste</string>
 <string name="searches_no_suggestions">No suggestions</string>
-<string name="search_youtube_channels">Search YouTube channels</string>
+<string name="youtube_search">YouTube</string>
+<string name="search_youtube_hint">Type a search to find YouTube songs, videos, artists, and playlists.</string>
 <string name="action_bar_show_discover_button">Show Enable Discover&#x1F31F;</string>
 <string name="playertype">Player type</string>
 <string name="noblur">Remove background blur when lyrics is disabled</string>

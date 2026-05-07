@@ -33,11 +33,15 @@ import app.it.fast4x.rimusic.isConnectionMeteredEnabled
 import app.it.fast4x.rimusic.models.Format
 import app.it.fast4x.rimusic.service.LoginRequiredException
 import app.it.fast4x.rimusic.service.MyDownloadHelper
+import app.it.fast4x.rimusic.service.NoInternetException
+import app.it.fast4x.rimusic.service.PlayableFormatNotFoundException
 import app.it.fast4x.rimusic.service.UnknownException
 import app.it.fast4x.rimusic.service.UnplayableException
 import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeSessionStore
 import app.it.fast4x.rimusic.ui.screens.settings.isYouTubeLoggedIn
+import app.it.fast4x.rimusic.utils.SecureApiConfig
+import app.it.fast4x.rimusic.utils.isNetworkConnected
 import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.utils.isConnectionMetered
 import app.it.fast4x.rimusic.utils.okHttpDataSourceFactory
@@ -238,14 +242,18 @@ private fun getFormatUrl(
     checkPlayability( playerResponse.playabilityStatus )
 
     val format = extractFormat( playerResponse.streamingData, audioQualityFormat, connectionMetered )
+        ?: throw PlayableFormatNotFoundException()
+    val formatUrl = format.url?.takeIf { it.isNotBlank() }
+        ?: throw PlayableFormatNotFoundException()
+
     format?.let {
         CoroutineScope( Threads.DATASPEC_DISPATCHER ).launch { upsertSongFormat( videoId, it ) }
     }
 
-    return YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated( videoId, format?.url.orEmpty() )
+    return YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated( videoId, formatUrl )
                                          .toUri()
                                          .buildUpon()
-                                         .appendQueryParameter( "range", "0-${format?.contentLength ?: 1_000_000}" )
+                                         .appendQueryParameter( "range", "0-${format.contentLength ?: 1_000_000}" )
                                          .appendQueryParameter( "cpn", cpn )
                                          .build()
 }
@@ -344,7 +352,7 @@ private suspend fun resolvePrimaryFormatUrl(
     try {
         getAndroidReelFormatUrl(videoId, audioQualityFormat, connectionMetered)
             .also { PlaybackSourceMonitor.report(PlaybackSourceKind.YouTubeAndroid, videoId, isFallback) }
-    } catch (primaryError: Exception) {
+    } catch (primaryError: Throwable) {
         runCatching {
             getIosFormatUrl(videoId, audioQualityFormat, connectionMetered)
                 .also { PlaybackSourceMonitor.report(PlaybackSourceKind.YouTubeIos, videoId, isFallback) }
@@ -544,7 +552,7 @@ private suspend fun findReplacementVideoId(videoId: String): String? {
         queries.forEach { query ->
             runCatching {
                 val encodedQuery = URLEncoder.encode(query, "UTF-8")
-                val connection = URL("https://yt.omada.cafe/api/v1/search?q=$encodedQuery")
+                val connection = URL("${SecureApiConfig.resolveOmadaSearchApi()}?q=$encodedQuery")
                     .openConnection() as HttpURLConnection
                 connection.requestMethod = "GET"
                 connection.connectTimeout = 8000
@@ -587,11 +595,19 @@ fun DataSpec.process(
     audioQualityFormat: AudioQualityFormat,
     connectionMetered: Boolean
 ): DataSpec = runBlocking( Dispatchers.IO ) {
+    if (!isNetworkConnected(appContext())) {
+        throw NoInternetException()
+    }
+
     val formatUri = runBlocking( Dispatchers.IO ) {
         var replacementVideoId: String? = null
         try {
             resolvePrimaryFormatUrl(videoId, audioQualityFormat, connectionMetered, isFallback = false)
-        } catch (primaryError: Exception) {
+        } catch (primaryError: Throwable) {
+            if (!isNetworkConnected(appContext())) {
+                throw NoInternetException()
+            }
+
             if (replacementVideoId.isNullOrBlank()) {
                 replacementVideoId = findReplacementVideoId(videoId)
             }
@@ -611,7 +627,7 @@ fun DataSpec.process(
                 replacementVideoId?.takeIf { it.isNotBlank() }?.let { fallbackVideoId ->
                     resolvePrimaryFormatUrl(fallbackVideoId, audioQualityFormat, connectionMetered, isFallback = true)
                 }
-            }.getOrNull() ?: throw primaryError
+            }.getOrNull() ?: throw (primaryError as? Exception ?: UnknownException())
         }
     }
 
@@ -654,6 +670,7 @@ fun PlayerServiceModern.createDataSourceFactory(): DataSource.Factory {
         }.onFailure {
             Timber.e(it, "Failed to resolve playback DataSpec for %s. Falling back to safe source.", videoId)
         }.getOrElse {
+            if (!isNetworkConnected(appContext())) throw NoInternetException()
             fallbackPlaybackDataSpec(dataSpec, videoId)
         }
     }
@@ -688,6 +705,7 @@ fun MyDownloadHelper.createDataSourceFactory(): DataSource.Factory {
         }.onFailure {
             Timber.e(it, "Failed to resolve download DataSpec for %s. Falling back to safe source.", videoId)
         }.getOrElse {
+            if (!isNetworkConnected(appContext())) throw NoInternetException()
             fallbackPlaybackDataSpec(dataSpec, videoId)
         }
     }
