@@ -200,24 +200,26 @@ fun HomeSongs(
                                            .map { list ->
                                                // Include local songs if enabled
                                                list.fastFilter {
-                                                   !includeLocalSongs || !it.id.startsWith( LOCAL_KEY_PREFIX, true )
+                                                   includeLocalSongs || !it.id.startsWith( LOCAL_KEY_PREFIX, true )
                                                }
                                            }
 
             BuiltInPlaylist.Downloaded -> {
                 // [MyDownloadHelper] provide a list of downloaded songs, which is faster to retrieve
                 // than using `Cache.isCached()` call
-                val downloaded: List<String> = MyDownloadHelper.downloads
+                val downloaded: Set<String> = MyDownloadHelper.downloads
                                                                .value
                                                                .values
                                                                .filter { it.state == Download.STATE_COMPLETED }
                                                                .fastMap { it.request.id }
+                                                               .toSet()
                 val customFolderSongs = loadCustomDownloadFolderSongs(context, customDownloadUri)
                 Database.songTable
                         .sortAll( songSort.sortBy, songSort.sortOrder )
                         .map { list ->
                             (list.fastFilter { it.id in downloaded } + customFolderSongs)
                                 .distinctBy(Song::id)
+                                .sortedForHome(songSort.sortBy, songSort.sortOrder)
                         }
             }
 
@@ -335,7 +337,9 @@ fun HomeSongs(
     }
 
     LaunchedEffect( items, search.inputValue, isRecommendationEnabled, relatedSongsPositions, currentPlayingMediaId ) {
-        val filteredItems = items.toMutableList()
+        val filteredItems = items
+             .sortedForHome(songSort.sortBy, songSort.sortOrder)
+             .toMutableList()
              .apply {
                  if (isRecommendationEnabled) {
                      relatedSongsPositions.forEach { (song, position) ->
@@ -353,22 +357,13 @@ fun HomeSongs(
                  containsTitle || containsArtist
              }
 
-        val reorderedItems = if (builtInPlaylist in setOf(
-                BuiltInPlaylist.Downloaded,
-                BuiltInPlaylist.Offline,
-                BuiltInPlaylist.Favorites
-            )
-        ) {
-            val normalizedPlayingId = currentPlayingMediaId.substringAfterLast("/", currentPlayingMediaId)
-            val currentIndex = filteredItems.indexOfFirst { song ->
-                song.id == currentPlayingMediaId || song.id == normalizedPlayingId
-            }
-            if (currentIndex > 0) {
-                filteredItems.toMutableList().apply {
-                    add(0, removeAt(currentIndex))
-                }
-            } else {
-                filteredItems
+        val normalizedPlayingId = currentPlayingMediaId.substringAfterLast("/", currentPlayingMediaId)
+        val currentIndex = filteredItems.indexOfFirst { song ->
+            song.id == currentPlayingMediaId || song.id == normalizedPlayingId
+        }
+        val reorderedItems = if (currentIndex > 0) {
+            filteredItems.toMutableList().apply {
+                add(0, removeAt(currentIndex))
             }
         } else {
             filteredItems
@@ -377,6 +372,9 @@ fun HomeSongs(
         itemsOnDisplay.clear()
         itemsOnDisplay.addAll(reorderedItems)
 
+        if (currentIndex > 0 && search.inputValue.isBlank()) {
+            lazyListState.animateScrollToItem(0)
+        }
     }
 
     LaunchedEffect( relatedSongs.size, isRecommendationEnabled ) {
@@ -405,8 +403,18 @@ fun HomeSongs(
     val downloadProgresses by MyDownloadHelper.progresses.collectAsState()
     val downloadStates by MyDownloadHelper.downloads.collectAsState()
 
-    val visibleBulkDownloadSongs = remember(itemsOnDisplay, bulkDownloadIds) {
-        itemsOnDisplay.filter { it.id in bulkDownloadIds }
+    val visibleBulkDownloadSongs = remember(items, bulkDownloadIds, downloadStates) {
+        val songsById = items.associateBy { it.id }
+        bulkDownloadIds.mapNotNull { id ->
+            songsById[id]?.takeIf { song ->
+                downloadStates[song.id]?.state in setOf(
+                    Download.STATE_DOWNLOADING,
+                    Download.STATE_QUEUED,
+                    Download.STATE_RESTARTING,
+                    Download.STATE_COMPLETED
+                )
+            }
+        }
     }
 
     LazyColumn(
@@ -593,14 +601,18 @@ private suspend fun loadCustomDownloadFolderSongs(
     val root = DocumentFile.fromTreeUri(context, Uri.parse(treeUriString)) ?: return@withContext emptyList()
     root.walkAudioFiles().mapNotNull { file ->
         val fileUri = file.uri
+        val fileName = file.name?.substringBeforeLast(".").orEmpty()
         val retriever = MediaMetadataRetriever()
         runCatching {
             retriever.setDataSource(context, fileUri)
-            val title = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
+            val metadataTitle = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE)
                 ?.takeIf { it.isNotBlank() }
-                ?: file.name?.substringBeforeLast(".").orEmpty()
-            val artist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
+            val metadataArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST)
                 ?.takeIf { it.isNotBlank() }
+                ?.takeUnless { it.equals("unknown", ignoreCase = true) || it.equals("<unknown>", ignoreCase = true) }
+            val filenameParts = splitArtistTitle(fileName)
+            val title = metadataTitle ?: filenameParts?.second ?: fileName
+            val artist = metadataArtist ?: filenameParts?.first
             val durationMs = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)
                 ?.toLongOrNull()
             Song(
@@ -626,6 +638,33 @@ private fun DocumentFile.walkAudioFiles(): List<DocumentFile> {
             else -> emptyList()
         }
     }
+}
+
+private fun List<Song>.sortedForHome(sortBy: SongSortBy, sortOrder: app.it.fast4x.rimusic.enums.SortOrder): List<Song> {
+    if (sortBy in setOf(SongSortBy.DateAdded, SongSortBy.DatePlayed, SongSortBy.AlbumName)) {
+        return toList()
+    }
+
+    val sorted = when (sortBy) {
+        SongSortBy.PlayTime -> sortedBy(Song::totalPlayTimeMs)
+        SongSortBy.RelativePlayTime -> sortedBy(Song::relativePlayTime)
+        SongSortBy.Title -> sortedBy { it.cleanTitle().lowercase() }
+        SongSortBy.Artist -> sortedBy { it.cleanArtistsText().lowercase() }
+        SongSortBy.Duration -> sortedBy { durationTextToMillis(it.durationText.orEmpty()) }
+        SongSortBy.DateLiked -> sortedBy { it.likedAt ?: Long.MIN_VALUE }
+        SongSortBy.DateAdded,
+        SongSortBy.DatePlayed,
+        SongSortBy.AlbumName -> toList()
+    }
+    return sortOrder.applyTo(sorted)
+}
+
+private fun splitArtistTitle(name: String): Pair<String, String>? {
+    val parts = name.split(Regex("\\s+-\\s+"), limit = 2)
+    if (parts.size != 2) return null
+    val artist = parts[0].trim()
+    val title = parts[1].trim()
+    return if (artist.isNotBlank() && title.isNotBlank()) artist to title else null
 }
 
 private fun DocumentFile.isPlayableAudioFile(): Boolean {

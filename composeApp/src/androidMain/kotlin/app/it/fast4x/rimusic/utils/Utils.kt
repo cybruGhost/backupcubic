@@ -418,7 +418,7 @@ val Song.asMediaItem: MediaItem
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(cleanPrefix(title))
-                .setArtist(artistsText)
+                .setArtist(artistsText?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) })
                 .setArtworkUri(thumbnailUrl?.toUri())
                 .setExtras(
                     bundleOf(
@@ -460,8 +460,8 @@ val MediaItem.asSong: Song
             mediaId.startsWith("file://", true) -> mediaId
             else -> mediaId.split("/").lastOrNull() ?: mediaId
         },
-        title = cleanPrefix(mediaMetadata.title.toString()),
-        artistsText = mediaMetadata.artist.toString(),
+        title = cleanPrefix(mediaMetadata.title?.toString()?.takeIf { !it.equals("null", ignoreCase = true) }.orEmpty()),
+        artistsText = mediaMetadata.artist?.toString()?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) },
         durationText = mediaMetadata.extras?.getString("durationText"),
         thumbnailUrl = mediaMetadata.artworkUri
             ?.toString()

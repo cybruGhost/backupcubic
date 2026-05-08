@@ -830,6 +830,8 @@
 <string name="lang_tamil">Tamil</string>
 <string name="player_auto_load_songs_in_queue">Auto load songs in queue</string>
 <string name="player_auto_load_songs_in_queue_description">Adds songs when the queue is about to end</string>
+<string name="offline_queue_network_refill">Network refill</string>
+<string name="offline_queue_network_refill_description">Allow this downloaded queue to fetch online songs when it runs low</string>
 <string name="show_vinyl_thumbnail_animation">Show Vinyl animation as thumbnail</string>
 <string name="toggle_romanization">Toggle Romanization</string>
 <string name="edit_thumbnail">Edit Thumbnail</string>

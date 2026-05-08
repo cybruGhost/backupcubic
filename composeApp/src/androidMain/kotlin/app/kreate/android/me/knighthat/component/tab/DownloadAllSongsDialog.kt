@@ -60,6 +60,7 @@ class DownloadAllSongsDialog(
         val songsToDownload = getSongs()
             .distinctBy(Song::id)
             .filterNot(Song::isLocal)
+            .filterNot { song -> MyDownloadHelper.isSongDownloaded(song.id) }
 
         if (songsToDownload.isEmpty()) {
             onDismiss()
@@ -82,7 +83,7 @@ class DownloadAllSongsDialog(
                     MyDownloadHelper.addDownload(appContext(), song.asMediaItem)
                 }
 
-                if ((index + 1) % 5 == 0) delay(50)
+                if ((index + 1) % 3 == 0) delay(150)
             }
         }
     }

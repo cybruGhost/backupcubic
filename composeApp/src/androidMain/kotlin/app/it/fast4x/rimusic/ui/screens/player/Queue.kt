@@ -86,6 +86,7 @@ import app.it.fast4x.rimusic.utils.isLandscape
 import app.it.fast4x.rimusic.utils.isNowPlaying
 import app.it.fast4x.rimusic.utils.manageDownload
 import app.it.fast4x.rimusic.utils.mediaItems
+import app.it.fast4x.rimusic.utils.offlineQueueNetworkRefillKey
 import app.it.fast4x.rimusic.utils.queueTypeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.shouldBePlaying
@@ -97,6 +98,7 @@ import app.kreate.android.me.knighthat.component.tab.Locator
 import app.kreate.android.me.knighthat.component.tab.Search
 import app.kreate.android.me.knighthat.component.ui.screens.player.DeleteFromQueue
 import app.kreate.android.me.knighthat.component.ui.screens.player.Discover
+import app.kreate.android.me.knighthat.component.ui.screens.player.OfflineQueueNetworkRefill
 import app.kreate.android.me.knighthat.component.ui.screens.player.QueueArrow
 import app.kreate.android.me.knighthat.component.ui.screens.player.Repeat
 import app.kreate.android.me.knighthat.component.ui.screens.player.ShuffleQueue
@@ -193,8 +195,10 @@ fun Queue(
             playlistName = plistName.value,
             songs = ::getSongs
         )
+        val isDownloadedQueue = items.isNotEmpty() && items.all { isDownloadedSong(it.id) }
         val shuffle = ShuffleQueue( player, reorderingState )
         val discover = Discover( onDiscoverClick )
+        val networkRefill = OfflineQueueNetworkRefill(isDownloadedQueue)
         val repeat = Repeat.init()
         val deleteDialog = DeleteFromQueue {
             if( itemSelector.isEmpty() ) {
@@ -491,6 +495,8 @@ fun Queue(
                             add( search )
                             if( rememberPreference( showButtonPlayerDiscoverKey, false ).value )
                                 add( discover )
+                            if( isDownloadedQueue || rememberPreference( offlineQueueNetworkRefillKey, false ).value )
+                                add( networkRefill )
                             add( positionLock )
                             add( repeat )
                             add( shuffle )

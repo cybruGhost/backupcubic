@@ -313,6 +313,7 @@ const val useYtLoginOnlyForBrowseKey = "useYtLoginOnlyForBrowse"
 
 
 const val autoLoadSongsInQueueKey = "autoLoadSongsInQueue"
+const val offlineQueueNetworkRefillKey = "offlineQueueNetworkRefill"
 const val showSecondLineKey = "showSecondLine"
 const val VinylSizeKey = "VinylSize"
 const val romanizationKey = "romanization"

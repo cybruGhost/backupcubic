@@ -171,6 +171,7 @@ import app.it.fast4x.rimusic.utils.playbackSpeedKey
 import app.it.fast4x.rimusic.utils.playbackVolumeKey
 import app.it.fast4x.rimusic.utils.preferences
 import app.it.fast4x.rimusic.utils.putEnum
+import app.it.fast4x.rimusic.utils.offlineQueueNetworkRefillKey
 import app.it.fast4x.rimusic.utils.queueLoopTypeKey
 import app.it.fast4x.rimusic.utils.resumePlaybackOnStartKey
 import app.it.fast4x.rimusic.utils.resumePlaybackWhenDeviceConnectedKey
@@ -286,13 +287,15 @@ class PlayerServiceModern : MediaLibraryService(),
     private var lastEndedRecoveryMediaId: String? = null
     private var lastEndedRecoveryMs = 0L
     private var currentSongRetryCount = 0
-    private val maxCurrentSongRetries = 3
+    private val maxCurrentSongRetries = 5
     private var resumeOnNetworkRestore = false
     private var pauseTriggeredByNetworkWait = false
     private var networkRecoveryMediaId: String? = null
     private var lastPlaybackPositionMs = 0L
     private var lastBufferedPositionMs = 0L
     private val playbackRecoveryHelper = PlaybackRecoveryHelper()
+    private var consecutiveErrorSkipCount = 0
+    private val maxConsecutiveErrorSkips = 5
     private var lastWidgetUpdateMs = 0L
     private var widgetUpdateJob: Job? = null
     private var cacheCompletionJob: Job? = null
@@ -970,6 +973,9 @@ private fun syncPlaybackWakeLockState() {
     override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
         if (!isServiceReady) return
         currentSongRetryCount = 0
+        if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+            consecutiveErrorSkipCount = 0
+        }
         waitingForNetwork.value = false
         resumeOnNetworkRestore = false
         pauseTriggeredByNetworkWait = false
@@ -1102,6 +1108,18 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             return
         }
 
+        if (!isNetworkAvailable.value) {
+            applyRecoveryDecision(
+                PlaybackRecoveryHelper.Decision.WaitForNetwork(
+                    mediaId = currentMediaId.ifBlank { player.currentMediaItem?.mediaId.orEmpty() },
+                    positionMs = lastPlaybackPositionMs.takeIf { it > 0L } ?: player.currentPosition.coerceAtLeast(0L),
+                    message = "No internet. Playback paused here and will retry when connection returns.",
+                    resumeWhenNetworkReturns = player.isPlaying || player.playWhenReady || player.playbackState == Player.STATE_BUFFERING
+                )
+            )
+            return
+        }
+
         if (isExtractorDriftIssue) {
             waitingForNetwork.value = false
             resumeOnNetworkRestore = false
@@ -1170,9 +1188,10 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
 
         if (error.errorCode in playbackHttpExceptionList) {
             Timber.e("PlayerServiceModern onPlayerError recovered occurred errorCodeName ${error.errorCodeName}")
+            val shouldResume = player.isPlaying || player.playWhenReady
             player.pause()
             player.safePrepare()
-            if (player.playWhenReady) {
+            if (shouldResume) {
                 runCatching { player.play() }
                     .onFailure { Timber.e(it, "Failed to resume playback after HTTP recovery for %s", currentMediaId) }
             }
@@ -1221,6 +1240,15 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             return
 
         val prev = player.currentMediaItem ?: return
+        if (consecutiveErrorSkipCount >= maxConsecutiveErrorSkips) {
+            applyRecoveryDecision(
+                PlaybackRecoveryHelper.Decision.Pause(
+                    "Several songs failed in a row. Playback paused so the queue does not loop through everything."
+                )
+            )
+            return
+        }
+        consecutiveErrorSkipCount++
         val skipped = player.skipBrokenMediaItem("onPlayerError ${error.errorCodeName}")
         if (!skipped) return
 
@@ -1287,6 +1315,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         when (playbackState) {
             Player.STATE_READY -> {
                 waitingForNetwork.value = false
+                consecutiveErrorSkipCount = 0
                 syncPlaybackWakeLockState()
             }
             Player.STATE_BUFFERING -> {
@@ -1348,10 +1377,17 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         val isEnabled = preferences.getBoolean(autoLoadSongsInQueueKey, true)
         val isRepeatTransition = reason == Player.MEDIA_ITEM_TRANSITION_REASON_REPEAT
         val remainingQueueItems = (player.mediaItemCount - player.currentMediaItemIndex - 1).coerceAtLeast(0)
+        val isDownloadedQueue = player.mediaItemCount > 0 &&
+            (0 until player.mediaItemCount).all { index ->
+                MyDownloadHelper.isSongDownloaded(player.getMediaItemAt(index).mediaId)
+            }
+        val canRefillDownloadedQueue = !isDownloadedQueue ||
+            preferences.getBoolean(offlineQueueNetworkRefillKey, false)
 
         if (
             isEnabled &&
             !isRepeatTransition &&
+            canRefillDownloadedQueue &&
             !binder.isLoadingRadio &&
             preferences.getBoolean(autoLoadSongsInQueueKey, true) &&
             remainingQueueItems <= 5

@@ -28,6 +28,7 @@ import androidx.compose.material3.Button as MaterialButton
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +42,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastMap
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.core.content.ContextCompat
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
@@ -101,6 +104,9 @@ fun OnDeviceSong(
     var currentPath by remember( songsOnDevice.values ) {
         mutableStateOf( PathUtils.findCommonPath( songsOnDevice.values ) )
     }
+    var currentPlayingMediaId by remember {
+        mutableStateOf(binder?.player?.currentMediaItem?.mediaId.orEmpty())
+    }
 
     //<editor-fold defaultstate="collapsed" desc="Permission handler">
     val permission = rememberSaveable {
@@ -134,6 +140,22 @@ fun OnDeviceSong(
         HOME_SONGS_SORT_ORDER
     )
 
+    DisposableEffect(binder?.player) {
+        val player = binder?.player
+        if (player == null) {
+            onDispose { }
+        } else {
+            val listener = object : Player.Listener {
+                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+                    currentPlayingMediaId = mediaItem?.mediaId.orEmpty()
+                }
+            }
+            currentPlayingMediaId = player.currentMediaItem?.mediaId.orEmpty()
+            player.addListener(listener)
+            onDispose { player.removeListener(listener) }
+        }
+    }
+
     LaunchedEffect( isPermissionGranted, odSort.sortBy, odSort.sortOrder ) {
         if( !isPermissionGranted ) return@LaunchedEffect
 
@@ -149,9 +171,9 @@ fun OnDeviceSong(
                        ?: fallbackPath
                }
     }
-    LaunchedEffect( songsOnDevice, search.inputValue, currentPath ) {
+    LaunchedEffect( songsOnDevice, search.inputValue, currentPath, currentPlayingMediaId ) {
         val normalizedCurrentPath = PathUtils.normalizePath(currentPath)
-        songsOnDevice.keys.filter { !parentalControlEnabled || !it.title.startsWith( EXPLICIT_PREFIX, true ) }
+        val filteredSongs = songsOnDevice.keys.filter { !parentalControlEnabled || !it.title.startsWith( EXPLICIT_PREFIX, true ) }
                           .filter {
                               val songPath = songsOnDevice[it]?.let(PathUtils::normalizePath) ?: return@filter false
                               // [showFolder4LocalSongs] must be false and
@@ -168,10 +190,20 @@ fun OnDeviceSong(
 
                               containsTitle || containsArtist
                           }
-                          .let {
-                              itemsOnDisplay.clear()
-                              itemsOnDisplay.addAll( it )
-                          }
+        val normalizedPlayingId = currentPlayingMediaId.substringAfterLast("/", currentPlayingMediaId)
+        val currentIndex = filteredSongs.indexOfFirst { song ->
+            song.id == currentPlayingMediaId || song.id == normalizedPlayingId
+        }
+        val reorderedSongs = if (currentIndex > 0) {
+            filteredSongs.toMutableList().apply { add(0, removeAt(currentIndex)) }
+        } else {
+            filteredSongs
+        }
+        itemsOnDisplay.clear()
+        itemsOnDisplay.addAll(reorderedSongs)
+        if (currentIndex > 0 && search.inputValue.isBlank()) {
+            lazyListState.animateScrollToItem(0)
+        }
     }
     LaunchedEffect( Unit ) {
         buttons.add( 0, odSort )
