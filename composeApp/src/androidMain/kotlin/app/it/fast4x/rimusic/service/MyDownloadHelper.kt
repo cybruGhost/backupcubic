@@ -168,7 +168,7 @@ object MyDownloadHelper {
     }
 
     fun getDownloadCacheDirectory(context: Context): File {
-        return defaultDownloadRootDirectory(context).resolve(CACHE_DIRNAME)
+        return defaultDownloadRootDirectory(context)
     }
 
     fun getDownloadRootDirectory(context: Context): File {
@@ -194,27 +194,34 @@ object MyDownloadHelper {
         context.preferences.getString(CUSTOM_DOWNLOAD_PATH_KEY, "").orEmpty()
 
 private fun defaultDownloadRootDirectory(context: Context): File {
-    // Priority 1: Legacy "RiMusic/Downloads" folder (for backward compatibility)
-    val legacyDir = File(Environment.getExternalStorageDirectory(), ROOT_DOWNLOAD_DIR)
-    if (legacyDir.exists() && legacyDir.isDirectory) {
-        return legacyDir
-    }
-
-    // Priority 2: Custom user‑selected folder (SAF)
-    val customUri = getCustomDownloadTreeUri(context)
-    if (customUri != null) {
-        return DocumentFile.fromTreeUri(context, customUri)?.uri?.path?.let { File(it) }
-            ?: context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)!!
-    }
-
-    // Priority 3: App‑specific external music directory (default for new installs)
-    return when (context.preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)) {
-        ExoPlayerCacheLocation.System -> {
-            context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
-        }
+    val selectedLocation = context.preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)
+    val preferredDir = when (selectedLocation) {
+        ExoPlayerCacheLocation.System -> context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         ExoPlayerCacheLocation.Private -> context.filesDir
     }
+
+    if (preferredDir.looksLikeExoCacheDirectory()) return preferredDir
+
+    val alternateDir = when (selectedLocation) {
+        ExoPlayerCacheLocation.System -> context.filesDir
+        ExoPlayerCacheLocation.Private -> context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
+    }
+    if (alternateDir.looksLikeExoCacheDirectory()) return alternateDir
+
+    val legacyDir = File(Environment.getExternalStorageDirectory(), ROOT_DOWNLOAD_DIR)
+    if (legacyDir.looksLikeExoCacheDirectory()) return legacyDir
+
+    return preferredDir
 }
+
+private fun File.looksLikeExoCacheDirectory(): Boolean =
+    exists() && isDirectory && (listFiles()?.any { file ->
+        file.isFile && (
+            file.name.endsWith(".exo", ignoreCase = true) ||
+            file.name.startsWith("cached_content_index", ignoreCase = true) ||
+            file.name.endsWith(".uid", ignoreCase = true)
+        )
+    } == true)
 
     @Synchronized
     fun getDownloadCache(context: Context): Cache {
@@ -320,7 +327,7 @@ private fun defaultDownloadRootDirectory(context: Context): File {
                 executor
             ).apply {
                 maxParallelDownloads = 3
-                minRetryCount = 2
+                minRetryCount = 1
                 requirements = Requirements(Requirements.NETWORK)
 
                 addListener(
@@ -591,6 +598,11 @@ coroutineScope.launch {
     fun isSongDownloaded(songId: String): Boolean {
         val download = downloads.value[songId]
         return download?.state == Download.STATE_COMPLETED
+    }
+
+    fun isDownloadCached(songId: String): Boolean {
+        if (!MyDownloadHelper::downloadCache.isInitialized) return false
+        return runCatching { downloadCache.getCachedSpans(songId).isNotEmpty() }.getOrDefault(false)
     }
 
     fun getDownloadedSongsCount(): Int {

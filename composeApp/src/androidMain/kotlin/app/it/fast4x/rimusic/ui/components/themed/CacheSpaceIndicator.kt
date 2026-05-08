@@ -20,6 +20,7 @@ import app.it.fast4x.rimusic.utils.coilDiskCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.exoPlayerDiskCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.exoPlayerDiskDownloadCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
+import kotlinx.coroutines.delay
 
 
 @androidx.annotation.OptIn(UnstableApi::class)
@@ -57,18 +58,33 @@ fun CacheSpaceIndicator(
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
 
-    val imageDiskCacheSize = ImageCacheFactory.getCacheSize()
-    val cachedSongsDiskCacheSize = binder?.cache?.cacheSpace
-    val downloadedSongsDiskCacheSize = binder?.downloadCache?.cacheSpace
+    val imageDiskCacheSize by androidx.compose.runtime.produceState(initialValue = ImageCacheFactory.getCacheSize()) {
+        while (true) {
+            value = ImageCacheFactory.getCacheSize()
+            delay(1000)
+        }
+    }
+    val cachedSongsDiskCacheSize by androidx.compose.runtime.produceState(initialValue = binder?.cache?.cacheSpace ?: 0L, binder?.cache) {
+        while (true) {
+            value = binder?.cache?.cacheSpace ?: 0L
+            delay(1000)
+        }
+    }
+    val downloadedSongsDiskCacheSize by androidx.compose.runtime.produceState(initialValue = binder?.downloadCache?.cacheSpace ?: 0L, binder?.downloadCache) {
+        while (true) {
+            value = binder?.downloadCache?.cacheSpace ?: 0L
+            delay(1000)
+        }
+    }
 
     val progressValue =
         when (cacheType) {
             CacheType.Images -> imageDiskCacheSize.toFloat()
                 .div(coilDiskCacheMaxSize.bytes.coerceAtLeast(1))
-            CacheType.CachedSongs -> cachedSongsDiskCacheSize?.toFloat()
-                ?.div(exoPlayerDiskCacheMaxSize.bytes.coerceAtLeast(1)) ?: 0.0f
-            CacheType.DownloadedSongs -> downloadedSongsDiskCacheSize?.toFloat()
-                ?.div(exoPlayerDiskDownloadCacheMaxSize.bytes.coerceAtLeast(1)) ?: 0.0f
+            CacheType.CachedSongs -> cachedSongsDiskCacheSize.toFloat()
+                .div(exoPlayerDiskCacheMaxSize.bytes.coerceAtLeast(1))
+            CacheType.DownloadedSongs -> downloadedSongsDiskCacheSize.toFloat()
+                .div(exoPlayerDiskDownloadCacheMaxSize.bytes.coerceAtLeast(1))
         }
 
     if (!circularIndicator)

@@ -1614,6 +1614,7 @@ fun SelectLyricFromTrack(
                     }
 
                     val lazyListState = rememberLazyListState()
+                    var karaokePosition by remember(mediaId, text) { mutableStateOf(player.currentPosition) }
 
                     LaunchedEffect(mediaId, text) {
                         lazyListState.scrollToItem(0)
@@ -1634,6 +1635,7 @@ fun SelectLyricFromTrack(
 
                         while (isActive) {
                             delay(50)
+                            karaokePosition = player.currentPosition
                             if (!synchronizedLyrics.update()) continue
 
                             lazyListState.animateScrollToItem(
@@ -1811,6 +1813,20 @@ fun SelectLyricFromTrack(
                                     easing = LinearOutSlowInEasing
                                 ),
                                 label = ""
+                            )
+                            val nextSentenceStart = synchronizedLyrics.sentences
+                                .getOrNull(index + 1)
+                                ?.first
+                                ?: (sentence.first + 4_000L)
+                            val karaokeProgress = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) {
+                                ((karaokePosition - sentence.first).toFloat() / (nextSentenceStart - sentence.first).coerceAtLeast(600L))
+                                    .coerceIn(0f, 1f)
+                            } else 0f
+                            val karaokeBrush = Brush.horizontalGradient(
+                                0f to colorPalette().accent,
+                                karaokeProgress to colorPalette().accent,
+                                (karaokeProgress + 0.015f).coerceAtMost(1f) to colorPalette().textSecondary.copy(alpha = 0.45f),
+                                1f to colorPalette().textSecondary.copy(alpha = 0.45f)
                             )
                             //Rainbow Shimmer
                             Box(
@@ -2007,7 +2023,9 @@ fun SelectLyricFromTrack(
                                         text = translatedText,
                                         style = TextStyle(
                                             fontWeight = FontWeight.Medium,
-                                            color = if (index == synchronizedLyrics.index) PureBlackColorPalette.text else PureBlackColorPalette.textDisabled,
+                                            color = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) {
+                                                colorPalette().accent.copy(alpha = 0.55f + (karaokeProgress * 0.45f))
+                                            } else if (index == synchronizedLyrics.index) PureBlackColorPalette.text else PureBlackColorPalette.textDisabled,
                                             fontSize = if (fontSize == LyricsFontSize.Light) typography().m.fontSize
                                                        else if (fontSize == LyricsFontSize.Medium) typography().l.fontSize
                                                        else if (fontSize == LyricsFontSize.Heavy) typography().xl.fontSize
@@ -2034,7 +2052,8 @@ fun SelectLyricFromTrack(
                                         text = translatedText,
                                         style = TextStyle(
                                             fontWeight = FontWeight.Medium,
-                                            color = if (lyricsColor == LyricsColor.White) Color.White
+                                            color = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) colorPalette().accent.copy(alpha = 0.55f + (karaokeProgress * 0.45f))
+                                            else if (lyricsColor == LyricsColor.White) Color.White
                                             else if (lyricsColor == LyricsColor.Black) Color.Black
                                             else if (lyricsColor == LyricsColor.Thememode) colorPalette().text
                                             else colorPalette().accent,
@@ -2092,7 +2111,8 @@ fun SelectLyricFromTrack(
                                     BasicText(
                                         text = translatedText,
                                         style = TextStyle(
-                                            brush = if (lightTheme) brushrainbow else brushrainbowdark,
+                                            brush = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) karaokeBrush
+                                            else if (lightTheme) brushrainbow else brushrainbowdark,
                                             fontSize = if (fontSize == LyricsFontSize.Light) typography().m.fontSize
                                                        else if (fontSize == LyricsFontSize.Medium) typography().l.fontSize
                                                        else if (fontSize == LyricsFontSize.Heavy) typography().xl.fontSize

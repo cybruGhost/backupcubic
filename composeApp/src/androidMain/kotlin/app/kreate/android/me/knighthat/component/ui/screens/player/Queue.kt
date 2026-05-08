@@ -20,6 +20,7 @@ import app.it.fast4x.rimusic.ui.components.tab.toolbar.DynamicColor
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.Icon
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.MenuIcon
 import app.it.fast4x.rimusic.utils.discoverKey
+import app.it.fast4x.rimusic.utils.offlineQueueNetworkRefillKey
 import app.it.fast4x.rimusic.utils.queueLoopTypeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.showButtonPlayerArrowKey
@@ -44,6 +45,25 @@ fun Discover(
     override fun onShortClick() {
         isFirstColor = !isFirstColor
         onDiscoverClick( isFirstColor )
+    }
+}
+
+@SuppressLint("ComposableNaming")
+@Composable
+fun OfflineQueueNetworkRefill(
+    isDownloadedQueue: Boolean
+): MenuIcon = object: MenuIcon, Descriptive, DynamicColor {
+    override val menuIconTitle: String
+        @Composable
+        get() = stringResource(R.string.offline_queue_network_refill)
+    override val iconId: Int = R.drawable.globe
+    override val messageId: Int = R.string.offline_queue_network_refill_description
+    override val isEnabled: Boolean = isDownloadedQueue
+
+    override var isFirstColor: Boolean by rememberPreference(offlineQueueNetworkRefillKey, false)
+
+    override fun onShortClick() {
+        if (isDownloadedQueue) isFirstColor = !isFirstColor
     }
 }
 

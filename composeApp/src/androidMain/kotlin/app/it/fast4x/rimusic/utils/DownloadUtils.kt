@@ -50,6 +50,9 @@ fun downloadedStateMedia(mediaId: String): DownloadedStateMedia {
             download?.state == Download.STATE_COMPLETED
         }
     }.collectAsState(initial = false, context = Dispatchers.IO)
+    val isDownloadCached = remember(mediaId, binder?.downloadCache?.cacheSpace) {
+        MyDownloadHelper.isDownloadCached(mediaId)
+    }
     val isCached by remember {
         Database.formatTable.findBySongId( mediaId ).map {
             it?.contentLength == cachedBytes
@@ -57,9 +60,9 @@ fun downloadedStateMedia(mediaId: String): DownloadedStateMedia {
     }.collectAsState( false, Dispatchers.IO )
 
     return when {
-        isDownloaded && isCached -> DownloadedStateMedia.CACHED_AND_DOWNLOADED
-        isDownloaded && !isCached -> DownloadedStateMedia.DOWNLOADED
-        !isDownloaded && isCached -> DownloadedStateMedia.CACHED
+        isDownloaded && (isCached || isDownloadCached) -> DownloadedStateMedia.CACHED_AND_DOWNLOADED
+        isDownloaded -> DownloadedStateMedia.DOWNLOADED
+        isCached || isDownloadCached -> DownloadedStateMedia.CACHED
         else -> DownloadedStateMedia.NOT_CACHED_OR_DOWNLOADED
     }
 }
@@ -77,6 +80,9 @@ fun getDownloadStateMedia(
         MyDownloadHelper.getDownload(songId)
             .map { download -> download?.state == Download.STATE_COMPLETED }
     }.collectAsState(initial = false, context = Dispatchers.IO)
+    val isDownloadCached = remember(songId, binder.downloadCache.cacheSpace) {
+        MyDownloadHelper.isDownloadCached(songId)
+    }
     val isCached by remember {
         Database.formatTable
             .findBySongId( songId )
@@ -88,9 +94,9 @@ fun getDownloadStateMedia(
     }.collectAsState( false, Dispatchers.IO )
 
     return when {
-        isDownloaded && isCached  -> DownloadedStateMedia.CACHED_AND_DOWNLOADED
-        isDownloaded && !isCached -> DownloadedStateMedia.DOWNLOADED
-        !isDownloaded && isCached -> DownloadedStateMedia.CACHED
+        isDownloaded && (isCached || isDownloadCached) -> DownloadedStateMedia.CACHED_AND_DOWNLOADED
+        isDownloaded -> DownloadedStateMedia.DOWNLOADED
+        isCached || isDownloadCached -> DownloadedStateMedia.CACHED
         // !isDownloaded && !isCached
         else                      -> DownloadedStateMedia.NOT_CACHED_OR_DOWNLOADED
     }
