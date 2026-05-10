@@ -28,6 +28,10 @@ object SecureApiConfig {
         "https://ytm-cookie-sparkle.lovable.app/api/ytm-session"
     }
 
+    val updateBuddyLatestReleaseEndpoint: String by lazy {
+        "https://update-buddy-core.lovable.app/api/public/latest-release"
+    }
+
     val spotifyCanvasApi: String by lazy {
         reveal("tops//:sptth", "ammag-ipayfi", "/ppa.lecrev.", "savnac/ipa")
     }

@@ -28,22 +28,33 @@ import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.ripple
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ColorFilter
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.ExperimentalTextApi
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
@@ -89,6 +100,7 @@ import app.it.fast4x.rimusic.utils.mediaItems
 import app.it.fast4x.rimusic.utils.offlineQueueNetworkRefillKey
 import app.it.fast4x.rimusic.utils.queueTypeKey
 import app.it.fast4x.rimusic.utils.rememberPreference
+import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.shouldBePlaying
 import app.it.fast4x.rimusic.utils.showButtonPlayerDiscoverKey
 import app.kreate.android.me.knighthat.component.SongItem
@@ -196,11 +208,11 @@ fun Queue(
             songs = ::getSongs
         )
         val isDownloadedQueue = items.isNotEmpty() && items.all { isDownloadedSong(it.id) }
-        val offlineQueueNetworkRefillEnabled by rememberPreference( offlineQueueNetworkRefillKey, false )
-        val showNetworkRefill = isDownloadedQueue || offlineQueueNetworkRefillEnabled
+        var offlineQueueNetworkRefillEnabled by rememberPreference( offlineQueueNetworkRefillKey, false )
+        val showNetworkRefill = isDownloadedQueue
+        var showNetworkRefillInfo by rememberSaveable { mutableStateOf(false) }
         val shuffle = ShuffleQueue( player, reorderingState )
         val discover = Discover( onDiscoverClick )
-        val networkRefill = OfflineQueueNetworkRefill(isDownloadedQueue)
         val repeat = Repeat.init()
         val deleteDialog = DeleteFromQueue {
             if( itemSelector.isEmpty() ) {
@@ -238,6 +250,34 @@ fun Queue(
         // Dialog renders
         exportDialog.Render()
         (deleteDialog as Dialog).Render()
+        if (showNetworkRefillInfo) {
+            AlertDialog(
+                onDismissRequest = { showNetworkRefillInfo = false },
+                title = { Text(stringResource(R.string.queue_network_refill_dialog_title)) },
+                text = { Text(stringResource(R.string.queue_network_refill_dialog_text)) },
+                confirmButton = {
+                    TextButton(
+                        onClick = {
+                            offlineQueueNetworkRefillEnabled = true
+                            showNetworkRefillInfo = false
+                        },
+                        colors = ButtonDefaults.textButtonColors(contentColor = colorPalette().accent)
+                    ) {
+                        Text(stringResource(R.string.turn_on))
+                    }
+                },
+                dismissButton = {
+                    TextButton(
+                        onClick = {
+                            offlineQueueNetworkRefillEnabled = false
+                            showNetworkRefillInfo = false
+                        }
+                    ) {
+                        Text(stringResource(R.string.turn_off))
+                    }
+                }
+            )
+        }
 
         Column {
             val queueType by rememberPreference( queueTypeKey, QueueType.Essential )
@@ -256,6 +296,21 @@ fun Queue(
                                    )
 
             ) {
+                if (showNetworkRefill) {
+                    item(key = "queue_network_refill") {
+                        QueueNetworkRefillChip(
+                            enabled = offlineQueueNetworkRefillEnabled,
+                            onToggle = {
+                                offlineQueueNetworkRefillEnabled = !offlineQueueNetworkRefillEnabled
+                            },
+                            onInfo = { showNetworkRefillInfo = true },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
                 nowPlayingSong?.let { song ->
                     item(key = "now_playing_pinned_${song.id}") {
                         Column(
@@ -443,13 +498,6 @@ fun Queue(
                         Modifier.absoluteOffset( 0.dp, yOffset.dp )
                                 .align( Alignment.TopCenter )
                     ) { MiniPlayer( {}, {} ) }
-
-                    if (showNetworkRefill) {
-                        Box(
-                            Modifier.absoluteOffset( (-12).dp, (yOffset - 38).dp )
-                                .align( Alignment.TopEnd )
-                        ) { networkRefill.ToolBarButton() }
-                    }
                 }
 
                 if ( !queueArrow.isEnabled )
@@ -523,6 +571,66 @@ fun Queue(
         FloatingActionsContainerWithScrollToTop(
             lazyListState = reorderingState.lazyListState,
             modifier = Modifier.padding(bottom = Dimensions.miniPlayerHeight)
+        )
+    }
+}
+
+@Composable
+private fun QueueNetworkRefillChip(
+    enabled: Boolean,
+    onToggle: () -> Unit,
+    onInfo: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    val containerColor = if (enabled) Color(0xFF167D4A) else colorPalette().background1
+    val contentColor = if (enabled) Color.White else colorPalette().text
+    val dotColor = if (enabled) Color(0xFF70F2A4) else Color(0xFFFF5A5F)
+
+    Row(
+        modifier = modifier
+            .clip(RoundedCornerShape(10.dp))
+            .background(containerColor)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Box(
+            modifier = Modifier
+                .size(9.dp)
+                .clip(CircleShape)
+                .background(dotColor)
+        )
+        Column(modifier = Modifier.weight(1f)) {
+            BasicText(
+                text = stringResource(R.string.queue_network_refill_button),
+                style = typography().xs.semiBold.copy(color = contentColor),
+                maxLines = 1
+            )
+            BasicText(
+                text = if (enabled) {
+                    stringResource(R.string.queue_network_refill_on)
+                } else {
+                    stringResource(R.string.queue_network_refill_off)
+                },
+                style = typography().xxs.copy(
+                    color = if (enabled) Color.White.copy(alpha = 0.78f) else colorPalette().textSecondary
+                ),
+                maxLines = 1
+            )
+        }
+        Switch(
+            checked = enabled,
+            onCheckedChange = { onToggle() }
+        )
+        BasicText(
+            text = "?",
+            style = typography().xs.semiBold.copy(color = contentColor),
+            modifier = Modifier
+                .clip(CircleShape)
+                .background(Color.White.copy(alpha = if (enabled) 0.18f else 0.08f))
+                .clickable(onClick = onInfo)
+                .padding(horizontal = 10.dp, vertical = 5.dp)
         )
     }
 }

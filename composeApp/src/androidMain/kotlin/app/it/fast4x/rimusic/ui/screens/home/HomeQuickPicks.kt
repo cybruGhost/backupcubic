@@ -489,6 +489,29 @@ fun HomeQuickPicks(
             .filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
             .distinctBy { it.id }
 
+    fun Song.primaryArtistKey(): String =
+        artistsText
+            ?.split(",", "&", "feat.", "ft.", ignoreCase = true)
+            ?.firstOrNull()
+            ?.trim()
+            ?.lowercase()
+            ?.takeIf { it.isNotBlank() }
+            ?: title.substringBefore("-").trim().lowercase()
+
+    fun List<Song>.artistVariety(maxPerArtist: Int = 2): List<Song> {
+        val counts = mutableMapOf<String, Int>()
+        return filter { song ->
+            val artist = song.primaryArtistKey()
+            val count = counts[artist] ?: 0
+            if (count >= maxPerArtist) {
+                false
+            } else {
+                counts[artist] = count + 1
+                true
+            }
+        }
+    }
+
     suspend fun buildCasualMix(
         personalizedHomeSongs: List<Song>,
         favoriteSongs: List<Song>,
@@ -500,26 +523,29 @@ fun HomeQuickPicks(
             .distinctBy { it.id }
         val ytmPool = (casualFallbackSongs(personalizedHomeSongs) + freshDiscoverySongs)
             .distinctBy { it.id }
-        val preferredSeed = when {
-            personalizedHomeSongs.isNotEmpty() -> personalizedHomeSongs.randomOrNull()
-            freshDiscoverySongs.isNotEmpty() -> freshDiscoverySongs.randomOrNull()
-            favoriteSongs.isNotEmpty() -> favoriteSongs.randomOrNull()
-            else -> ytmPool.randomOrNull()
-        }
+        val seedCandidates = (personalizedHomeSongs + freshDiscoverySongs + favoriteSongs + ytmPool)
+            .filter { it.id.isNotBlank() }
+            .shuffled()
+            .artistVariety(maxPerArtist = 1)
+        val preferredSeed = seedCandidates.firstOrNull()
+        val seedSongs = seedCandidates.take(3).ifEmpty { listOfNotNull(preferredSeed) }
 
         mostPopularSong = preferredSeed ?: favoriteSongs.firstOrNull()
         if (preferredSeed == null) return ytmPool.shuffled().take(localCount) to null
 
-        val relatedResult = runCatching {
-            Innertube.relatedPage(NextBody(videoId = preferredSeed.id))
-        }.getOrNull()
-
-        val relatedSongs = relatedResult
-            ?.getOrNull()
-            ?.songs
-            ?.map { it.asSong }
-            ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
-            .orEmpty()
+        var firstRelatedResult: Result<Innertube.RelatedPage?>? = null
+        val relatedSongs = seedSongs.flatMapIndexed { index, seed ->
+            val relatedResult = runCatching {
+                Innertube.relatedPage(NextBody(videoId = seed.id))
+            }.getOrNull()
+            if (index == 0) firstRelatedResult = relatedResult
+            relatedResult
+                ?.getOrNull()
+                ?.songs
+                ?.map { it.asSong }
+                ?.filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
+                .orEmpty()
+        }
 
         val ytmQuota = if (personalizedHomeSongs.isNotEmpty()) {
             (localCount * 0.65f).toInt().coerceAtLeast(1)
@@ -540,9 +566,10 @@ fun HomeQuickPicks(
             )
             .distinctBy { it.id }
             .shuffled()
+            .artistVariety(maxPerArtist = 2)
             .take(localCount)
 
-        return mixedSongs to relatedResult
+        return mixedSongs to firstRelatedResult
     }
 
     var downloadState by remember {

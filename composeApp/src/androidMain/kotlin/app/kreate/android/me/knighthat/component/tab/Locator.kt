@@ -51,7 +51,13 @@ class Locator private constructor(
     }
 
     val position: Int
-        get() = getSongs().map( Song::id ).indexOf( binder?.player?.currentMediaItem?.mediaId )
+        get() {
+            val mediaId = binder?.player?.currentMediaItem?.mediaId.orEmpty()
+            val normalizedMediaId = mediaId.substringAfterLast("/", mediaId)
+            return getSongs().indexOfFirst { song ->
+                song.id == mediaId || song.id == normalizedMediaId
+            }
+        }
 
     override val iconId: Int = R.drawable.locate
     override val messageId: Int = R.string.info_find_the_song_that_is_playing
@@ -62,21 +68,23 @@ class Locator private constructor(
     override var isFirstColor: Boolean by firstColorState
 
     override fun onShortClick() {
-        if( isFirstColor ) {
-            val mediaItem = binder?.player?.currentMediaItem
-            // Capture songs here to prevent unwanted outcome
-            // when a list is captured multiple times
+        val mediaItem = binder?.player?.currentMediaItem
+        isFirstColor = mediaItem != null
+
+        if( mediaItem != null ) {
+            // Capture songs here to prevent unwanted outcome when a list is captured multiple times.
             val songs = getSongs()
 
             Timber.tag("locator").d("LocateComponent.onShortClick songs ${songs.size} -> mediaItem ${mediaItem?.mediaId}")
 
-            if( position == -1 )      // Playing song isn't inside [songs()]
+            val targetPosition = position
+            if( targetPosition == -1 )      // Playing song isn't inside [songs()]
                 Toaster.i( R.string.playing_song_not_found_on_current_list )
             else
                 runBlocking {
                     when( scrollableState ) {
-                        is LazyListState -> scrollableState.scrollToItem( position )
-                        is LazyGridState -> scrollableState.scrollToItem( position )
+                        is LazyListState -> scrollableState.scrollToItem( targetPosition )
+                        is LazyGridState -> scrollableState.scrollToItem( targetPosition )
                     }
                 }
         } else

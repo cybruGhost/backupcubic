@@ -56,7 +56,7 @@ fun OfflineQueueNetworkRefill(
     override val menuIconTitle: String
         @Composable
         get() = stringResource(R.string.offline_queue_network_refill)
-    override val iconId: Int = R.drawable.library
+    override val iconId: Int = R.drawable.addqueue
     override val messageId: Int = R.string.offline_queue_network_refill_description
     override val isEnabled: Boolean = isDownloadedQueue
 

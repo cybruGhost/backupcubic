@@ -42,6 +42,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -65,6 +66,7 @@ import app.it.fast4x.rimusic.models.toUiMood
 import app.it.fast4x.rimusic.ui.components.Skeleton
 import app.it.fast4x.rimusic.ui.components.themed.Loader
 import app.it.fast4x.rimusic.utils.enableQuickPicksPageKey
+import app.it.fast4x.rimusic.utils.exportifyWebUrlKey
 import app.it.fast4x.rimusic.utils.getEnum
 import app.it.fast4x.rimusic.utils.homeScreenTabIndexKey
 import app.it.fast4x.rimusic.utils.indexNavigationTabKey
@@ -266,11 +268,15 @@ class ExportifyWebInterface(private val context: android.content.Context) {
 @Composable
 fun ExportifyWebViewScreen() {
     val context = LocalContext.current
+    val exportifyDefaultUrl = "https://thecub4.netlify.app/spotifyfeature/"
+    val aniplayUrl = "https://sonic-scroll-48.lovable.app"
+    var selectedWebUrl by rememberPreference(exportifyWebUrlKey, exportifyDefaultUrl)
     var isLoading by remember { mutableStateOf(true) }
     var webView: WebView? by remember { mutableStateOf(null) }
     var hasError by remember { mutableStateOf(false) }
     var isConnectedToInternet by remember { mutableStateOf(true) } // Assume connected initially
     var showDownloadDialog by remember { mutableStateOf(false) }
+    var showSiteDialog by remember { mutableStateOf(false) }
     var downloadUrl by remember { mutableStateOf("") }
 
     // Function to check internet connectivity
@@ -278,12 +284,29 @@ fun ExportifyWebViewScreen() {
         val connectivityManager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
         val network = connectivityManager.activeNetwork ?: return false
         val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
-        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+        return capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+            capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED)
     }
 
     // Update connection status on first composition
     LaunchedEffect(Unit) {
         isConnectedToInternet = checkInternetConnection()
+    }
+
+    LaunchedEffect(webView, selectedWebUrl) {
+        while (true) {
+            val connected = checkInternetConnection()
+            if (!connected && isConnectedToInternet) {
+                isConnectedToInternet = false
+                hasError = false
+                isLoading = false
+                webView?.stopLoading()
+                webView?.loadUrl("about:blank")
+            } else if (connected && !isConnectedToInternet) {
+                isConnectedToInternet = true
+            }
+            delay(3000L)
+        }
     }
 
     // Handle download dialog
@@ -309,6 +332,42 @@ fun ExportifyWebViewScreen() {
                     onClick = { showDownloadDialog = false }
                 ) {
                     Text("Cancel")
+                }
+            }
+        )
+    }
+
+    if (showSiteDialog) {
+        AlertDialog(
+            onDismissRequest = { showSiteDialog = false },
+            title = { Text("Choose page") },
+            text = { Text("Pick the default page for this tab. Aniplay is for audiobooks, books, and anime, and you can change it again anytime.") },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedWebUrl = aniplayUrl
+                        showSiteDialog = false
+                        if (isConnectedToInternet) {
+                            isLoading = true
+                            webView?.loadUrl(selectedWebUrl)
+                        }
+                    }
+                ) {
+                    Text("Aniplay")
+                }
+            },
+            dismissButton = {
+                Button(
+                    onClick = {
+                        selectedWebUrl = exportifyDefaultUrl
+                        showSiteDialog = false
+                        if (isConnectedToInternet) {
+                            isLoading = true
+                            webView?.loadUrl(selectedWebUrl)
+                        }
+                    }
+                ) {
+                    Text("Exportify")
                 }
             }
         )
@@ -440,7 +499,7 @@ fun ExportifyWebViewScreen() {
                         addJavascriptInterface(ExportifyWebInterface(ctx), "Android")
                         
                         // Load the Exportify website
-                        loadUrl("https://thecub4.netlify.app/spotifyfeature/")
+                        loadUrl(selectedWebUrl)
                     }
                 },
                 modifier = Modifier.fillMaxSize(),
@@ -449,7 +508,7 @@ fun ExportifyWebViewScreen() {
                     if (hasError && isConnectedToInternet) {
                         hasError = false
                         isLoading = true
-                        view.loadUrl("https://thecub4.netlify.app/spotifyfeature/")
+                        view.loadUrl(selectedWebUrl)
                     }
                 }
             )
@@ -533,7 +592,7 @@ fun ExportifyWebViewScreen() {
                             isConnectedToInternet = checkInternetConnection()
                             if (isConnectedToInternet) {
                                 isLoading = true
-                                webView?.loadUrl("https://thecub4.netlify.app/spotifyfeature/")
+                                webView?.loadUrl(selectedWebUrl)
                             }
                         }
                     ) {
@@ -541,6 +600,15 @@ fun ExportifyWebViewScreen() {
                     }
                 }
             }
+        }
+
+        Button(
+            onClick = { showSiteDialog = true },
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(12.dp)
+        ) {
+            Text("Page")
         }
     }
 
@@ -552,7 +620,7 @@ fun ExportifyWebViewScreen() {
             // Refresh on back press if there's an error
             hasError = false
             isLoading = true
-            webView?.loadUrl("https://thecub4.netlify.app/spotifyfeature/")
+            webView?.loadUrl(selectedWebUrl)
         } else if (!isConnectedToInternet) {
             // Check connection again on back press
             isConnectedToInternet = checkInternetConnection()
