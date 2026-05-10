@@ -109,6 +109,10 @@ class PlaybackRecoveryHelper {
             )
         }
 
+        if (failure.canRetryCurrent && snapshot.currentRetryCount >= maxRetries) {
+            return Decision.Pause("Couldn't play $title after $maxRetries retries. Cubic paused instead of looping.")
+        }
+
         if (snapshot.skipOnErrorEnabled && snapshot.hasNextMediaItem) {
             return Decision.SkipNext("Couldn't play $title. Skipping to the next track.")
         }

@@ -472,6 +472,14 @@ fun HomeQuickPicks(
             .filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
             .take(limit)
 
+    suspend fun localDiscoverySongs(limit: Int = localCount * 4): List<Song> =
+        Database.songTable
+            .all(excludeHidden = true)
+            .first()
+            .filter { song -> song.id.isNotBlank() && song.title.isNotBlank() }
+            .shuffled()
+            .take(limit)
+
     fun casualFallbackSongs(personalizedHomeSongs: List<Song>): List<Song> =
         personalizedHomeSongs.ifEmpty {
             chartsPageResult?.getOrNull()?.songs
@@ -483,11 +491,18 @@ fun HomeQuickPicks(
 
     suspend fun buildCasualMix(
         personalizedHomeSongs: List<Song>,
-        favoriteSongs: List<Song>
+        favoriteSongs: List<Song>,
+        discoverySongs: List<Song>
     ): Pair<List<Song>, Result<Innertube.RelatedPage?>?> {
-        val ytmPool = casualFallbackSongs(personalizedHomeSongs)
+        val playedIds = favoriteSongs.map { it.id }.toSet()
+        val freshDiscoverySongs = discoverySongs
+            .filter { song -> song.id !in playedIds }
+            .distinctBy { it.id }
+        val ytmPool = (casualFallbackSongs(personalizedHomeSongs) + freshDiscoverySongs)
+            .distinctBy { it.id }
         val preferredSeed = when {
             personalizedHomeSongs.isNotEmpty() -> personalizedHomeSongs.randomOrNull()
+            freshDiscoverySongs.isNotEmpty() -> freshDiscoverySongs.randomOrNull()
             favoriteSongs.isNotEmpty() -> favoriteSongs.randomOrNull()
             else -> ytmPool.randomOrNull()
         }
@@ -906,6 +921,7 @@ fun HomeQuickPicks(
                             .distinctUntilChanged()
                             .first()
                         val accountLikedSongs = if (isYouTubeLoggedIn()) currentAccountLikedSongs() else emptyList()
+                        val discoverySongs = localDiscoverySongs()
                         val personalizedHomeSongs = if (isYouTubeLoggedIn()) {
                             (homePersonalizedSongs() + accountLikedSongs).distinctBy { it.id }
                         } else {
@@ -916,7 +932,8 @@ fun HomeQuickPicks(
 
                         val (mixedSongs, relatedResult) = buildCasualMix(
                             personalizedHomeSongs = personalizedHomeSongs,
-                            favoriteSongs = favoriteSongs
+                            favoriteSongs = favoriteSongs,
+                            discoverySongs = discoverySongs
                         )
 
                         trendingList = mixedSongs.ifEmpty { casualSongs.shuffled().take(localCount) }
@@ -1022,6 +1039,7 @@ fun HomeQuickPicks(
                             .distinctUntilChanged()
                             .collect { favoriteSongs ->
                                 val accountLikedSongs = if (isYouTubeLoggedIn()) currentAccountLikedSongs() else emptyList()
+                                val discoverySongs = localDiscoverySongs()
                                 val personalizedHomeSongs = if (isYouTubeLoggedIn()) {
                                     (homePersonalizedSongs() + accountLikedSongs).distinctBy { it.id }
                                 } else {
@@ -1032,7 +1050,8 @@ fun HomeQuickPicks(
 
                                 val (mixedSongs, relatedResult) = buildCasualMix(
                                     personalizedHomeSongs = personalizedHomeSongs,
-                                    favoriteSongs = favoriteSongs
+                                    favoriteSongs = favoriteSongs,
+                                    discoverySongs = discoverySongs
                                 )
 
                                 trendingList = mixedSongs.ifEmpty { casualSongs.shuffled().take(localCount) }

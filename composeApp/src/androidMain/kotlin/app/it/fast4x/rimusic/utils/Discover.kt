@@ -7,6 +7,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
@@ -17,6 +18,7 @@ import app.kreate.android.R
 import app.cubic.android.core.network.isNetworkConnected
 import app.it.fast4x.rimusic.Database
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
+import app.it.fast4x.rimusic.service.MyDownloadHelper
 import kotlinx.coroutines.flow.first
 import app.kreate.android.me.knighthat.utils.Toaster
 import kotlinx.coroutines.Dispatchers
@@ -37,6 +39,7 @@ fun ApplyDiscoverToQueue() {
     val player = binder.player
 
     var queueRevision by remember(player) { mutableIntStateOf(0) }
+    var lastAppliedAt by remember(player) { mutableStateOf(0L) }
 
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -53,14 +56,23 @@ fun ApplyDiscoverToQueue() {
     }
 
     LaunchedEffect(queueRevision, discoverIsEnabled) {
+        val now = System.currentTimeMillis()
+        if (now - lastAppliedAt < 4_000L) return@LaunchedEffect
+        lastAppliedAt = now
+
         if (!context.isNetworkConnected) {
             Toaster.w(R.string.error_no_internet)
             return@LaunchedEffect
         }
 
         val currentIndex = player.currentMediaItemIndex
-        val queueSnapshot = player.currentTimeline.windows.map { window ->
-            window.firstPeriodIndex to window.mediaItem.mediaId
+        val queueSnapshot = player.currentTimeline.windows.mapIndexed { index, window ->
+            val mediaItem = window.mediaItem
+            QueueDiscoverItem(
+                index = index,
+                mediaId = mediaItem.mediaId,
+                artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
+            )
         }
 
         val indicesToRemove = withContext(Dispatchers.IO) {
@@ -69,15 +81,26 @@ fun ApplyDiscoverToQueue() {
                 from = thirtyDaysAgo,
                 limit = 200
             ).first().map { it.id }.toSet()
+            val artistCounts = mutableMapOf<String, Int>()
 
-            queueSnapshot.mapNotNull { (index, mediaId) ->
-                if (index == currentIndex) return@mapNotNull null
+            queueSnapshot.mapNotNull { item ->
+                if (item.index == currentIndex) return@mapNotNull null
 
-                val isMappedToAPlaylist = Database.songPlaylistMapTable.isMapped(mediaId).first()
-                val isLiked = Database.songTable.isLiked(mediaId).first()
-                val wasAlreadyListened = mediaId in listenedSongIds
+                val isMappedToAPlaylist = Database.songPlaylistMapTable.isMapped(item.mediaId).first()
+                if (isMappedToAPlaylist) return@mapNotNull null
 
-                index.takeIf { isMappedToAPlaylist || isLiked || wasAlreadyListened }
+                val normalizedArtist = item.artist.trim().lowercase()
+                val artistRepeatCount = if (normalizedArtist.isBlank()) {
+                    0
+                } else {
+                    artistCounts.merge(normalizedArtist, 1, Int::plus) ?: 1
+                }
+                val isSameArtistRepeat = normalizedArtist.isNotBlank() && artistRepeatCount > 2
+                val isLiked = Database.songTable.isLiked(item.mediaId).first()
+                val wasAlreadyListened = item.mediaId in listenedSongIds
+                val isDownloaded = MyDownloadHelper.isSongDownloaded(item.mediaId)
+
+                item.index.takeIf { isLiked || wasAlreadyListened || isDownloaded || isSameArtistRepeat }
             }
         }.sortedDescending()
 
@@ -105,3 +128,9 @@ fun ApplyDiscoverToQueue() {
     /*   DISCOVER  */
 
 }
+
+private data class QueueDiscoverItem(
+    val index: Int,
+    val mediaId: String,
+    val artist: String
+)

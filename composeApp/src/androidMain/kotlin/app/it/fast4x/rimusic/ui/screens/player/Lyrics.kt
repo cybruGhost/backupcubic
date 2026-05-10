@@ -87,11 +87,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -211,6 +215,50 @@ val textFieldColors: TextFieldColors
         focusedIndicatorColor = colorPalette().text
     )
 
+private fun karaokeAnnotatedString(
+    text: String,
+    progress: Float,
+    activeColor: Color,
+    inactiveColor: Color
+): AnnotatedString {
+    val activeCount = (text.length * progress.coerceIn(0f, 1f)).toInt().coerceIn(0, text.length)
+    return buildAnnotatedString {
+        withStyle(SpanStyle(color = activeColor)) {
+            append(text.take(activeCount))
+        }
+        withStyle(SpanStyle(color = inactiveColor)) {
+            append(text.drop(activeCount))
+        }
+    }
+}
+
+@Composable
+private fun KaraokeBasicText(
+    text: String,
+    progress: Float,
+    style: TextStyle,
+    modifier: Modifier = Modifier,
+    activeColor: Color = colorPalette().accent,
+    inactiveColor: Color = colorPalette().textSecondary.copy(alpha = 0.48f)
+) {
+    val activeCount = (text.length * progress.coerceIn(0f, 1f)).toInt().coerceIn(0, text.length)
+    val annotated = remember(text, activeCount, activeColor, inactiveColor) {
+        buildAnnotatedString {
+            withStyle(SpanStyle(color = activeColor)) {
+                append(text.take(activeCount))
+            }
+            withStyle(SpanStyle(color = inactiveColor)) {
+                append(text.drop(activeCount))
+            }
+        }
+    }
+
+    BasicText(
+        text = annotated,
+        style = style.copy(color = Color.Unspecified),
+        modifier = modifier
+    )
+}
 
 @UnstableApi
 @Composable
@@ -1116,7 +1164,7 @@ fun Lyrics(
 fun SelectLyricFromTrack(
     tracks: List<Track>,
     mediaId: String,
-    lyrics: Lyrics?
+    currentLyrics: Lyrics?
 ) {
     menuState.display {
         Menu {
@@ -1133,15 +1181,22 @@ fun SelectLyricFromTrack(
                     coroutineScope.launch {
                         val simpLyrics = fetchSimpMusicLyrics(mediaId)
                         if (!simpLyrics?.syncedLyrics.isNullOrBlank() || !simpLyrics?.plainLyrics.isNullOrBlank()) {
+                            val updatedLyrics = Lyrics(
+                                songId = mediaId,
+                                fixed = simpLyrics?.plainLyrics ?: currentLyrics?.fixed,
+                                synced = simpLyrics?.syncedLyrics ?: currentLyrics?.synced
+                            )
                             Database.asyncTransaction {
-                                lyricsTable.upsert(
-                                    Lyrics(
-                                        songId = mediaId,
-                                        fixed = simpLyrics?.plainLyrics ?: lyrics?.fixed,
-                                        synced = simpLyrics?.syncedLyrics ?: lyrics?.synced
-                                    )
-                                )
+                                lyricsTable.upsert(updatedLyrics)
                             }
+                            lyrics = updatedLyrics
+                            if (!updatedLyrics.synced.isNullOrBlank()) {
+                                isShowingSynchronizedLyrics = true
+                            } else if (!updatedLyrics.fixed.isNullOrBlank()) {
+                                isShowingSynchronizedLyrics = false
+                            }
+                            showPlaceholder = false
+                            isError = false
                             if (playerEnableLyricsPopupMessage) {
                                 Toaster.s(
                                     R.string.info_lyrics_found_on_s,
@@ -1229,15 +1284,22 @@ fun SelectLyricFromTrack(
                         val syncedLyrics = it.syncedLyrics?.takeIf(String::isNotBlank)
                         val fixedLyrics = it.plainLyrics?.takeIf(String::isNotBlank)
                             ?: plainLyricsFromTimedText(syncedLyrics)
+                        val updatedLyrics = Lyrics(
+                            songId = mediaId,
+                            fixed = fixedLyrics ?: currentLyrics?.fixed,
+                            synced = syncedLyrics ?: currentLyrics?.synced
+                        )
                         Database.asyncTransaction {
-                            lyricsTable.upsert(
-                                Lyrics(
-                                    songId = mediaId,
-                                    fixed = fixedLyrics ?: lyrics?.fixed,
-                                    synced = syncedLyrics
-                                )
-                            )
+                            lyricsTable.upsert(updatedLyrics)
                         }
+                        lyrics = updatedLyrics
+                        if (!updatedLyrics.synced.isNullOrBlank()) {
+                            isShowingSynchronizedLyrics = true
+                        } else if (!updatedLyrics.fixed.isNullOrBlank()) {
+                            isShowingSynchronizedLyrics = false
+                        }
+                        showPlaceholder = false
+                        isError = false
                     }
                 )
             }
@@ -1387,7 +1449,7 @@ fun SelectLyricFromTrack(
                 }
 
             if (tracks.isNotEmpty()) {
-                SelectLyricFromTrack(tracks = tracks,mediaId = mediaId,lyrics = lyrics)
+                SelectLyricFromTrack(tracks = tracks,mediaId = mediaId,currentLyrics = lyrics)
             }
         }
 
@@ -2020,11 +2082,20 @@ fun SelectLyricFromTrack(
                                 }
                                 if (showlyricsthumbnail) {
                                     BasicText(
-                                        text = translatedText,
+                                        text = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) {
+                                            karaokeAnnotatedString(
+                                                text = translatedText,
+                                                progress = karaokeProgress,
+                                                activeColor = colorPalette().accent,
+                                                inactiveColor = PureBlackColorPalette.textDisabled
+                                            )
+                                        } else {
+                                            AnnotatedString(translatedText)
+                                        },
                                         style = TextStyle(
                                             fontWeight = FontWeight.Medium,
                                             color = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) {
-                                                colorPalette().accent.copy(alpha = 0.55f + (karaokeProgress * 0.45f))
+                                                Color.Unspecified
                                             } else if (index == synchronizedLyrics.index) PureBlackColorPalette.text else PureBlackColorPalette.textDisabled,
                                             fontSize = if (fontSize == LyricsFontSize.Light) typography().m.fontSize
                                                        else if (fontSize == LyricsFontSize.Medium) typography().l.fontSize
@@ -2049,10 +2120,19 @@ fun SelectLyricFromTrack(
                                 }
                                 else if ((lyricsColor == LyricsColor.White) || (lyricsColor == LyricsColor.Black) || (lyricsColor == LyricsColor.Accent) || (lyricsColor == LyricsColor.Thememode)) {
                                     BasicText(
-                                        text = translatedText,
+                                        text = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) {
+                                            karaokeAnnotatedString(
+                                                text = translatedText,
+                                                progress = karaokeProgress,
+                                                activeColor = colorPalette().accent,
+                                                inactiveColor = colorPalette().textSecondary.copy(alpha = 0.46f)
+                                            )
+                                        } else {
+                                            AnnotatedString(translatedText)
+                                        },
                                         style = TextStyle(
                                             fontWeight = FontWeight.Medium,
-                                            color = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) colorPalette().accent.copy(alpha = 0.55f + (karaokeProgress * 0.45f))
+                                            color = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) Color.Unspecified
                                             else if (lyricsColor == LyricsColor.White) Color.White
                                             else if (lyricsColor == LyricsColor.Black) Color.Black
                                             else if (lyricsColor == LyricsColor.Thememode) colorPalette().text
