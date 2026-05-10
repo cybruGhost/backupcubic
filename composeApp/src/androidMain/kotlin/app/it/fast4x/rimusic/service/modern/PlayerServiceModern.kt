@@ -50,6 +50,7 @@ import androidx.media3.common.util.Log
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
@@ -885,8 +886,10 @@ override fun onDestroy() {
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Timber.d("Audio focus regained")
-                player.volume = preferences.getFloat(playbackVolumeKey, volumeBeforeDuck.coerceAtLeast(0.05f))
-                if (wasPlayingBeforeFocusLoss && !player.isPlaying) {
+                player.volume = preferences
+                    .getFloat(playbackVolumeKey, volumeBeforeDuck.coerceAtLeast(0.05f))
+                    .coerceAtLeast(0.05f)
+                if (wasPlayingBeforeFocusLoss) {
                     binder.gracefulPlay()
                 }
                 wasPlayingBeforeFocusLoss = false
@@ -1089,6 +1092,17 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             error.message,
             deepestCause?.javaClass?.simpleName
         )
+        generateSequence(error as Throwable?) { it.cause }
+            .filterIsInstance<HttpDataSource.InvalidResponseCodeException>()
+            .firstOrNull()
+            ?.let { httpError ->
+                Timber.e(
+                    "PlayerServiceModern HTTP playback failure mediaId=%s responseCode=%s headers=%s",
+                    currentMediaId,
+                    httpError.responseCode,
+                    httpError.headerFields
+                )
+            }
 
         if (isDecoderIssue) {
             Timber.w(error, "Decoder failure while playing %s. Preferring audio-only recovery path.", currentMediaId)

@@ -196,6 +196,8 @@ fun Queue(
             songs = ::getSongs
         )
         val isDownloadedQueue = items.isNotEmpty() && items.all { isDownloadedSong(it.id) }
+        val offlineQueueNetworkRefillEnabled by rememberPreference( offlineQueueNetworkRefillKey, false )
+        val showNetworkRefill = isDownloadedQueue || offlineQueueNetworkRefillEnabled
         val shuffle = ShuffleQueue( player, reorderingState )
         val discover = Discover( onDiscoverClick )
         val networkRefill = OfflineQueueNetworkRefill(isDownloadedQueue)
@@ -441,6 +443,13 @@ fun Queue(
                         Modifier.absoluteOffset( 0.dp, yOffset.dp )
                                 .align( Alignment.TopCenter )
                     ) { MiniPlayer( {}, {} ) }
+
+                    if (showNetworkRefill) {
+                        Box(
+                            Modifier.absoluteOffset( (-12).dp, (yOffset - 38).dp )
+                                .align( Alignment.TopEnd )
+                        ) { networkRefill.ToolBarButton() }
+                    }
                 }
 
                 if ( !queueArrow.isEnabled )
@@ -495,8 +504,6 @@ fun Queue(
                             add( search )
                             if( rememberPreference( showButtonPlayerDiscoverKey, false ).value )
                                 add( discover )
-                            if( isDownloadedQueue || rememberPreference( offlineQueueNetworkRefillKey, false ).value )
-                                add( networkRefill )
                             add( positionLock )
                             add( repeat )
                             add( shuffle )

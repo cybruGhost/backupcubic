@@ -150,11 +150,17 @@ private fun sanitizedYouTubeAccountName(): String? {
 }
 
 private fun joinedSinceLabel(context: Context): String {
-    val installedAt = DataStoreUtils.getStringBlocking(context, KEY_JOINED_AT).toLongOrNull()
-        ?: runCatching {
+    val storedJoinedAt = DataStoreUtils.getStringBlocking(context, KEY_JOINED_AT).toLongOrNull()
+    val packageInstalledAt = runCatching {
         context.packageManager.getPackageInfo(context.packageName, 0).firstInstallTime
-    }.getOrDefault(System.currentTimeMillis()).also { joinedAt ->
-        DataStoreUtils.saveStringBlocking(context, KEY_JOINED_AT, joinedAt.toString())
+    }.getOrDefault(System.currentTimeMillis())
+    val installedAt = listOfNotNull(storedJoinedAt, packageInstalledAt)
+        .filter { it > 0L }
+        .minOrNull()
+        ?: System.currentTimeMillis()
+
+    if (storedJoinedAt == null || installedAt < storedJoinedAt) {
+        DataStoreUtils.saveStringBlocking(context, KEY_JOINED_AT, installedAt.toString())
     }
 
     val formatter = SimpleDateFormat("d MMMM yyyy", Locale.getDefault())

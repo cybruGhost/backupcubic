@@ -338,7 +338,6 @@ fun HomeSongs(
 
     LaunchedEffect( items, search.inputValue, isRecommendationEnabled, relatedSongsPositions, currentPlayingMediaId ) {
         val filteredItems = items
-             .sortedForHome(songSort.sortBy, songSort.sortOrder)
              .toMutableList()
              .apply {
                  if (isRecommendationEnabled) {
@@ -387,10 +386,11 @@ fun HomeSongs(
 
     LaunchedEffect( builtInPlaylist ) {
         val firstButton = if( builtInPlaylist == BuiltInPlaylist.Top ) topPlaylists else songSort
+        buttons.removeAll { it === songSort || it === topPlaylists || it === downloadAllDialog || it === deleteDownloadsDialog || it === exportDialog }
         buttons.add( 0, firstButton )
-        buttons.add( 3, downloadAllDialog )
-        buttons.add( 4, deleteDownloadsDialog )
-        buttons.add( exportDialog )
+        buttons.add( minOf(3, buttons.size), downloadAllDialog )
+        buttons.add( minOf(4, buttons.size), deleteDownloadsDialog )
+        if( exportDialog !in buttons ) buttons.add( exportDialog )
     }
 
     //<editor-fold defaultstate="collapsed" desc="Dialog Renders">

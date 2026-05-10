@@ -144,7 +144,6 @@ fun getDownloadProgress(mediaId: String): Float {
 @Composable
 fun isDownloadedSong(mediaId: String): Boolean {
     return when (downloadedStateMedia(mediaId)) {
-        DownloadedStateMedia.CACHED,
         DownloadedStateMedia.CACHED_AND_DOWNLOADED,
         DownloadedStateMedia.DOWNLOADED -> true
         else -> false
