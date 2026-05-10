@@ -1880,8 +1880,12 @@ fun SelectLyricFromTrack(
                                 .getOrNull(index + 1)
                                 ?.first
                                 ?: (sentence.first + 4_000L)
+                            val timedLineDuration = (nextSentenceStart - sentence.first).coerceAtLeast(600L)
+                            val readableLineDuration = (trimmedSentence.length * 85L)
+                                .coerceIn(900L, 4_500L)
+                            val karaokeLineDuration = timedLineDuration.coerceAtMost(readableLineDuration)
                             val karaokeProgress = if (lyricsKaraokeEnabled && index == synchronizedLyrics.index) {
-                                ((karaokePosition - sentence.first).toFloat() / (nextSentenceStart - sentence.first).coerceAtLeast(600L))
+                                ((karaokePosition - sentence.first).toFloat() / karaokeLineDuration)
                                     .coerceIn(0f, 1f)
                             } else 0f
                             val karaokeBrush = Brush.horizontalGradient(

@@ -1202,13 +1202,13 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
 
         if (error.errorCode in playbackHttpExceptionList) {
             Timber.e("PlayerServiceModern onPlayerError recovered occurred errorCodeName ${error.errorCodeName}")
-            val shouldResume = player.isPlaying || player.playWhenReady
-            player.pause()
-            player.safePrepare()
-            if (shouldResume) {
-                runCatching { player.play() }
-                    .onFailure { Timber.e(it, "Failed to resume playback after HTTP recovery for %s", currentMediaId) }
-            }
+            applyRecoveryDecision(
+                playbackRecoveryHelper.onPlayerError(
+                    error = error,
+                    snapshot = recoverySnapshot(),
+                    maxRetries = maxCurrentSongRetries
+                )
+            )
             return
         }
 

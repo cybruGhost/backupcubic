@@ -88,8 +88,8 @@ class PlaybackRecoveryHelper {
             ?: snapshot.currentPositionMs
 
         if (
-            failure.category == PlaybackFailureCategory.NETWORK ||
-            (!snapshot.isNetworkAvailable && failure.isRecoverable)
+            !snapshot.isNetworkAvailable &&
+            (failure.category == PlaybackFailureCategory.NETWORK || failure.isRecoverable)
         ) {
             if (mediaId.isNullOrBlank()) return Decision.Pause("Connection issue detected. Please retry playback.")
             return Decision.WaitForNetwork(

@@ -89,10 +89,11 @@ object AppAnnouncementNotifier {
         val category: Category,
         val frequencyHours: Long,
         val image_url: String?,
+        val releaseId: String?,
     ) {
         /** Fingerprint — changes whenever visible content changes. */
         val signature: String
-            get() = listOf(title, contents, url, category.key, image_url.orEmpty(), showText, showImage)
+            get() = listOf(releaseId.orEmpty(), title, contents, url, category.key, image_url.orEmpty(), showText, showImage)
                 .joinToString("|")
     }
 
@@ -144,18 +145,47 @@ object AppAnnouncementNotifier {
 
             // Support both flat payload and nested {"system_notification":{...}}
             val n = root.optJSONObject("system_notification") ?: root
+            val release = n.optJSONObject("new_release")
+                ?: n.optJSONObject("release")
+                ?: root.optJSONObject("new_release")
+                ?: root.optJSONObject("release")
+
+            fun JSONObject?.field(vararg keys: String): String =
+                keys.firstNotNullOfOrNull { key ->
+                    this?.optString(key)
+                        ?.trim()
+                        ?.takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+                }.orEmpty()
+
+            val category = if (release != null) {
+                Category.NEW_RELEASE
+            } else {
+                Category.from(n.optString("category", "announcement"))
+            }
+            val releaseTitle = release.field("title", "name", "release_title", "album", "track")
+            val releaseArtist = release.field("artist", "artists", "artistName", "artistsText")
+            val releaseBody = release.field("contents", "description", "notes", "subtitle")
+            val releaseContent = releaseBody.ifBlank {
+                listOf(releaseArtist, release.field("album", "track"))
+                    .filter { it.isNotBlank() }
+                    .joinToString(" - ")
+            }
+            val imageUrl = n.field("image_url", "imageUrl", "thumbnail_url", "thumbnailUrl", "artwork_url", "artworkUrl", "thumb")
+                .ifBlank { release.field("image_url", "imageUrl", "thumbnail_url", "thumbnailUrl", "artwork_url", "artworkUrl", "thumb") }
+            val targetUrl = n.field("url", "deep_link", "deepLink")
+                .ifBlank { release.field("url", "deep_link", "deepLink", "shareUrl") }
 
             Payload(
-                title          = n.optString("title").trim(),
-                contents       = n.optString("contents").trim(),
-                url            = n.optString("url").trim(),
-                show           = n.optBoolean("show", false),
-                showImage      = n.optBoolean("show_image", true),
-                showText       = n.optBoolean("show_text", true),
-                category       = Category.from(n.optString("category", "announcement")),
+                title          = n.field("title").ifBlank { releaseTitle },
+                contents       = n.field("contents", "body", "text", "notes").ifBlank { releaseContent },
+                url            = targetUrl,
+                show           = n.optBoolean("show", release != null),
+                showImage      = n.optBoolean("show_image", n.optBoolean("showImage", true)),
+                showText       = n.optBoolean("show_text", n.optBoolean("showText", true)),
+                category       = category,
                 frequencyHours = n.optLong("frequency_hours").takeIf { it > 0L } ?: 24L,
-                image_url       = n.optString("image_url")
-                    .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) },
+                image_url      = imageUrl.takeIf { it.isNotBlank() },
+                releaseId      = release.field("id", "releaseId", "albumId", "playlistId", "videoId"),
             )
         } finally {
             conn.disconnect()
