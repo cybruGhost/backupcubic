@@ -1,10 +1,12 @@
 // ui/screens/welcome/WelcomeScreen.kt -
 package app.it.fast4x.rimusic.ui.screens.welcome
 
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -61,6 +63,7 @@ import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -119,6 +122,7 @@ private suspend fun getLocationFromIP(): String? = withContext(Dispatchers.IO) {
 fun WelcomeScreen(navController: NavController) {
     val context = LocalContext.current
     var showWelcome by remember { mutableStateOf(true) }
+    var welcomeBackgroundIndex by remember { mutableStateOf(0) }
     var userHasSeenWelcome by remember { 
         mutableStateOf(false)
     }
@@ -143,36 +147,22 @@ fun WelcomeScreen(navController: NavController) {
             }
         }
     }
+
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(6500)
+            welcomeBackgroundIndex = 1 - welcomeBackgroundIndex
+        }
+    }
     
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(Color(0xFF0A0A1A))
     ) {
-        // New custom canvas liquid background
-        CustomLiquidBackground(modifier = Modifier.fillMaxSize())
-        
-        // Subtle stars overlay
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .drawWithCache {
-                    onDrawWithContent {
-                        drawContent()
-                        // Subtle stars
-                        for (i in 0..50) {
-                            val x = (Math.random() * size.width).toFloat()
-                            val y = (Math.random() * size.height).toFloat()
-                            val radius = (Math.random() * 1.2f).toFloat()
-                            val alpha = (0.1 + Math.random() * 0.3).toFloat()
-                            drawCircle(
-                                color = Color.White.copy(alpha = alpha),
-                                radius = radius,
-                                center = Offset(x, y)
-                            )
-                        }
-                    }
-                }
+        WelcomeImageBackground(
+            index = welcomeBackgroundIndex,
+            modifier = Modifier.fillMaxSize()
         )
         
         if (userHasSeenWelcome && showWelcome) {
@@ -245,6 +235,65 @@ fun WelcomeScreen(navController: NavController) {
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun WelcomeImageBackground(
+    index: Int,
+    modifier: Modifier = Modifier
+) {
+    val imageRes = if (index == 0) R.drawable.welcome_cubic_bg_one else R.drawable.welcome_cubic_bg_two
+    Box(modifier = modifier.background(Color(0xFF050713))) {
+        Crossfade(
+            targetState = imageRes,
+            animationSpec = tween(durationMillis = 1600),
+            label = "welcomeBackground"
+        ) { res ->
+            Image(
+                painter = painterResource(res),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer {
+                        scaleX = 1.04f
+                        scaleY = 1.04f
+                    }
+            )
+        }
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.verticalGradient(
+                        0f to Color.Black.copy(alpha = 0.18f),
+                        0.42f to Color(0xFF09051A).copy(alpha = 0.34f),
+                        0.78f to Color(0xFF09020F).copy(alpha = 0.70f),
+                        1f to Color.Black.copy(alpha = 0.92f)
+                    )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(
+                    Brush.radialGradient(
+                        colors = listOf(
+                            Color(0xFFFF4FD8).copy(alpha = 0.20f),
+                            Color.Transparent,
+                            Color.Black.copy(alpha = 0.28f)
+                        ),
+                        center = Offset(0.18f, 0.12f),
+                        radius = 920f
+                    )
+                )
+        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color.White.copy(alpha = 0.035f))
+        )
     }
 }
 

@@ -1455,6 +1455,7 @@
 <string name="thumbnail_share_card_action">Share branded art</string>
 <string name="thumbnail_share_card_with_link_action">Share art with song link</string>
 <string name="thumbnail_share_text_action">Share name and link</string>
+<string name="thumbnail_share_cubic_link_action">Share with Cubic Music link</string>
 <string name="thumbnail_share_chooser">Share song</string>
 <string name="thumbnail_share_try_omada">Try Alt art</string>
 <string name="thumbnail_share_finding">Finding...</string>

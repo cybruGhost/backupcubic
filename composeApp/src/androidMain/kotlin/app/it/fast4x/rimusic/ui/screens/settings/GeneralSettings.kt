@@ -321,7 +321,10 @@ fun GeneralSettings(
                         navController.currentBackStackEntry
                             ?.savedStateHandle
                             ?.set("settings_tab_index", result.tabIndex)
-                        navController.navigate(NavRoutes.settings.name)
+                        navController.navigate(NavRoutes.settings.name) {
+                            launchSingleTop = true
+                            restoreState = true
+                        }
                     }
                 }
             )
