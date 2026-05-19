@@ -279,6 +279,8 @@ class PlayerServiceModern : MediaLibraryService(),
     private var discordPresenceManager: DiscordPresenceManager? = null
     private var lastReportedNotificationMediaId: String? = null
     private var lastPlaybackSurfaceRefreshMs = 0L
+    private var lastPlaybackSurfaceMediaId: String? = null
+    private var lastArtworkRefreshKey: String? = null
     private var lastNoInternetToastMs = 0L
     private var lastSmartMessageMs = 0L
     private var lastAutoSourceRecoveryMediaId: String? = null
@@ -881,17 +883,27 @@ override fun onDestroy() {
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 Timber.d("Audio focus lost transient - ducking volume")
-                volumeBeforeDuck = player.volume
+                if (player.volume > 0.15f) {
+                    volumeBeforeDuck = player.volume
+                }
                 player.volume = (player.volume * 0.3f).coerceAtLeast(0.05f)
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 Timber.d("Audio focus regained")
-                player.volume = preferences
-                    .getFloat(playbackVolumeKey, volumeBeforeDuck.coerceAtLeast(0.05f))
-                    .coerceAtLeast(0.05f)
+                val restoredVolume = preferences
+                    .getFloat(playbackVolumeKey, volumeBeforeDuck.coerceAtLeast(0.5f))
+                    .coerceIn(0.15f, 1f)
+                player.volume = restoredVolume
+                player.setGlobalVolume(restoredVolume)
                 if (wasPlayingBeforeFocusLoss) {
                     binder.gracefulPlay()
                 }
+                handler.postDelayed({
+                    if (isServiceReady && (player.isPlaying || player.playWhenReady) && player.volume < 0.15f) {
+                        player.volume = restoredVolume
+                        player.setGlobalVolume(restoredVolume)
+                    }
+                }, 350L)
                 wasPlayingBeforeFocusLoss = false
                 audioFocusGranted = true
             }
@@ -1254,6 +1266,18 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             return
 
         val prev = player.currentMediaItem ?: return
+        if (currentMediaId.isNotBlank() && currentSongRetryCount < maxCurrentSongRetries) {
+            applyRecoveryDecision(
+                PlaybackRecoveryHelper.Decision.RetryCurrent(
+                    mediaId = currentMediaId,
+                    positionMs = lastPlaybackPositionMs.takeIf { it > 0L } ?: player.currentPosition.coerceAtLeast(0L),
+                    delayMs = 650L,
+                    message = "Playback hit a source issue. Retrying (${currentSongRetryCount + 1}/$maxCurrentSongRetries)."
+                )
+            )
+            return
+        }
+
         if (consecutiveErrorSkipCount >= maxConsecutiveErrorSkips) {
             applyRecoveryDecision(
                 PlaybackRecoveryHelper.Decision.Pause(
@@ -1851,7 +1875,12 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         if (now - lastPlaybackSurfaceRefreshMs < minIntervalMs) return
         lastPlaybackSurfaceRefreshMs = now
 
-        currentMediaItem.value = mediaItem ?: currentMediaItem.value
+        mediaItem?.let {
+            if (it.mediaId != lastPlaybackSurfaceMediaId) {
+                lastPlaybackSurfaceMediaId = it.mediaId
+                currentMediaItem.value = it
+            }
+        }
         updateDefaultNotification()
         if (includeWidgets) {
             updateWidgets()
@@ -1867,8 +1896,16 @@ override fun onPlaybackStateChanged(playbackState: Int) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastPlaybackSurfaceRefreshMs < minIntervalMs) return
         lastPlaybackSurfaceRefreshMs = now
+        mediaItem?.let {
+            if (it.mediaId != lastPlaybackSurfaceMediaId) {
+                lastPlaybackSurfaceMediaId = it.mediaId
+                currentMediaItem.value = it
+            }
+        }
 
-        if (::bitmapProvider.isInitialized) {
+        val artworkKey = "${mediaItem?.mediaId.orEmpty()}|${mediaItem?.mediaMetadata?.artworkUri}"
+        if (::bitmapProvider.isInitialized && artworkKey != lastArtworkRefreshKey) {
+            lastArtworkRefreshKey = artworkKey
             bitmapProvider.load(mediaItem?.mediaMetadata?.artworkUri) {
                 updateDefaultNotification()
                 if (includeWidgets) {

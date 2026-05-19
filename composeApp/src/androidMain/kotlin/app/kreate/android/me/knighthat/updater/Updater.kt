@@ -37,6 +37,7 @@ import kotlinx.serialization.json.Json
 import app.kreate.android.me.knighthat.utils.Repository
 import app.kreate.android.me.knighthat.utils.Toaster
 import okhttp3.OkHttpClient
+import okhttp3.Protocol
 import okhttp3.Request
 import org.json.JSONObject
 import java.io.IOException
@@ -49,6 +50,12 @@ object Updater {
     private lateinit var tagName: String
     lateinit var build: GithubRelease.Build
     var githubRelease: GithubRelease? = null
+    private val updateHttpClient by lazy {
+        OkHttpClient.Builder()
+            .retryOnConnectionFailure(true)
+            .protocols(listOf(Protocol.HTTP_1_1))
+            .build()
+    }
 
     /**
      * Extracts the build type from version string
@@ -173,14 +180,7 @@ object Updater {
 
         // Get all releases to find the best one
         val url = "${Repository.GITHUB_API}/repos/${Repository.REPO}/releases"
-        val request = Request.Builder().url(url).build()
-        val response = OkHttpClient().newCall(request).execute()
-
-        if (!response.isSuccessful) {
-            throw IOException(response.message)
-        }
-
-        val resBody = response.body?.string()
+        val resBody = executeUpdateRequest(url)
         if (resBody.isNullOrBlank()) {
             Toaster.i(R.string.info_no_update_available)
             return@withContext
@@ -207,12 +207,7 @@ object Updater {
         val channel = if (checkBetaUpdates || extractVersionSuffix(BuildConfig.VERSION_NAME) == "b") "beta" else "stable"
         val current = URLEncoder.encode(BuildConfig.VERSION_NAME, Charsets.UTF_8.name())
         val url = "${SecureApiConfig.updateBuddyLatestReleaseEndpoint}?channel=$channel&current=$current"
-        val response = OkHttpClient().newCall(Request.Builder().url(url).build()).execute()
-
-        if (response.code == 404) throw NoSuchFileException("")
-        if (!response.isSuccessful) throw IOException(response.message)
-
-        val body = response.body?.string().orEmpty()
+        val body = executeUpdateRequest(url, treat404AsNoFile = true).orEmpty()
         if (body.isBlank()) throw NoSuchFileException("")
 
         val root = JSONObject(body)
@@ -243,6 +238,23 @@ object Updater {
         this@Updater.githubRelease = release
         build = release.builds.first()
         tagName = release.tagName
+    }
+
+    private fun executeUpdateRequest(url: String, treat404AsNoFile: Boolean = false): String? {
+        var lastError: Throwable? = null
+        repeat(2) { attempt ->
+            try {
+                updateHttpClient.newCall(Request.Builder().url(url).build()).execute().use { response ->
+                    if (treat404AsNoFile && response.code == 404) throw NoSuchFileException("")
+                    if (!response.isSuccessful) throw IOException(response.message)
+                    return response.body?.string()
+                }
+            } catch (error: IOException) {
+                lastError = error
+                if (attempt == 1 || !error.message.orEmpty().contains("stream", ignoreCase = true)) throw error
+            }
+        }
+        throw lastError ?: IOException("Update check failed")
     }
 
     /**

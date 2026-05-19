@@ -32,6 +32,10 @@ object SecureApiConfig {
         "https://update-buddy-core.lovable.app/api/public/latest-release"
     }
 
+    val cShareEndpoint: String by lazy {
+        "https://update-buddy-core.lovable.app/api/public/share"
+    }
+
     val spotifyCanvasApi: String by lazy {
         reveal("tops//:sptth", "ammag-ipayfi", "/ppa.lecrev.", "savnac/ipa")
     }

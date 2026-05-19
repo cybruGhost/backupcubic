@@ -26,6 +26,7 @@ import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.showButtonPlayerArrowKey
 import app.it.fast4x.rimusic.utils.shuffleQueue
 import app.it.fast4x.rimusic.utils.smoothScrollToTop
+import app.kreate.android.me.knighthat.utils.Toaster
 import kotlinx.coroutines.launch
 
 @SuppressLint("ComposableNaming")
@@ -45,6 +46,13 @@ fun Discover(
     override fun onShortClick() {
         isFirstColor = !isFirstColor
         onDiscoverClick( isFirstColor )
+        Toaster.i(
+            if (isFirstColor) {
+                "Discover enabled: stale, overplayed, and downloaded songs can be cleaned from queue."
+            } else {
+                "Discover disabled: queue stays exactly as selected."
+            }
+        )
     }
 }
 

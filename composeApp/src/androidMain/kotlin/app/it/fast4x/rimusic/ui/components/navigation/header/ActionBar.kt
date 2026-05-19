@@ -50,7 +50,7 @@ private fun HamburgerMenu(
         color = colorPalette().text,
         useSystemFont = false,
         applyFontPadding = true,
-        fontType = FontType.Rubik
+        fontType = FontType.GothicBold
     )
 
     // Menu items data

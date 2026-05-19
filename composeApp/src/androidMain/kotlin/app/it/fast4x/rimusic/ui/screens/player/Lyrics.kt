@@ -43,7 +43,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Slider
 import androidx.compose.material3.TextField
 import androidx.compose.material3.TextFieldColors
 import androidx.compose.material3.TextFieldDefaults
@@ -442,6 +441,7 @@ fun Lyrics(
         var showSimpMusicOptions by rememberSaveable(mediaId) { mutableStateOf(false) }
         var showShareCardPreview by rememberSaveable(mediaId) { mutableStateOf(false) }
         var shareSliceStartLine by rememberSaveable(mediaId) { mutableStateOf(0f) }
+        var shareLineCount by rememberSaveable(mediaId) { mutableStateOf(6f) }
         var expandedplayer by rememberPreference(expandedplayerKey, false)
 
         var checkedLyricsLrc by remember(mediaId) {
@@ -466,10 +466,12 @@ fun Lyrics(
         val sharePreviewLines = remember(text) { buildLyricsShareLines(text.orEmpty()) }
         val shareMaxStartIndex = (sharePreviewLines.size - 1).coerceAtLeast(0)
         val shareSliceStartIndex = shareSliceStartLine.toInt().coerceIn(0, shareMaxStartIndex)
-        val sharePreviewLyrics = remember(text, shareSliceStartIndex) {
+        val shareSelectedLineCount = shareLineCount.toInt().coerceIn(1, 11)
+        val sharePreviewLyrics = remember(text, shareSliceStartIndex, shareSelectedLineCount) {
             buildLyricsShareSlice(
                 lines = sharePreviewLines,
-                startIndex = shareSliceStartIndex
+                startIndex = shareSliceStartIndex,
+                maxLines = shareSelectedLineCount
             )
         }
         val shareDeeplink = remember(mediaId, mediaMetadata.title, mediaMetadata.artist) {
@@ -522,6 +524,7 @@ fun Lyrics(
             showSimpMusicOptions = false
             showShareCardPreview = false
             shareSliceStartLine = 0f
+            shareLineCount = 6f
         }
 
         suspend fun fetchLyricsFromSource(source: String, allowSimpFallback: Boolean = true) {
@@ -1017,8 +1020,8 @@ fun Lyrics(
 
         if (showShareCardPreview) {
             val configuration = LocalConfiguration.current
-            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.80f else 0.86f)
-            val previewCardScale = if (isLandscape) 0.9f else 0.96f
+            val previewMaxHeight = (configuration.screenHeightDp.dp * if (isLandscape) 0.72f else 0.74f)
+            val previewCardScale = if (isLandscape) 0.82f else 0.86f
             DefaultDialog(
                 onDismiss = { showShareCardPreview = false },
                 modifier = Modifier
@@ -1049,7 +1052,7 @@ fun Lyrics(
                         deeplinkUrl = shareDeeplink,
                         modifier = Modifier
                             .fillMaxWidth(if (isLandscape) 0.92f else 0.97f)
-                            .heightIn(max = if (isLandscape) 286.dp else 356.dp)
+                            .heightIn(max = if (isLandscape) 236.dp else 280.dp)
                             .graphicsLayer {
                                 scaleX = previewCardScale
                                 scaleY = previewCardScale
@@ -1059,27 +1062,48 @@ fun Lyrics(
                 }
 
                 BasicText(
-                    text = "Start from line ${shareSliceStartIndex + 1}",
+                    text = "Tap a lyric line to start the card",
                     style = typography().xs.semiBold.color(colorPalette().text),
                     modifier = Modifier.padding(top = 16.dp)
                 )
 
-                Slider(
-                    value = shareSliceStartLine.coerceIn(0f, shareMaxStartIndex.toFloat()),
-                    onValueChange = { shareSliceStartLine = it },
-                    valueRange = 0f..shareMaxStartIndex.toFloat().coerceAtLeast(0f)
-                )
-
                 BasicText(
-                    text = "Selected ${sharePreviewLyrics.lines().size.coerceAtMost(6)} preview lines",
+                    text = "Selected ${sharePreviewLyrics.lines().size.coerceAtMost(shareSelectedLineCount)} preview lines",
                     style = typography().xxs.color(colorPalette().textSecondary),
                     modifier = Modifier.padding(bottom = 8.dp)
                 )
 
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(bottom = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    listOf(1, 3, 6, 9, 11).forEach { count ->
+                        val selected = shareSelectedLineCount == count
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .clip(RoundedCornerShape(Dimensions.itemsVerticalPadding))
+                                .background(if (selected) colorPalette().accent else colorPalette().background2.copy(alpha = 0.62f))
+                                .clickable { shareLineCount = count.toFloat() }
+                                .padding(vertical = 9.dp),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            BasicText(
+                                text = count.toString(),
+                                style = typography().xxs.semiBold.color(
+                                    if (selected) colorPalette().onAccent else colorPalette().text
+                                )
+                            )
+                        }
+                    }
+                }
+
                 LazyColumn(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(170.dp)
+                        .height(190.dp)
                         .clip(RoundedCornerShape(18.dp))
                         .background(colorPalette().background2.copy(alpha = 0.55f))
                         .padding(horizontal = 10.dp, vertical = 8.dp)
