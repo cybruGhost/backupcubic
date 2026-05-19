@@ -1162,7 +1162,8 @@ fun Lyrics(
                                         artist = cleanPrefix(mediaMetadata.artist?.toString().orEmpty()),
                                         lyricsText = sharePreviewLyrics,
                                         artworkUrl = mediaMetadata.artworkUri?.toString(),
-                                        deeplinkUrl = shareDeeplink
+                                        deeplinkUrl = shareDeeplink,
+                                        maxLines = shareSelectedLineCount
                                     ).onSuccess {
                                         showShareCardPreview = false
                                     }.onFailure {
@@ -3394,8 +3395,19 @@ private fun LyricsSharePreviewCard(
 
     val displayedLyrics = lyricsSnippet
         .lines()
-        .take(6)
+        .take(11)
         .joinToString("\n")
+    val displayedLineCount = displayedLyrics.lines().size.coerceAtLeast(1)
+    val lyricFontSize = when {
+        displayedLineCount >= 10 -> 16.sp
+        displayedLineCount >= 8 -> 18.sp
+        else -> 22.sp
+    }
+    val lyricLineHeight = when {
+        displayedLineCount >= 10 -> 20.sp
+        displayedLineCount >= 8 -> 23.sp
+        else -> 28.sp
+    }
 
     Box(
         modifier = modifier
@@ -3457,8 +3469,8 @@ private fun LyricsSharePreviewCard(
                 text = displayedLyrics,
                 style = TextStyle(
                     color = colorPalette().text,
-                    fontSize = 22.sp,
-                    lineHeight = 28.sp,
+                    fontSize = lyricFontSize,
+                    lineHeight = lyricLineHeight,
                     fontWeight = FontWeight.Bold,
                     fontFamily = LyricsShareHeadlineFont,
                     shadow = Shadow(

@@ -25,6 +25,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.runtime.Composable
@@ -36,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -304,7 +306,10 @@ fun AlbumDetails(
                             modifier = Modifier.align( Alignment.TopEnd )
                                 .padding( top = 5.dp, end = 5.dp ),
                             onClick = {
-                                album?.shareUrl?.let { url ->
+                                album?.let { currentAlbum ->
+                                    val url = currentAlbum.shareUrl
+                                        ?.takeIf { it.isNotBlank() }
+                                        ?: "https://music.youtube.com/browse/${currentAlbum.id}"
                                     val sendIntent = Intent().apply {
                                         action = Intent.ACTION_SEND
                                         type = "text/plain"
@@ -382,35 +387,50 @@ fun AlbumDetails(
                     items = items,
                     key = { index, song -> song.id.ifBlank { "album_song_$index" } }
                 ) { index, song ->
+                    val visibleSong = if (song.thumbnailUrl.isNullOrBlank()) {
+                        song.copy(thumbnailUrl = album?.thumbnailUrl)
+                    } else {
+                        song
+                    }
 
                     SwipeablePlaylistItem(
-                        mediaItem = song.asMediaItem,
+                        mediaItem = visibleSong.asMediaItem,
                         onPlayNext = {
-                            binder?.player?.addNext(song.asMediaItem)
+                            binder?.player?.addNext(visibleSong.asMediaItem)
                         }
                     ) {
                         SongItem(
-                            song = song,
+                            song = visibleSong,
                             itemSelector = itemSelector,
                             navController = navController,
-                            showThumbnail = false,
+                            showThumbnail = true,
                             modifier = Modifier,
 
                             thumbnailOverlay = {
-                                BasicText(
+                                Box(
+                                    modifier = Modifier
+                                        .align(Alignment.TopStart)
+                                        .padding(4.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .background(colorPalette().background0.copy(alpha = 0.72f))
+                                        .padding(horizontal = 7.dp, vertical = 3.dp)
+                                ) {
+                                    BasicText(
+                                        text = "${index + 1}",
+                                        style = typography().xs
+                                            .semiBold
+                                            .center
+                                            .color(colorPalette().text),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (visibleSong.thumbnailUrl.isNullOrBlank()) BasicText(
                                     text = "${index + 1}",
-                                    style = typography().s
-                                        .semiBold
-                                        .center
-                                        .color(
-                                            colorPalette()
-                                                .textDisabled
-                                        ),
+                                    style = typography().s.semiBold.center.color(colorPalette().textDisabled),
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier
-                                        .width(thumbnailSizeDp)
-                                        .align(Alignment.Center)
+                                    modifier = Modifier.width(thumbnailSizeDp).align(Alignment.Center)
                                 )
                             },
                             onClick = {

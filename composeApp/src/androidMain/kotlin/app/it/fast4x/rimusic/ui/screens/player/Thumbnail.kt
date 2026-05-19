@@ -92,6 +92,7 @@ import app.it.fast4x.rimusic.ui.screens.player.components.YoutubePlayer
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.px
 import app.it.fast4x.rimusic.utils.DisposableListener
+import app.it.fast4x.rimusic.utils.ExternalUris
 import app.it.fast4x.rimusic.utils.OmadaSearchClient
 import app.it.fast4x.rimusic.utils.OmadaSearchResult
 import app.it.fast4x.rimusic.utils.buildThumbnailShareLink
@@ -1147,6 +1148,7 @@ private fun ThumbnailShareDialog(
     val artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
     val videoId = mediaItem.mediaId.toYoutubeVideoId()
     val shareLink = buildThumbnailShareLink(videoId)
+    val cubicShareLink = ExternalUris.cubicMusicSong(videoId)
     val shareFailed = stringResource(R.string.thumbnail_share_failed)
 
     AlertDialog(
@@ -1279,6 +1281,17 @@ private fun ThumbnailShareDialog(
                         val sendIntent = Intent(Intent.ACTION_SEND).apply {
                             type = "text/plain"
                             putExtra(Intent.EXTRA_TEXT, "$title\n$artist\n$shareLink")
+                        }
+                        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.thumbnail_share_chooser)))
+                    }
+                )
+                Spacer(Modifier.height(8.dp))
+                ThumbnailShareAction(
+                    text = stringResource(R.string.thumbnail_share_cubic_link_action),
+                    onClick = {
+                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            putExtra(Intent.EXTRA_TEXT, "$title\n$artist\n$cubicShareLink")
                         }
                         context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.thumbnail_share_chooser)))
                     }
