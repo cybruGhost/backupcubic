@@ -185,6 +185,7 @@ import app.it.fast4x.rimusic.ui.styling.favoritesOverlay
 import app.it.fast4x.rimusic.utils.DisposableListener
 import app.it.fast4x.rimusic.utils.SearchYoutubeEntity
 import app.it.fast4x.rimusic.utils.SecureApiConfig
+import app.it.fast4x.rimusic.utils.playerVideoModeActiveKey
 import app.it.fast4x.rimusic.utils.VerticalfadingEdge2
 import app.it.fast4x.rimusic.utils.VinylSizeKey
 import app.it.fast4x.rimusic.utils.albumCoverRotationKey
@@ -232,6 +233,7 @@ import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.shouldBePlaying
 import app.it.fast4x.rimusic.utils.showButtonPlayerMenuKey
+import app.it.fast4x.rimusic.utils.showButtonPlayerVideoKey
 import app.it.fast4x.rimusic.utils.showCoverThumbnailAnimationKey
 import app.it.fast4x.rimusic.utils.showTopActionsBarKey
 import app.it.fast4x.rimusic.utils.showTotalTimeQueueKey
@@ -405,6 +407,8 @@ private fun PlayerContent(
     val expandPlayerState = uiConfig.expandedPlayerState
     var expandedplayer by expandPlayerState
     val spotifyCanvasEnabled = uiConfig.spotifyCanvasEnabled
+    var playerVideoModeActive by rememberPreference(playerVideoModeActiveKey, false)
+    val showButtonPlayerVideo by rememberPreference(showButtonPlayerVideoKey, true)
     val showSpotifyCanvasLogs = uiConfig.showSpotifyCanvasLogs
     val alternateSourceRetryEnabled = uiConfig.alternateSourceRetryEnabled
     val playbackFadeAudioDuration = uiConfig.playbackFadeAudioDuration
@@ -1259,6 +1263,7 @@ private fun PlayerContent(
                 Box {
                     val shouldShowCanvas = rememberShouldShowPlayerCanvas(
                         spotifyCanvasEnabled = spotifyCanvasEnabled,
+                        playerVideoModeActive = playerVideoModeActive,
                         mediaItem = mediaItem,
                         isShowingLyrics = isShowingLyrics,
                         isShowingVisualizer = isShowingVisualizer,
@@ -1268,6 +1273,11 @@ private fun PlayerContent(
                         shouldShowCanvas = shouldShowCanvas,
                         showSpotifyCanvasLogs = showSpotifyCanvasLogs,
                         screenWidth = screenWidth,
+                        showVideoButton = showButtonPlayerVideo,
+                        onVideoClick = {
+                            CanvasPlayerManager.pauseKeepingState()
+                            playerVideoModeActive = true
+                        },
                         modifier = Modifier.fillMaxSize().zIndex(0f)
                     )
                     if (!shouldShowCanvas) {
@@ -1652,6 +1662,7 @@ private fun PlayerContent(
                 Box {
                     val shouldShowCanvas = rememberShouldShowPlayerCanvas(
                         spotifyCanvasEnabled = spotifyCanvasEnabled,
+                        playerVideoModeActive = playerVideoModeActive,
                         mediaItem = mediaItem,
                         isShowingLyrics = isShowingLyrics,
                         isShowingVisualizer = isShowingVisualizer,
@@ -1662,6 +1673,11 @@ private fun PlayerContent(
                         shouldShowCanvas = shouldShowCanvas,
                         showSpotifyCanvasLogs = showSpotifyCanvasLogs,
                         screenWidth = screenWidth,
+                        showVideoButton = showButtonPlayerVideo,
+                        onVideoClick = {
+                            CanvasPlayerManager.pauseKeepingState()
+                            playerVideoModeActive = true
+                        },
                         modifier = Modifier.fillMaxSize().zIndex(0f)
                     )
 
@@ -2313,6 +2329,7 @@ private fun PlayerLyricsAndVisualizerOverlay(
 @Composable
 private fun rememberShouldShowPlayerCanvas(
     spotifyCanvasEnabled: Boolean,
+    playerVideoModeActive: Boolean,
     mediaItem: MediaItem,
     isShowingLyrics: Boolean,
     isShowingVisualizer: Boolean,
@@ -2321,6 +2338,7 @@ private fun rememberShouldShowPlayerCanvas(
     val currentMediaItemId = mediaItem.mediaId
     val isCanvasForCurrentSong = SpotifyCanvasState.currentMediaItemId == currentMediaItemId
     return spotifyCanvasEnabled &&
+            !playerVideoModeActive &&
             SpotifyCanvasState.currentCanvasUrl != null &&
             isCanvasForCurrentSong &&
             !isShowingLyrics &&
@@ -2333,6 +2351,8 @@ private fun PlayerCanvasLayer(
     shouldShowCanvas: Boolean,
     showSpotifyCanvasLogs: Boolean,
     screenWidth: Dp,
+    showVideoButton: Boolean,
+    onVideoClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     if (!shouldShowCanvas) return
@@ -2342,6 +2362,8 @@ private fun PlayerCanvasLayer(
         isPlaying = SpotifyCanvasState.isPlaying,
         showLogs = showSpotifyCanvasLogs,
         maxWidth = screenWidth,
+        showVideoButton = showVideoButton,
+        onVideoClick = onVideoClick,
         modifier = modifier
     )
 }
@@ -2353,6 +2375,8 @@ private fun OptimizedSpotifyCanvasPlayer(
     isPlaying: Boolean,
     showLogs: Boolean,
     maxWidth: Dp,
+    showVideoButton: Boolean,
+    onVideoClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val currentCanvasUrl by rememberUpdatedState(canvasUrl)
@@ -2401,9 +2425,16 @@ private fun OptimizedSpotifyCanvasPlayer(
                 modifier = Modifier.align(Alignment.TopStart).padding(top = 48.dp, start = 12.dp).width(280.dp)
             )
         }
-        OptimizedCanvasBadge(
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.Top,
             modifier = Modifier.align(Alignment.TopEnd).padding(top = 32.dp, end = 12.dp)
-        )
+        ) {
+            if (showVideoButton) {
+                OptimizedCanvasVideoButton(onClick = onVideoClick)
+            }
+            OptimizedCanvasBadge()
+        }
     }
 }
 
@@ -2615,5 +2646,32 @@ fun PagerState.LaunchedEffectScrollToPage(index: Int) {
     val pagerState = this
     LaunchedEffect(pagerState, index) {
         pagerState.scrollToPage(index)
+    }
+}
+
+@Composable
+private fun OptimizedCanvasVideoButton(onClick: () -> Unit) {
+    Box(
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .shadow(3.dp, RoundedCornerShape(8.dp), clip = false)
+            .clip(RoundedCornerShape(8.dp))
+            .background(Color.Black.copy(alpha = 0.86f))
+            .clickable(onClick = onClick)
+            .drawBehind {
+                drawRoundRect(
+                    color = Color.White.copy(alpha = 0.16f),
+                    style = Stroke(width = 0.5.dp.toPx()),
+                    cornerRadius = CornerRadius(8.dp.toPx())
+                )
+            }
+            .size(width = 42.dp, height = 34.dp)
+    ) {
+        Image(
+            painter = painterResource(R.drawable.video),
+            contentDescription = "Show video",
+            colorFilter = ColorFilter.tint(Color.White),
+            modifier = Modifier.size(18.dp)
+        )
     }
 }

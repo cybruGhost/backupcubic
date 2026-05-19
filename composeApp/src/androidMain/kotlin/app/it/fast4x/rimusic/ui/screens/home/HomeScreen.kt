@@ -16,16 +16,20 @@ import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +47,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.clickable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
@@ -277,6 +282,7 @@ fun ExportifyWebViewScreen() {
     var isConnectedToInternet by remember { mutableStateOf(true) } // Assume connected initially
     var showDownloadDialog by remember { mutableStateOf(false) }
     var showSiteDialog by remember { mutableStateOf(false) }
+    var siteSwitcherExpanded by remember { mutableStateOf(false) }
     var downloadUrl by remember { mutableStateOf("") }
 
     // Function to check internet connectivity
@@ -340,36 +346,52 @@ fun ExportifyWebViewScreen() {
     if (showSiteDialog) {
         AlertDialog(
             onDismissRequest = { showSiteDialog = false },
-            title = { Text("Choose page") },
-            text = { Text("Pick the default page for this tab. Aniplay is for audiobooks, books, and anime, and you can change it again anytime.") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        selectedWebUrl = aniplayUrl
-                        showSiteDialog = false
-                        if (isConnectedToInternet) {
-                            isLoading = true
-                            webView?.loadUrl(selectedWebUrl)
-                        }
-                    }
-                ) {
-                    Text("Aniplay")
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.96f),
+            titleContentColor = MaterialTheme.colorScheme.onSurface,
+            textContentColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            shape = RoundedCornerShape(28.dp),
+            title = {
+                Column {
+                    Text("Default page")
+                    Text(
+                        text = if (selectedWebUrl == aniplayUrl) "Aniplay is active" else "Exportify is active",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = MaterialTheme.colorScheme.primary
+                    )
                 }
             },
-            dismissButton = {
-                Button(
-                    onClick = {
-                        selectedWebUrl = exportifyDefaultUrl
-                        showSiteDialog = false
-                        if (isConnectedToInternet) {
-                            isLoading = true
-                            webView?.loadUrl(selectedWebUrl)
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Choose the default web tool for this tab. You can switch anytime.")
+                    WebToolChoice(
+                        title = "Exportify",
+                        subtitle = "Spotify exports and music tools",
+                        selected = selectedWebUrl != aniplayUrl,
+                        onClick = {
+                            selectedWebUrl = exportifyDefaultUrl
+                            showSiteDialog = false
+                            if (isConnectedToInternet) {
+                                isLoading = true
+                                webView?.loadUrl(selectedWebUrl)
+                            }
                         }
-                    }
-                ) {
-                    Text("Exportify")
+                    )
+                    WebToolChoice(
+                        title = "Aniplay",
+                        subtitle = "Audiobooks, books, and anime",
+                        selected = selectedWebUrl == aniplayUrl,
+                        onClick = {
+                            selectedWebUrl = aniplayUrl
+                            showSiteDialog = false
+                            if (isConnectedToInternet) {
+                                isLoading = true
+                                webView?.loadUrl(selectedWebUrl)
+                            }
+                        }
+                    )
                 }
-            }
+            },
+            confirmButton = {}
         )
     }
 
@@ -602,13 +624,47 @@ fun ExportifyWebViewScreen() {
             }
         }
 
-        Button(
-            onClick = { showSiteDialog = true },
+        Surface(
             modifier = Modifier
                 .align(Alignment.TopEnd)
                 .padding(12.dp)
+                .clip(RoundedCornerShape(22.dp))
+                .clickable {
+                    if (siteSwitcherExpanded) {
+                        showSiteDialog = true
+                    } else {
+                        siteSwitcherExpanded = true
+                    }
+                },
+            color = MaterialTheme.colorScheme.surface.copy(alpha = 0.72f),
+            contentColor = MaterialTheme.colorScheme.onSurface,
+            tonalElevation = 8.dp,
+            shadowElevation = 8.dp,
+            shape = RoundedCornerShape(22.dp)
         ) {
-            Text("Page")
+            Row(
+                modifier = Modifier.padding(horizontal = if (siteSwitcherExpanded) 12.dp else 10.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary)
+                )
+                if (siteSwitcherExpanded) {
+                    Text(
+                        text = if (selectedWebUrl == aniplayUrl) "Aniplay" else "Exportify",
+                        style = MaterialTheme.typography.labelMedium
+                    )
+                    Text(
+                        text = "Change",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary
+                    )
+                }
+            }
         }
     }
 
@@ -624,6 +680,44 @@ fun ExportifyWebViewScreen() {
         } else if (!isConnectedToInternet) {
             // Check connection again on back press
             isConnectedToInternet = checkInternetConnection()
+        }
+    }
+}
+
+@Composable
+private fun WebToolChoice(
+    title: String,
+    subtitle: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    Surface(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(18.dp))
+            .clickable(onClick = onClick),
+        color = if (selected) {
+            MaterialTheme.colorScheme.primary.copy(alpha = 0.18f)
+        } else {
+            MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.45f)
+        },
+        shape = RoundedCornerShape(18.dp)
+    ) {
+        Row(
+            modifier = Modifier.padding(14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(12.dp)
+                    .clip(CircleShape)
+                    .background(if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline)
+            )
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, color = MaterialTheme.colorScheme.onSurface)
+                Text(subtitle, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodySmall)
+            }
         }
     }
 }

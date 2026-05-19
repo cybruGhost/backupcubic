@@ -538,7 +538,7 @@ class MainActivity :
                     var colorPalette =
                         colorPaletteOf(colorPaletteName, colorPaletteMode, !lightTheme)
 
-                    val fontType = getEnum(fontTypeKey, FontType.Rubik)
+                    val fontType = getEnum(fontTypeKey, FontType.GothicBold)
 
                     if (colorPaletteName == ColorPaletteName.MaterialYou) {
                         colorPalette = dynamicColorPaletteOf(
@@ -833,7 +833,7 @@ class MainActivity :
                                 val applyFontPadding =
                                     sharedPreferences.getBoolean(applyFontPaddingKey, false)
                                 val fontType =
-                                    sharedPreferences.getEnum(fontTypeKey, FontType.Rubik)
+                                    sharedPreferences.getEnum(fontTypeKey, FontType.GothicBold)
 
                                 appearance = appearance.copy(
                                     typography = typographyOf(

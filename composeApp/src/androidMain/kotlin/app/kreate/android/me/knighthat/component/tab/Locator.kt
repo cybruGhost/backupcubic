@@ -12,14 +12,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.media3.common.util.UnstableApi
 import app.kreate.android.R
+import app.it.fast4x.rimusic.EXPLICIT_PREFIX
 import app.it.fast4x.rimusic.LocalPlayerServiceBinder
 import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.Descriptive
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.DynamicColor
 import app.it.fast4x.rimusic.ui.components.tab.toolbar.MenuIcon
-import kotlinx.coroutines.runBlocking
 import app.kreate.android.me.knighthat.utils.Toaster
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import timber.log.Timber
 
 @UnstableApi
@@ -53,9 +56,9 @@ class Locator private constructor(
     val position: Int
         get() {
             val mediaId = binder?.player?.currentMediaItem?.mediaId.orEmpty()
-            val normalizedMediaId = mediaId.substringAfterLast("/", mediaId)
+            val normalizedMediaId = mediaId.normalizedSongId()
             return getSongs().indexOfFirst { song ->
-                song.id == mediaId || song.id == normalizedMediaId
+                song.id.normalizedSongId() == normalizedMediaId
             }
         }
 
@@ -77,17 +80,36 @@ class Locator private constructor(
 
             Timber.tag("locator").d("LocateComponent.onShortClick songs ${songs.size} -> mediaItem ${mediaItem?.mediaId}")
 
-            val targetPosition = position
+            val normalizedMediaId = mediaItem.mediaId.normalizedSongId()
+            val targetPosition = songs.indexOfFirst { song ->
+                song.id.normalizedSongId() == normalizedMediaId
+            }
             if( targetPosition == -1 )      // Playing song isn't inside [songs()]
                 Toaster.i( R.string.playing_song_not_found_on_current_list )
             else
-                runBlocking {
-                    when( scrollableState ) {
-                        is LazyListState -> scrollableState.scrollToItem( targetPosition )
-                        is LazyGridState -> scrollableState.scrollToItem( targetPosition )
+                CoroutineScope(Dispatchers.Main).launch {
+                    try {
+                        when( scrollableState ) {
+                            is LazyListState -> {
+                                val lastIndex = scrollableState.layoutInfo.totalItemsCount - 1
+                                scrollableState.animateScrollToItem(targetPosition.coerceIn(0, lastIndex.coerceAtLeast(0)))
+                            }
+                            is LazyGridState -> {
+                                val lastIndex = scrollableState.layoutInfo.totalItemsCount - 1
+                                scrollableState.animateScrollToItem(targetPosition.coerceIn(0, lastIndex.coerceAtLeast(0)))
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Timber.e(e, "Locator failed to scroll to playing song")
+                        Toaster.i(R.string.playing_song_not_found_on_current_list)
                     }
                 }
         } else
             Toaster.i( R.string.no_songs_playing )
     }
 }
+
+private fun String.normalizedSongId(): String =
+    removePrefix(EXPLICIT_PREFIX)
+        .substringAfterLast("/")
+        .substringBefore("?")

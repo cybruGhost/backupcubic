@@ -386,17 +386,19 @@ fun Player.forceSeekToNext() =
 fun Player.playNext() {
     seekToNextMediaItem()
     //seekToNext()
-    prepare()
+    safePrepare()
     restoreGlobalVolume()
     playWhenReady = true
+    play()
 }
 
 fun Player.playPrevious() {
     seekToPreviousMediaItem()
     //seekToPrevious()
-    prepare()
+    safePrepare()
     restoreGlobalVolume()
     playWhenReady = true
+    play()
 }
 
 @UnstableApi

@@ -144,7 +144,25 @@ fun HomeSongs(
         playlistName = builtInPlaylist.text,
         songs = getSongs
     )
-    val downloadAllDialog = DownloadAllSongsDialog( getSongs )
+    val downloadAllDialog = DownloadAllSongsDialog(
+        getSongs = getSongs,
+        redownloadExisting = builtInPlaylist == BuiltInPlaylist.CorruptDownloads,
+        titleId = if (builtInPlaylist == BuiltInPlaylist.CorruptDownloads) {
+            R.string.do_you_really_want_to_redownload_corrupt
+        } else {
+            R.string.do_you_really_want_to_download_all
+        },
+        menuTitleId = if (builtInPlaylist == BuiltInPlaylist.CorruptDownloads) {
+            R.string.redownload_all_corrupt_songs
+        } else {
+            R.string.download
+        },
+        messageTitleId = if (builtInPlaylist == BuiltInPlaylist.CorruptDownloads) {
+            R.string.redownload_all_corrupt_songs
+        } else {
+            R.string.info_download_all_songs
+        }
+    )
     val deleteDownloadsDialog = DeleteAllDownloadedSongsDialog( getSongs )
 
     /**
@@ -221,6 +239,22 @@ fun HomeSongs(
                                 .distinctBy(Song::id)
                                 .sortedForHome(songSort.sortBy, songSort.sortOrder)
                         }
+            }
+
+            BuiltInPlaylist.CorruptDownloads -> {
+                val corruptDownloaded: Set<String> = MyDownloadHelper.downloads
+                    .value
+                    .values
+                    .filter { it.state == Download.STATE_COMPLETED }
+                    .fastMap { it.request.id }
+                    .filter { id -> !MyDownloadHelper.isDownloadCached(id) }
+                    .toSet()
+                Database.songTable
+                    .sortAll(songSort.sortBy, songSort.sortOrder)
+                    .map { list ->
+                        list.fastFilter { it.id in corruptDownloaded }
+                            .sortedForHome(songSort.sortBy, songSort.sortOrder)
+                    }
             }
 
             BuiltInPlaylist.Offline -> Database.formatTable
@@ -389,7 +423,9 @@ fun HomeSongs(
         buttons.removeAll { it === songSort || it === topPlaylists || it === downloadAllDialog || it === deleteDownloadsDialog || it === exportDialog }
         buttons.add( 0, firstButton )
         buttons.add( minOf(3, buttons.size), downloadAllDialog )
-        buttons.add( minOf(4, buttons.size), deleteDownloadsDialog )
+        if (builtInPlaylist != BuiltInPlaylist.CorruptDownloads) {
+            buttons.add( minOf(4, buttons.size), deleteDownloadsDialog )
+        }
         if( exportDialog !in buttons ) buttons.add( exportDialog )
     }
 

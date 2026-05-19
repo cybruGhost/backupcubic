@@ -1,7 +1,9 @@
 package app.it.fast4x.rimusic.notifications
 
 import android.app.Notification
+import android.app.AlarmManager
 import android.app.PendingIntent
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -42,6 +44,8 @@ object AppAnnouncementNotifier {
 
     // ── Channel ──────────────────────────────────────────────────────────────
     const val CHANNEL_ID = "app_system_notifications"
+    private const val ACTION_CHECK = "app.it.fast4x.rimusic.notifications.CHECK_ANNOUNCEMENTS"
+    private const val CHECK_INTERVAL_MS = 6L * 60L * 60L * 1000L
 
     // ── Notification IDs (one slot per logical category so they don't collide)
     private val NOTIFICATION_IDS = mapOf(
@@ -57,6 +61,7 @@ object AppAnnouncementNotifier {
     private const val PREFS_NAME           = "cubic_announcement_notifier"
     private const val KEY_LAST_SIGNATURE   = "last_signature"
     private const val KEY_LAST_SHOWN_AT    = "last_shown_at"
+    private const val KEY_LAST_INTERVAL_MS = "last_interval_ms"
 
     // ── API ───────────────────────────────────────────────────────────────────
     private val executor = Executors.newSingleThreadExecutor()
@@ -111,8 +116,12 @@ object AppAnnouncementNotifier {
                 val lastSig    = prefs.getString(KEY_LAST_SIGNATURE, null)
                 val lastShown  = prefs.getLong(KEY_LAST_SHOWN_AT, 0L)
                 val now        = System.currentTimeMillis()
-                val minHours   = if (payload.category == Category.NEW_RELEASE) 24L else 1L
-                val freqMs     = payload.frequencyHours.coerceAtLeast(minHours) * 3_600_000L
+                val freqMs     = payload.frequencyHours.coerceAtLeast(1L) * 3_600_000L
+                val previousInterval = prefs.getLong(KEY_LAST_INTERVAL_MS, CHECK_INTERVAL_MS)
+                if (previousInterval != freqMs) {
+                    prefs.edit().putLong(KEY_LAST_INTERVAL_MS, freqMs).apply()
+                    scheduleBackgroundChecks(context)
+                }
 
                 if (payload.signature == lastSig && now - lastShown < freqMs) return@runCatching
 
@@ -126,6 +135,40 @@ object AppAnnouncementNotifier {
                     .apply()
 
             }.onFailure { Timber.w(it, "AppAnnouncementNotifier: fetch failed") }
+        }
+    }
+
+    fun scheduleBackgroundChecks(context: Context) {
+        val appContext = context.applicationContext
+        val alarmManager = appContext.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(appContext, Receiver::class.java).setAction(ACTION_CHECK)
+        val intervalMs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+            .getLong(KEY_LAST_INTERVAL_MS, CHECK_INTERVAL_MS)
+            .coerceAtLeast(60L * 60L * 1000L)
+        val pendingIntent = PendingIntent.getBroadcast(
+            appContext,
+            2006,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+        alarmManager.setInexactRepeating(
+            AlarmManager.RTC_WAKEUP,
+            System.currentTimeMillis() + 15L * 60L * 1000L,
+            intervalMs,
+            pendingIntent
+        )
+    }
+
+    class Receiver : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent?) {
+            if (
+                intent?.action == ACTION_CHECK ||
+                intent?.action == Intent.ACTION_BOOT_COMPLETED ||
+                intent?.action == Intent.ACTION_MY_PACKAGE_REPLACED
+            ) {
+                scheduleBackgroundChecks(context)
+                maybeShow(context.applicationContext)
+            }
         }
     }
 
@@ -183,13 +226,41 @@ object AppAnnouncementNotifier {
                 showImage      = n.optBoolean("show_image", n.optBoolean("showImage", true)),
                 showText       = n.optBoolean("show_text", n.optBoolean("showText", true)),
                 category       = category,
-                frequencyHours = n.optLong("frequency_hours").takeIf { it > 0L } ?: 24L,
+                frequencyHours = n.frequencyHours(release) ?: 24L,
                 image_url      = imageUrl.takeIf { it.isNotBlank() },
                 releaseId      = release.field("id", "releaseId", "albumId", "playlistId", "videoId"),
             )
         } finally {
             conn.disconnect()
         }
+    }
+
+    private fun JSONObject.frequencyHours(release: JSONObject?): Long? {
+        fun JSONObject?.firstLong(vararg keys: String): Long? =
+            keys.firstNotNullOfOrNull { key ->
+                this?.optLong(key)?.takeIf { it > 0L }
+            }
+
+        val hours = firstLong(
+            "frequency_hours",
+            "frequencyHours",
+            "check_frequency_hours",
+            "checkFrequencyHours",
+            "interval_hours",
+            "intervalHours"
+        ) ?: release.firstLong(
+            "frequency_hours",
+            "frequencyHours",
+            "check_frequency_hours",
+            "checkFrequencyHours",
+            "interval_hours",
+            "intervalHours"
+        )
+        if (hours != null) return hours
+
+        val minutes = firstLong("frequency_minutes", "frequencyMinutes", "interval_minutes", "intervalMinutes")
+            ?: release.firstLong("frequency_minutes", "frequencyMinutes", "interval_minutes", "intervalMinutes")
+        return minutes?.let { (it + 59L) / 60L }
     }
 
     // ── Build notification ────────────────────────────────────────────────────

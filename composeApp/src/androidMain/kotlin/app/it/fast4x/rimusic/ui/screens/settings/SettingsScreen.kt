@@ -126,6 +126,7 @@ fun SettingsScreen(
         tabIndex,
         onTabChanged,
         miniPlayer,
+        swipeTabCount = 9,
         navBarContent = { item ->
             item(0, stringResource(R.string.tab_general), R.drawable.ic_launcher_monochrome)
             item(1, stringResource(R.string.ui_tab), R.drawable.ui)

@@ -57,6 +57,7 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         /**** LOG *********/
 
         AppAnnouncementNotifier.maybeShow(this)
+        AppAnnouncementNotifier.scheduleBackgroundChecks(this)
     }
 
     private fun createNotificationChannels() {
