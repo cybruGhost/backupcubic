@@ -1,0 +1,577 @@
+package it.fast4x.environment
+
+import io.ktor.client.call.body
+import it.fast4x.environment.Environment.getBestQuality
+import it.fast4x.environment.models.BrowseEndpoint
+import it.fast4x.environment.models.BrowseResponse
+import it.fast4x.environment.models.Context
+import it.fast4x.environment.models.CreatePlaylistResponse
+import it.fast4x.environment.models.NavigationEndpoint
+import it.fast4x.environment.models.PlayerResponse
+import it.fast4x.environment.models.VideoOrSongInfo
+import it.fast4x.environment.models.getContinuation
+import it.fast4x.environment.models.oddElements
+import it.fast4x.environment.requests.AlbumPage
+import it.fast4x.environment.requests.ArtistItemsContinuationPage
+import it.fast4x.environment.requests.ArtistItemsPage
+import it.fast4x.environment.requests.ArtistPage
+import it.fast4x.environment.requests.HistoryPage
+import it.fast4x.environment.requests.HomePage
+import it.fast4x.environment.requests.NewReleaseAlbumPage
+import it.fast4x.environment.requests.PlaylistContinuationPage
+import it.fast4x.environment.requests.PlaylistPage
+import kotlinx.serialization.ExperimentalSerializationApi
+import kotlin.random.Random
+
+@ExperimentalSerializationApi
+object EnvironmentExt {
+
+    const val PLAYLIST_SIZE_LIMIT = 5000
+
+    suspend fun createPlaylist(title: String) = runCatching {
+        Environment.createPlaylist(Context.DefaultWeb.client, title).body<CreatePlaylistResponse>().playlistId
+    }.onFailure {
+        println("EnvironmentExt createPlaylist error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun deletePlaylist(playlistId: String) = runCatching {
+        Environment.deletePlaylist(Context.DefaultWeb.client, playlistId)
+    }.onFailure {
+        println("EnvironmentExt deletePlaylist error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun renamePlaylist(playlistId: String, name: String) = runCatching {
+        Environment.renamePlaylist(Context.DefaultWeb.client, playlistId, name)
+    }.onFailure {
+        println("EnvironmentExt renamePlaylist error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun addToPlaylist(playlistId: String, videoId: String) = runCatching {
+        Environment.addToPlaylist(Context.DefaultWeb.client, playlistId, videoId)
+    }.onFailure {
+        println("EnvironmentExt addToPlaylist(single) error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun addToPlaylist(playlistId: String, videoIds: List<String>) = runCatching {
+        val requestedVideoIds = videoIds.take(PLAYLIST_SIZE_LIMIT)
+        val difference = videoIds.size - requestedVideoIds.size
+        if (difference > 0) {
+            println("EnvironmentExt addToPlaylist warning: only adding (at most) $PLAYLIST_SIZE_LIMIT ids, (surpassed limit by $difference)")
+        }
+        Environment.addToPlaylist(Context.DefaultWeb.client, playlistId, requestedVideoIds)
+    }.onFailure {
+        println("EnvironmentExt addToPlaylist (list of size ${videoIds.size}) error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun removeFromPlaylist(playlistId: String, videoId: String, setVideoId: String) = runCatching {
+            println("EnvironmentExt removeFromPlaylist playlistId: $playlistId videoId: $videoId setVideoId: $setVideoId")
+            Environment.removeFromPlaylist(Context.DefaultWeb.client, playlistId, videoId, setVideoId)
+        }.onFailure {
+            println("EnvironmentExt removeFromPlaylist error: ${it.stackTraceToString()}")
+        }
+
+    suspend fun addPlaylistToPlaylist(playlistId: String, videoId: String) = runCatching {
+        Environment.addPlaylistToPlaylist(Context.DefaultWeb.client, playlistId, videoId)
+    }.onFailure {
+        println("EnvironmentExt addPlaylistToPlaylist error: ${it.stackTraceToString()}")
+    }
+
+//    suspend fun removeFromPlaylist(playlistId: String, videoId: String, setVideoIds: List<String?>) = runCatching {
+//        Environment.removeFromPlaylist(Context.DefaultWeb.client, playlistId, videoId, setVideoIds)
+//    }.onFailure {
+//        println("EnvironmentExt removeFromPlaylist (list of size ${setVideoIds.size}) error: ${it.stackTraceToString()}")
+//    }
+
+    suspend fun subscribeChannel(channelId: String) = runCatching {
+        Environment.subscribeChannel(channelId)
+    }.onFailure {
+        println("EnvironmentExt subscribeChannel error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun unsubscribeChannel(channelId: String) = runCatching {
+        Environment.unsubscribeChannel(channelId)
+    }.onFailure {
+        println("EnvironmentExt unsubscribeChannel error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun likePlaylistOrAlbum(playlistId: String) = runCatching {
+        println("EnvironmentExt likePlaylistOrAlbum playlistId: $playlistId")
+        Environment.likePlaylistOrAlbum(playlistId)
+    }.onFailure {
+        println("EnvironmentExt likePlaylistOrAlbum error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun removelikePlaylistOrAlbum(playlistId: String) = runCatching {
+        println("EnvironmentExt removelikePlaylistOrAlbum playlistId: $playlistId")
+        Environment.removelikePlaylistOrAlbum(playlistId)
+    }.onFailure {
+        println("EnvironmentExt removelikePlaylistOrAlbum error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun likeVideoOrSong(VideoId: String) = runCatching {
+        println("EnvironmentExt likeVideoOrSong VideoId: $VideoId")
+        Environment.likeVideoOrSong(VideoId)
+    }.onFailure {
+        println("EnvironmentExt likeVideoOrSong error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun removelikeVideoOrSong(VideoId: String) = runCatching {
+        println("EnvironmentExt removelikeVideoOrSong playlistIdId: $VideoId")
+        Environment.removelikeVideoOrSong(VideoId)
+    }.onFailure {
+        println("EnvironmentExt removelikeVideoOrSong error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun getHomePage(setLogin: Boolean = false, params: String? = null): Result<HomePage> = runCatching {
+
+        var response = Environment.browse(browseId = "FEmusic_home", setLogin = setLogin, params = params).body<BrowseResponse>()
+
+        println("EnvironmentExt homePage() response sections: ${response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents}" )
+
+
+        var continuation = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.continuations?.getContinuation()
+
+        val sectionListRender = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer
+
+        val sections = sectionListRender?.contents
+            ?.mapNotNull { it.musicCarouselShelfRenderer }
+            ?.mapNotNull {
+                HomePage.Section.fromMusicCarouselShelfRenderer(it)
+            }?.toMutableList()
+
+        val chips = sectionListRender?.header?.chipCloudRenderer?.chips?.mapNotNull {
+            Environment.Chip.fromChipCloudChipRenderer(it)
+        }
+
+        val continuationsList = mutableListOf<String>()
+
+        //var cont = 0
+        while (continuation != null) {
+            //cont += 1
+            //println("EnvironmentExt getHomepage() continuation PRE process cont $cont continuation $continuation")
+            try {
+                //println("EnvironmentExt getHomepage() continuation PRE process cont $cont continuation $continuation")
+
+                if (!continuationsList.contains(continuation)) {
+                    //println("EnvironmentExt getHomepage() continuation process $continuation")
+                    continuationsList.add(continuation)
+                    response =
+                        Environment.browse(continuation = continuation).body<BrowseResponse>()
+                }
+
+                continuation = response.continuationContents?.sectionListContinuation?.continuations?.getContinuation()
+
+            } catch (e: Exception) {
+                //println("EnvironmentExt getHomepage() continuation POST process ERROR ${e.message} cont $cont  continuation $continuation response $response" )
+                continuation = null
+            }
+
+
+            //println("EnvironmentExt getHomepage() continuation POST process cont $cont response $response" )
+
+            sections?.plusAssign(
+                response.continuationContents?.sectionListContinuation?.contents
+                ?.mapNotNull { it.musicCarouselShelfRenderer }
+                ?.mapNotNull {
+                    HomePage.Section.fromMusicCarouselShelfRenderer(it)
+                }.orEmpty()
+            )
+
+            //cont += 1
+        }
+        HomePage( sections = sections?.distinctBy { it.title } ?: emptyList(), chips = chips, continuation = continuation)
+    }
+
+    suspend fun getHistory(setLogin: Boolean = false): Result<HistoryPage> = runCatching {
+
+        val response = Environment.browse(browseId = "FEmusic_history", setLogin = setLogin)
+            .body<BrowseResponse>()
+
+        println("EnvironmentExt getHistory() response sections: ${response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents}" )
+
+        HistoryPage(
+            sections = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents
+                ?.mapNotNull {
+                    it.musicShelfRenderer?.let { musicShelfRenderer ->
+                        HistoryPage.fromMusicShelfRenderer(musicShelfRenderer)
+                    }
+                }
+        )
+
+    }
+
+    @OptIn(ExperimentalSerializationApi::class)
+    suspend fun getArtistPage(browseId: String, setLogin: Boolean = false): Result<ArtistPage> = runCatching {
+        val response = Environment.browse(browseId = browseId, setLogin = setLogin).body<BrowseResponse>()
+        val sections = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents
+            ?.mapNotNull(ArtistPage::fromSectionListRendererContent)
+
+        ArtistPage(
+            artist = Environment.ArtistItem(
+                info = Environment.Info(
+                    name = response.header?.musicImmersiveHeaderRenderer?.title?.runs?.firstOrNull()?.text
+                        ?: response.header?.musicVisualHeaderRenderer?.title?.runs?.firstOrNull()?.text
+                        ?: response.header?.musicHeaderRenderer?.title?.runs?.firstOrNull()?.text,
+                    endpoint = NavigationEndpoint.Endpoint.Browse(
+                        browseId = browseId,
+                        params = response.header?.musicImmersiveHeaderRenderer?.title?.runs?.firstOrNull()?.navigationEndpoint?.browseEndpoint?.params
+                    )
+                ),
+                thumbnail = response.header?.musicImmersiveHeaderRenderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.getBestQuality()
+                    ?: response.header?.musicVisualHeaderRenderer?.foregroundThumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.getBestQuality()
+                    ?: response.header?.musicDetailHeaderRenderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.getBestQuality(),
+                channelId = response.header?.musicImmersiveHeaderRenderer?.subscriptionButton?.subscribeButtonRenderer?.channelId,
+                subscribersCountText = response.header?.musicImmersiveHeaderRenderer?.subscriptionButton?.subscribeButtonRenderer?.subscriberCountText?.runs?.firstOrNull()?.text,
+            ),
+            sections = sections ?: emptyList(),
+            description = response.header?.musicImmersiveHeaderRenderer?.description?.runs?.firstOrNull()?.text,
+            subscribers = response.header?.musicImmersiveHeaderRenderer?.subscriptionButton?.subscribeButtonRenderer?.subscriberCountText?.text,
+            shuffleEndpoint = response.header?.musicImmersiveHeaderRenderer?.playButton?.buttonRenderer?.navigationEndpoint?.watchEndpoint,
+            radioEndpoint = response.header?.musicImmersiveHeaderRenderer?.startRadioButton?.buttonRenderer?.navigationEndpoint?.watchEndpoint,
+        )
+    }
+
+    suspend fun getArtistItemsPage(endpoint: BrowseEndpoint): Result<ArtistItemsPage> = runCatching {
+        val response = Environment.browse(browseId = endpoint.browseId, params = endpoint.params).body<BrowseResponse>()
+
+        val gridRenderer = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+            ?.gridRenderer
+        if (gridRenderer != null) {
+            ArtistItemsPage(
+                title = gridRenderer.header?.gridHeaderRenderer?.title?.runs?.firstOrNull()?.text.orEmpty(),
+                items = gridRenderer.items?.mapNotNull {
+                    it.musicTwoRowItemRenderer?.let { renderer ->
+                        ArtistItemsPage.fromMusicTwoRowItemRenderer(renderer)
+                    }
+                } ?: emptyList(),
+                continuation = gridRenderer.continuations?.getContinuation()
+            )
+        } else {
+            ArtistItemsPage(
+                title = response.header?.musicHeaderRenderer?.title?.runs?.firstOrNull()?.text ?: "",
+                items = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                    ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+                    ?.musicPlaylistShelfRenderer?.contents?.mapNotNull {
+                        it.musicResponsiveListItemRenderer?.let { it1 ->
+                            ArtistItemsPage.fromMusicResponsiveListItemRenderer(
+                                it1
+                            )
+                        }
+                    } ?: emptyList(),
+//                continuation = response.contents.singleColumnBrowseResultsRenderer.tabs.firstOrNull()
+//                    ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+//                    ?.musicPlaylistShelfRenderer?.continuations?.getContinuation()
+                continuation = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                    ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+                    ?.musicPlaylistShelfRenderer?.contents?.lastOrNull()
+                    ?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token
+            )
+        }
+    }.onFailure {
+        println("EnvironmentExt getArtistItemsPage() error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun getPlaylist(playlistId: String): Result<PlaylistPage> = runCatching {
+        val playlistIdChecked = if (playlistId.startsWith("VL")) playlistId else "VL$playlistId"
+        println("EnvironmentExt getPlaylist playlistId: $playlistId Checked: $playlistIdChecked")
+        val response = Environment.browse(
+            browseId = playlistIdChecked,
+            setLogin = true
+        ).body<BrowseResponse>()
+
+
+        if (response.header != null)
+            getPlaylistPreviousMode(playlistIdChecked, response)
+        else
+            getPlaylistNewMode(playlistIdChecked, response)
+    }.onFailure {
+        println("EnvironmentExt getPlaylist error: ${it.stackTraceToString()}")
+    }
+
+    private fun getPlaylistPreviousMode(playlistId: String, response: BrowseResponse): PlaylistPage {
+        val header = response.header?.musicDetailHeaderRenderer ?:
+            response.header?.musicEditablePlaylistDetailHeaderRenderer?.header?.musicDetailHeaderRenderer
+
+
+        val editable = response.header?.musicEditablePlaylistDetailHeaderRenderer != null
+
+        return PlaylistPage(
+            playlist = Environment.PlaylistItem(
+                info = Environment.Info(
+                    name = header?.title?.runs?.firstOrNull()?.text,
+                    endpoint = NavigationEndpoint.Endpoint.Browse(
+                        browseId = playlistId,
+                    )
+                ),
+                songCount = 0, //header.secondSubtitle.runs?.firstOrNull()?.text,
+                thumbnail = header?.thumbnail?.croppedSquareThumbnailRenderer?.thumbnail?.thumbnails?.getBestQuality(),
+                channel = null,
+                isEditable = editable,
+//                playEndpoint = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+//                    ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+//                    ?.musicPlaylistShelfRenderer?.contents?.firstOrNull()?.musicResponsiveListItemRenderer
+//                    ?.overlay?.musicItemThumbnailOverlayRenderer?.content?.musicPlayButtonRenderer?.playNavigationEndpoint?.watchEndpoint,
+//                shuffleEndpoint = header.menu.menuRenderer.topLevelButtons?.firstOrNull()?.buttonRenderer?.navigationEndpoint?.watchPlaylistEndpoint,
+//                radioEndpoint = header.menu.menuRenderer.items?.find {
+//                    it.menuNavigationItemRenderer?.icon?.iconType == "MIX"
+//                }?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint,
+
+            ),
+            description = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer
+                ?.description?.musicDescriptionShelfRenderer?.description?.text,
+            songs = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+                ?.musicPlaylistShelfRenderer?.contents?.mapNotNull {
+                    it.musicResponsiveListItemRenderer?.let { it1 ->
+                        PlaylistPage.fromMusicResponsiveListItemRenderer(
+                            it1
+                        )
+                    }
+                } ?: emptyList(),
+            songsContinuation = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+                ?.musicPlaylistShelfRenderer?.continuations?.getContinuation(),
+            continuation = response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.continuations?.getContinuation()
+        )
+    }
+
+    private fun getPlaylistNewMode(playlistId: String, response: BrowseResponse): PlaylistPage {
+        val header = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer
+            ?: response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+                ?.musicEditablePlaylistDetailHeaderRenderer?.header?.musicResponsiveHeaderRenderer
+
+        val isEditable = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+            ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+            ?.musicEditablePlaylistDetailHeaderRenderer != null
+
+        println("EnvironmentExt getPlaylist new mode editable : ${isEditable}")
+
+//        println("getPlaylist new mode description: ${response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+//            ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer?.description?.musicDescriptionShelfRenderer?.description}")
+
+        return PlaylistPage(
+            playlist = Environment.PlaylistItem(
+                info = Environment.Info(
+                    name = header?.title?.runs?.firstOrNull()?.text,
+                    endpoint = NavigationEndpoint.Endpoint.Browse(
+                        browseId = playlistId,
+                    )
+                ),
+                songCount = 0,//header.secondSubtitle?.runs?.firstOrNull()?.text,
+                thumbnail = response.background?.musicThumbnailRenderer?.thumbnail?.thumbnails?.getBestQuality(),
+                channel = null,
+                isEditable = isEditable,
+//                playEndpoint = header.buttons.getOrNull(1)?.musicPlayButtonRenderer
+//                    ?.playNavigationEndpoint?.watchEndpoint,
+//                shuffleEndpoint = header.buttons.getOrNull(2)?.menuRenderer?.items?.find {
+//                    it.menuNavigationItemRenderer?.icon?.iconType == "MUSIC_SHUFFLE"
+//                }?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint,
+//                radioEndpoint = header.buttons.getOrNull(2)?.menuRenderer?.items?.find {
+//                    it.menuNavigationItemRenderer?.icon?.iconType == "MIX"
+//                }?.menuNavigationItemRenderer?.navigationEndpoint?.watchPlaylistEndpoint,
+            ),
+            description = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer
+                ?.description?.musicDescriptionShelfRenderer?.description?.text,
+            songs = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer
+                ?.contents?.firstOrNull()?.musicPlaylistShelfRenderer?.contents?.mapNotNull {
+                    it.musicResponsiveListItemRenderer?.let { it1 ->
+                        PlaylistPage.fromMusicResponsiveListItemRenderer(
+                            it1
+                        )
+                    }
+                } ?: emptyList(),
+//            songsContinuation = response.contents.twoColumnBrowseResultsRenderer.secondaryContents.sectionListRenderer
+//                .contents.firstOrNull()?.musicPlaylistShelfRenderer?.continuations?.getContinuation(),
+            songsContinuation = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer
+                ?.contents?.firstOrNull()?.musicPlaylistShelfRenderer?.contents?.lastOrNull()
+                    ?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token
+                ,
+            continuation = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer
+                ?.continuations?.getContinuation(),
+            isEditable = isEditable
+        )
+    }
+
+    suspend fun getPlaylistContinuation(continuation: String) = runCatching {
+        val response = Environment.browse(
+            continuation = continuation,
+            setLogin = true
+        ).body<BrowseResponse>()
+
+        println("EnvironmentExt getPlaylistContinuation response: ${response.onResponseReceivedActions?.firstOrNull()
+            ?.appendContinuationItemsAction?.continuationItems?.lastOrNull()?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token}")
+
+//        response.continuationContents?.musicPlaylistShelfContinuation?.contents?.mapNotNull {
+//            it.musicResponsiveListItemRenderer?.let { it1 ->
+//                PlaylistPage.fromMusicResponsiveListItemRenderer( it1 )
+//            }
+//        }?.let {
+//            PlaylistContinuationPage(
+//                songs = it,
+//                continuation = response.continuationContents.musicPlaylistShelfContinuation.continuations?.getContinuation()
+//            )
+//        }
+
+        response.onResponseReceivedActions?.map {
+            it.appendContinuationItemsAction?.continuationItems?.mapNotNull { it1 ->
+                it1.musicResponsiveListItemRenderer?.let { it2 ->
+                    PlaylistPage.fromMusicResponsiveListItemRenderer(
+                        it2
+                    )
+                }
+            }
+        }?.let {
+            it.firstOrNull()?.let { it1 ->
+                PlaylistContinuationPage(
+                    songs = it1,
+                    continuation = response.onResponseReceivedActions.firstOrNull()
+                        ?.appendContinuationItemsAction?.continuationItems?.lastOrNull()?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token
+                )
+            }
+        }
+
+    }.onFailure {
+        println("EnvironmentExt getPlaylistContinuation error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun getArtistItemsContinuation(continuation: String) = runCatching {
+        val response = Environment.browse(
+            continuation = continuation,
+            setLogin = true
+        ).body<BrowseResponse>()
+
+        response.onResponseReceivedActions?.map {
+            it.appendContinuationItemsAction?.continuationItems?.mapNotNull { it1 ->
+                it1.musicResponsiveListItemRenderer?.let { it2 ->
+                    ArtistItemsPage.fromMusicResponsiveListItemRenderer(
+                        it2
+                    )
+                }
+            }
+        }?.let {
+            it.firstOrNull()?.let { it1 ->
+                ArtistItemsContinuationPage(
+                    items = it1,
+                    continuation = response.onResponseReceivedActions.firstOrNull()
+                        ?.appendContinuationItemsAction?.continuationItems?.lastOrNull()
+                        ?.continuationItemRenderer?.continuationEndpoint?.continuationCommand?.token
+                )
+            }
+        }
+
+    }.onFailure {
+        println("EnvironmentExt getArtistItemsContinuation error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun getAlbum(browseId: String, withSongs: Boolean = true): Result<AlbumPage> = runCatching {
+        val response = Environment.browse(browseId = browseId).body<BrowseResponse>()
+        val playlistId = response.microformat?.microformatDataRenderer?.urlCanonical?.substringAfterLast('=')
+
+        AlbumPage(
+            album = Environment.AlbumItem(
+                playlistId = playlistId,
+                info = Environment.Info(
+                    name = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer?.title?.runs?.firstOrNull()?.text,
+                    endpoint = NavigationEndpoint.Endpoint.Browse(
+                        browseId = browseId,
+                    )
+                ),
+                authors = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer?.straplineTextOne?.runs?.oddElements()
+                    ?.map {
+                        Environment.Info(
+                            name = it.text,
+                            endpoint = it.navigationEndpoint?.browseEndpoint,
+                        )
+                    },
+                year = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer?.subtitle?.runs?.lastOrNull()?.text,
+                thumbnail = response.contents?.twoColumnBrowseResultsRenderer?.tabs?.firstOrNull()?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicResponsiveHeaderRenderer?.thumbnail?.musicThumbnailRenderer?.thumbnail?.thumbnails?.getBestQuality(),
+            ),
+            songs = playlistId?.let { if (withSongs) getAlbumSongs(it).getOrThrow() else emptyList() } ?: emptyList(),
+            otherVersions = response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer?.contents?.getOrNull(
+                1
+            )?.musicCarouselShelfRenderer?.contents
+                ?.mapNotNull { it.musicTwoRowItemRenderer }
+                ?.map(NewReleaseAlbumPage::fromMusicTwoRowItemRenderer)
+                .orEmpty(),
+            url = response.microformat?.microformatDataRenderer?.urlCanonical,
+            description = response.contents?.twoColumnBrowseResultsRenderer?.tabs
+                ?.firstOrNull()
+                ?.tabRenderer
+                ?.content
+                ?.sectionListRenderer
+                ?.contents
+                ?.firstOrNull()
+                ?.musicResponsiveHeaderRenderer
+                ?.description
+                ?.musicDescriptionShelfRenderer
+                ?.description?.text,
+        )
+    }
+
+    suspend fun getAlbumSongs(playlistId: String): Result<List<Environment.SongItem>> = runCatching {
+        val response = Environment.browse(browseId = "VL$playlistId").body<BrowseResponse>()
+
+        val contents =
+            response.contents?.singleColumnBrowseResultsRenderer?.tabs?.firstOrNull()
+                ?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()
+                ?.musicPlaylistShelfRenderer?.contents ?:
+            response.contents?.twoColumnBrowseResultsRenderer?.secondaryContents?.sectionListRenderer
+                ?.contents?.firstOrNull()?.musicPlaylistShelfRenderer?.contents
+
+        val songs = contents?.mapNotNull {
+            it.musicResponsiveListItemRenderer?.let { it1 -> AlbumPage.getSong(it1) }
+        }
+        println("EnvironmentExt getAlbumSongs songs: $songs")
+        songs ?: emptyList()
+    }
+
+    suspend fun getVideOrSongInfo(videoId: String): Result<VideoOrSongInfo> = runCatching {
+        val response = Environment.getVideoOrSongInfo(videoId)
+        return response
+    }.onFailure {
+        println("EnvironmentExt getVideOrSongInfo error: ${it.stackTraceToString()}")
+    }
+
+    /**************
+     * Simple Metadata Player
+     */
+    suspend fun simpleMetadataPlayer(videoId: String, playlistId: String? = null, client: Context.Client, signatureTimestamp: Int? = null): Result<PlayerResponse> = runCatching {
+        Environment.simpleMetadataPlayer(client, videoId, playlistId, signatureTimestamp).body<PlayerResponse>()
+    }.onFailure {
+        println("EnvironmentExt simpleMetadataPlayer error: ${it.stackTraceToString()}")
+    }
+
+    suspend fun addPlaybackToHistory(playlistId: String? = null, playbackTracking: String) = runCatching {
+        val cpn = (1..16).map {
+            "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"[Random.Default.nextInt(
+                0,
+                64
+            )]
+        }.joinToString("")
+
+        val playbackUrl = playbackTracking.replace(
+            "https://s.youtube.com",
+            "https://music.youtube.com",
+        )
+
+        Environment.addPlaybackToHistory(
+            url = playbackUrl,
+            playlistId = playlistId,
+            cpn = cpn
+        )
+    }.onFailure {
+        println("EnvironmentExt addPlaybackToHistory error: ${it.stackTraceToString()}")
+    }
+}

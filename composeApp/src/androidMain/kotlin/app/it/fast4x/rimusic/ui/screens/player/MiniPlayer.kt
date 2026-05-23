@@ -246,7 +246,7 @@ fun MiniPlayer(
     val effectRotationEnabled           by rememberPreference(effectRotationKey, true)
     val disableClosingPlayerSwipingDown by rememberPreference(disableClosingPlayerSwipingDownKey, false)
     val disableScrollingText            by rememberPreference(disableScrollingTextKey, false)
-    val nowPlayingProgressRing          by rememberPreference(nowPlayingProgressRingKey, false)
+    val nowPlayingProgressRing          by rememberPreference(nowPlayingProgressRingKey, true)
     val thumbnailRoundness              by rememberPreference(thumbnailRoundnessKey, ThumbnailRoundness.Heavy)
 
     // ── Play/pause pill shape ─────────────────────────────────────────────────
@@ -479,9 +479,9 @@ fun MiniPlayer(
                     NowPlayingProgressOutline(
                         position = positionAndDuration.first,
                         duration = positionAndDuration.second,
-                        modifier = Modifier.size(56.dp),
-                        strokeWidth = 2.4.dp,
-                        contentPadding = 4.dp,
+                        modifier = Modifier.size(48.dp),
+                        strokeWidth = 2.dp,
+                        contentPadding = 0.dp,
                         cornerRadius = progressCornerRadius,
                         content = artworkContent
                     )
