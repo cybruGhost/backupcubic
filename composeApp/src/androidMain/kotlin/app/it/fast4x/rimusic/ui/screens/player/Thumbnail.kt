@@ -1148,7 +1148,7 @@ private fun ThumbnailShareDialog(
     val artist = mediaItem.mediaMetadata.artist?.toString().orEmpty()
     val videoId = mediaItem.mediaId.toYoutubeVideoId()
     val shareLink = buildThumbnailShareLink(videoId)
-    val cubicShareLink = ExternalUris.cubicMusicSong(videoId)
+    val cubicShareLink = ExternalUris.cubicMusicShare(videoId)
     val shareFailed = stringResource(R.string.thumbnail_share_failed)
 
     AlertDialog(
@@ -1288,12 +1288,21 @@ private fun ThumbnailShareDialog(
                 Spacer(Modifier.height(8.dp))
                 ThumbnailShareAction(
                     text = stringResource(R.string.thumbnail_share_cubic_link_action),
+                    enabled = !creatingShare,
                     onClick = {
-                        val sendIntent = Intent(Intent.ACTION_SEND).apply {
-                            type = "text/plain"
-                            putExtra(Intent.EXTRA_TEXT, "$title\n$artist\n$cubicShareLink")
+                        scope.launch {
+                            creatingShare = true
+                            shareThumbnailCard(
+                                context = context,
+                                mediaId = videoId,
+                                title = title,
+                                artist = artist,
+                                artworkUrl = thumbnailUrl.ifBlank { currentThumbnailUrl },
+                                includeSongLink = true,
+                                songLinkOverride = cubicShareLink
+                            ).onFailure { Toaster.e(it.message ?: shareFailed) }
+                            creatingShare = false
                         }
-                        context.startActivity(Intent.createChooser(sendIntent, context.getString(R.string.thumbnail_share_chooser)))
                     }
                 )
                 Spacer(Modifier.height(8.dp))

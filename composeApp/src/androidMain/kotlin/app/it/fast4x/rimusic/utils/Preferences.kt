@@ -316,6 +316,8 @@ const val useYtLoginOnlyForBrowseKey = "useYtLoginOnlyForBrowse"
 
 const val autoLoadSongsInQueueKey = "autoLoadSongsInQueue"
 const val offlineQueueNetworkRefillKey = "offlineQueueNetworkRefill"
+const val alternateSourceRetryKey = "alternateSourceRetryKey"
+const val innertubePlayerSourceKey = "innertubePlayerSourceKey"
 const val exportifyWebUrlKey = "exportifyWebUrl"
 const val showSecondLineKey = "showSecondLine"
 const val settingsAssistantEnabledKey = "settingsAssistantEnabled"

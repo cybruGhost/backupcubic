@@ -54,6 +54,7 @@ import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.enums.DurationInMilliseconds
 import app.it.fast4x.rimusic.enums.DurationInMinutes
 import app.it.fast4x.rimusic.enums.ExoPlayerMinTimeForEvent
+import app.it.fast4x.rimusic.enums.InnertubePlayerSource
 import app.it.fast4x.rimusic.enums.Languages
 import app.it.fast4x.rimusic.enums.MaxSongs
 import app.it.fast4x.rimusic.enums.MusicAnimationType
@@ -74,6 +75,7 @@ import app.it.fast4x.rimusic.ui.styling.DefaultLightColorPalette
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.utils.RestartActivity
 import app.it.fast4x.rimusic.utils.RestartPlayerService
+import app.it.fast4x.rimusic.utils.alternateSourceRetryKey
 import app.it.fast4x.rimusic.utils.audioReverbPresetKey
 import app.it.fast4x.rimusic.utils.autoLoadSongsInQueueKey
 import app.it.fast4x.rimusic.utils.bassboostEnabledKey
@@ -110,6 +112,7 @@ import app.it.fast4x.rimusic.utils.handleAudioFocusEnabledKey
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid12
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid6
 import app.it.fast4x.rimusic.utils.isPauseOnVolumeZeroEnabledKey
+import app.it.fast4x.rimusic.utils.innertubePlayerSourceKey
 import app.it.fast4x.rimusic.utils.jumpPreviousKey
 import app.it.fast4x.rimusic.utils.keepPlayerMinimizedKey
 import app.it.fast4x.rimusic.utils.languageAppKey
@@ -237,7 +240,7 @@ fun GeneralSettings(
     var excludeSongWithDurationLimit by rememberPreference(excludeSongsWithDurationLimitKey, DurationInMinutes.Disabled)
     var playlistindicator            by rememberPreference(playlistindicatorKey, false)
     var nowPlayingIndicator          by rememberPreference(nowPlayingIndicatorKey, MusicAnimationType.Bubbles)
-    var nowPlayingProgressRing       by rememberPreference(nowPlayingProgressRingKey, false)
+    var nowPlayingProgressRing       by rememberPreference(nowPlayingProgressRingKey, true)
     var discoverIsEnabled            by rememberPreference(discoverKey, false)
     var isPauseOnVolumeZeroEnabled   by rememberPreference(isPauseOnVolumeZeroEnabledKey, false)
 
@@ -1092,7 +1095,12 @@ fun GeneralSettings(
                 title   = "Alternate Source Retry",
                 icon    = R.drawable.refresh,
                 content = {
-                    var alternateSourceRetryEnabled by rememberPreference("alternateSourceRetryKey", true)
+                    var alternateSourceRetryEnabled by rememberPreference(alternateSourceRetryKey, true)
+                    var innertubePlayerSource by rememberPreference(
+                        innertubePlayerSourceKey,
+                        InnertubePlayerSource.OldInnertube
+                    )
+                    var showInnertubeSourceDialog by remember { mutableStateOf(false) }
                     val playbackSourceStatus by PlaybackSourceMonitor.status.collectAsState()
                     if (search.inputValue.isBlank() || "Alternate Source Retry".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
@@ -1107,6 +1115,30 @@ fun GeneralSettings(
                             modifier  = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
                         )
+                        OtherSettingsEntry(
+                            title = "Innertube player source",
+                            text = "Locked to ${innertubePlayerSource.text}",
+                            onClick = { showInnertubeSourceDialog = true },
+                            icon = R.drawable.ytmusic
+                        )
+                        SettingsDescription(
+                            text = "Old mode uses YouTube, old Innertube, then iOS. Environment mode uses Environment first, then YouTube fallbacks.",
+                            modifier = Modifier.padding(start = 25.dp, top = 4.dp),
+                            textAlign = TextAlign.Start
+                        )
+                        if (showInnertubeSourceDialog) {
+                            ValueSelectorDialog(
+                                title = "Innertube player source",
+                                selectedValue = innertubePlayerSource,
+                                onValueSelected = {
+                                    innertubePlayerSource = it
+                                    showInnertubeSourceDialog = false
+                                },
+                                valueText = { it.text },
+                                values = InnertubePlayerSource.values().toList(),
+                                onDismiss = { showInnertubeSourceDialog = false }
+                            )
+                        }
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier

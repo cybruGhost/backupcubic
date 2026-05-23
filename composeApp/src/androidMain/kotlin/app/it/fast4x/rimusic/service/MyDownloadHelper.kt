@@ -44,8 +44,10 @@ import app.it.fast4x.rimusic.utils.exoPlayerCustomCacheKey
 import app.it.fast4x.rimusic.utils.exoPlayerDiskDownloadCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.getEnum
 import app.it.fast4x.rimusic.utils.isNetworkConnected
+import app.it.fast4x.rimusic.utils.playbackVideoIdOrNull
 import app.it.fast4x.rimusic.utils.preferences
 import app.it.fast4x.rimusic.utils.removeDownload
+import app.it.fast4x.rimusic.utils.sanitizePlaybackUri
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineName
 import kotlinx.coroutines.CoroutineScope
@@ -467,18 +469,30 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
             return
         }
 
+        val videoId = mediaItem.playbackVideoIdOrNull()
+        if (videoId.isNullOrBlank()) {
+            Timber.w("Ignoring download request with non-video mediaId=%s", mediaItem.mediaId)
+            return
+        }
+
+        val safeMediaItem = mediaItem.buildUpon()
+            .setMediaId(videoId)
+            .setUri(sanitizePlaybackUri(videoId))
+            .setCustomCacheKey(videoId)
+            .build()
+
         val downloadRequest = DownloadRequest
             .Builder(
-                /* id      = */ mediaItem.mediaId,
-                /* uri     = */ mediaItem.requestMetadata.mediaUri
-                    ?: Uri.parse(ExternalUris.youtubeMusic(mediaItem.mediaId))
+                /* id      = */ videoId,
+                /* uri     = */ safeMediaItem.requestMetadata.mediaUri
+                    ?: Uri.parse(ExternalUris.youtubeMusic(videoId))
             )
-            .setCustomCacheKey(mediaItem.mediaId)
-            .setData("${mediaItem.mediaMetadata.artist ?: ""} - ${mediaItem.mediaMetadata.title ?: ""}".encodeToByteArray()) // Title in notification
+            .setCustomCacheKey(videoId)
+            .setData("${safeMediaItem.mediaMetadata.artist ?: ""} - ${safeMediaItem.mediaMetadata.title ?: ""}".encodeToByteArray()) // Title in notification
             .build()
 
        coroutineScope.launch(Dispatchers.IO) {
-    Database.upsert(mediaItem)
+    Database.upsert(safeMediaItem)
 }
 
          val imageUrl = mediaItem.mediaMetadata.artworkUri?.toString()?.thumbnail(1000)?.toUri()
@@ -492,8 +506,8 @@ coroutineScope.launch {
 
     // 2. Do the rest in a separate coroutine – they don’t need to finish for the download to start
     launch {
-        downloadSyncedLyrics(mediaItem.asSong)
-        ImageCacheFactory.preloadImage(mediaItem.mediaMetadata.artworkUri?.toString())
+        downloadSyncedLyrics(safeMediaItem.asSong)
+        ImageCacheFactory.preloadImage(safeMediaItem.mediaMetadata.artworkUri?.toString())
     }
 }
 }

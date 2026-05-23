@@ -120,6 +120,7 @@ kotlin {
             implementation(projects.oldtube)
             implementation(projects.piped)
             implementation(projects.invidious)
+            implementation(projects.environment)
 
             implementation(libs.room)
             implementation(libs.room.runtime)

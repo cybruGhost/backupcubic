@@ -38,6 +38,7 @@ suspend fun shareThumbnailCard(
     artist: String,
     artworkUrl: String?,
     includeSongLink: Boolean,
+    songLinkOverride: String? = null,
 ): Result<Unit> = runCatching {
     val file = withContext(Dispatchers.IO) {
         val artwork = artworkUrl
@@ -65,7 +66,7 @@ suspend fun shareThumbnailCard(
         listOf(
             cleanPrefix(title).ifBlank { context.getString(R.string.unknown_title) },
             cleanPrefix(artist).ifBlank { context.getString(R.string.rewind_unknown_artist) },
-            buildThumbnailShareLink(mediaId)
+            songLinkOverride?.takeIf { it.isNotBlank() } ?: buildThumbnailShareLink(mediaId)
         ).joinToString("\n")
     } else null
 

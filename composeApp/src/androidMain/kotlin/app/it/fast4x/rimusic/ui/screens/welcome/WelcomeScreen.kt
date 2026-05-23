@@ -84,6 +84,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import kotlin.math.roundToInt
 import kotlin.math.cos
 import kotlin.math.sin
 import androidx.compose.ui.platform.LocalUriHandler
@@ -96,26 +97,38 @@ private const val KEY_HAS_SEEN_WELCOME = "has_seen_welcome"
 
 // Copy the getLocationFromIP function here since it's private in utils
 private suspend fun getLocationFromIP(): String? = withContext(Dispatchers.IO) {
-    return@withContext try {
-        val url = URL("https://ipinfo.io/json/")
-        val connection = withContext(Dispatchers.IO) { url.openConnection() as HttpURLConnection }
-        connection.requestMethod = "GET"
-        connection.connectTimeout = 3000
-        connection.readTimeout = 3000
+    val endpoints = listOf(
+        "https://ipapi.co/json/" to "city",
+        "https://ipinfo.io/json/" to "city"
+    )
 
-        val responseCode = connection.responseCode
-        if (responseCode == 200) {
-            val reader = BufferedReader(InputStreamReader(connection.inputStream))
-            val response = reader.use { it.readText() }
-            reader.close()
-            connection.disconnect()
-            val json = JSONObject(response)
-            json.optString("city", "invalid city")
-        } else "API failed, just key in your city"
-    } catch (e: Exception) {
-        e.printStackTrace()
-        "failure happened, just key in ur city"
+    for ((endpoint, cityKey) in endpoints) {
+        val detectedCity = runCatching {
+            val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
+                requestMethod = "GET"
+                connectTimeout = 4500
+                readTimeout = 4500
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "CubicMusic/Android")
+            }
+
+            try {
+                if (connection.responseCode != HttpURLConnection.HTTP_OK) return@runCatching null
+                val response = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
+                JSONObject(response).optString(cityKey)
+                    .trim()
+                    .takeIf { it.isNotBlank() && !it.equals("null", ignoreCase = true) }
+            } finally {
+                connection.disconnect()
+            }
+        }.getOrNull()
+
+        if (!detectedCity.isNullOrBlank()) {
+            return@withContext detectedCity
+        }
     }
+
+    return@withContext null
 }
 
 @Composable
@@ -123,6 +136,7 @@ fun WelcomeScreen(navController: NavController) {
     val context = LocalContext.current
     var showWelcome by remember { mutableStateOf(true) }
     var welcomeBackgroundIndex by remember { mutableStateOf(0) }
+    var detectedWelcomeCity by remember { mutableStateOf("") }
     var userHasSeenWelcome by remember { 
         mutableStateOf(false)
     }
@@ -138,11 +152,15 @@ fun WelcomeScreen(navController: NavController) {
                 val currentCity = DataStoreUtils.getStringBlocking(context, KEY_CITY, "")
                 if (currentCity.isBlank()) {
                     try {
-                        val detectedCity = getLocationFromIP() ?: "Nairobi"
-                        DataStoreUtils.saveStringBlocking(context, KEY_CITY, detectedCity)
+                        getLocationFromIP()?.let { detectedCity ->
+                            DataStoreUtils.saveStringBlocking(context, KEY_CITY, detectedCity)
+                            detectedWelcomeCity = detectedCity
+                        }
                     } catch (e: Exception) {
                         // Silently fail
                     }
+                } else {
+                    detectedWelcomeCity = currentCity
                 }
             }
         }
@@ -197,6 +215,7 @@ fun WelcomeScreen(navController: NavController) {
         } else if (showWelcome) {
             // Show welcome screen
             WelcomeContent(
+                initialCity = detectedWelcomeCity,
                 onComplete = { name, city ->
                     DataStoreUtils.saveStringBlocking(context, KEY_HAS_SEEN_WELCOME, "true")
                     DataStoreUtils.saveStringBlocking(context, KEY_USERNAME, name)
@@ -299,13 +318,16 @@ private fun WelcomeImageBackground(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun WelcomeContent(onComplete: (String, String) -> Unit) {
+fun WelcomeContent(
+    initialCity: String = "",
+    onComplete: (String, String) -> Unit
+) {
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     val keyboardController = LocalSoftwareKeyboardController.current
     
     var name by remember { mutableStateOf("") }
-    var city by remember { mutableStateOf("") }
+    var city by remember { mutableStateOf(initialCity) }
     var animated by remember { mutableStateOf(false) }
     
     // ADDED: Auto-scroll state
@@ -335,12 +357,12 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
             1 -> { // Name field focused
                 // Scroll to show name field better
                 delay(100) // Small delay for keyboard animation
-                scrollState.animateScrollTo(0)
+                scrollState.animateScrollTo((scrollState.maxValue * 0.38f).roundToInt())
             }
             2 -> { // City field focused
                 // Scroll down a bit to show city field better
                 delay(100)
-                scrollState.animateScrollTo(150)
+                scrollState.animateScrollTo((scrollState.maxValue * 0.58f).roundToInt())
             }
             3 -> { // Button focused
                 // Scroll to bottom to show button
@@ -352,11 +374,18 @@ fun WelcomeContent(onComplete: (String, String) -> Unit) {
     
     LaunchedEffect(Unit) {
         animated = true
-        city = DataStoreUtils.getStringBlocking(context, KEY_CITY, "")
+        city = initialCity.ifBlank { DataStoreUtils.getStringBlocking(context, KEY_CITY, "") }
         
         // AUTO-FOCUS for TV: Start with name field focused
+        delay(350)
         nameFocusRequester.requestFocus()
         focusedField = 1
+    }
+
+    LaunchedEffect(initialCity) {
+        if (city.isBlank() && initialCity.isNotBlank()) {
+            city = initialCity
+        }
     }
     
     // ADDED: Main scrollable column
