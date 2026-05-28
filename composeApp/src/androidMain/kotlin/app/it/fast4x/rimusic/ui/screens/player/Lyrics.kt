@@ -28,12 +28,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -192,6 +194,7 @@ import app.it.fast4x.rimusic.utils.simpMusicTranslationEnabledKey
 import app.it.fast4x.rimusic.utils.textCopyToClipboard
 import app.it.fast4x.rimusic.utils.verticalFadingEdge
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
@@ -415,7 +418,7 @@ fun Lyrics(
 
         var languageDestination = languageDestination(otherLanguageApp)
 
-        val translator = Translator(NetworkClientFactory.getKtorClient())
+        val translator = Translator(NetworkClientFactory.getTranslatorKtorClient())
 
         var copyToClipboard by remember {
             mutableStateOf(false)
@@ -439,6 +442,7 @@ fun Lyrics(
         var simpMusicTranslationEnabled by rememberPreference(simpMusicTranslationEnabledKey, false)
         var selectedLyricsSource by rememberSaveable(mediaId) { mutableStateOf(defaultLyricsSource) }
         var showSimpMusicOptions by rememberSaveable(mediaId) { mutableStateOf(false) }
+        var sourceSwitcherExpanded by rememberSaveable(mediaId) { mutableStateOf(false) }
         var showShareCardPreview by rememberSaveable(mediaId) { mutableStateOf(false) }
         var shareSliceStartLine by rememberSaveable(mediaId) { mutableStateOf(0f) }
         var shareLineCount by rememberSaveable(mediaId) { mutableStateOf(6f) }
@@ -1525,161 +1529,202 @@ fun SelectLyricFromTrack(
             }
 
             if (showLyricsSourceSwitcher) {
+                val sourceSwitcherDensity = LocalDensity.current
+                val statusBarTop = with(sourceSwitcherDensity) { WindowInsets.statusBars.getTop(this).toDp() }
+                val sourceSwitcherTopPadding = when {
+                    statusBarTop > 36.dp -> 20.dp
+                    statusBarTop > 24.dp -> 16.dp
+                    else -> 12.dp
+                }
+                val selectedLyricsSourceLabel = when (selectedLyricsSource) {
+                    "kugou" -> "Kg"
+                    "simpmusic" -> "Simp"
+                    else -> "Lrc"
+                }
+
                 Column(
                     horizontalAlignment = Alignment.End,
                     modifier = Modifier
                         .align(Alignment.TopEnd)
                         .zIndex(10f)
+                        .padding(top = sourceSwitcherTopPadding, end = 14.dp)
                 ) {
                     Row(
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
-                            .padding(top = 14.dp, end = 14.dp)
                             .clip(RoundedCornerShape(18.dp))
-                            .background(Color.Black.copy(alpha = 0.28f))
+                            .background(Color.Black.copy(alpha = 0.36f))
+                            .clickable {
+                                sourceSwitcherExpanded = !sourceSwitcherExpanded
+                                if (!sourceSwitcherExpanded) showSimpMusicOptions = false
+                            }
                             .padding(horizontal = 8.dp, vertical = 6.dp)
                     ) {
-                        if (isShowingSynchronizedLyrics) {
+                        BasicText(
+                            text = if (sourceSwitcherExpanded) "Close" else selectedLyricsSourceLabel,
+                            style = typography().xxs.semiBold.copy(
+                                color = if (sourceSwitcherExpanded) Color.White.copy(alpha = 0.86f) else colorPalette().accent
+                            ),
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(14.dp))
+                                .background(colorPalette().background2.copy(alpha = 0.82f))
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                        )
+
+                        AnimatedVisibility(visible = sourceSwitcherExpanded) {
                             Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(14.dp))
-                                    .background(colorPalette().background2.copy(alpha = 0.9f))
-                                    .clickable {
-                                        showSimpMusicOptions = false
-                                        isPicking = true
-                                    }
-                                    .padding(horizontal = 8.dp, vertical = 6.dp)
+                                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Image(
-                                    painter = painterResource(R.drawable.search),
-                                    contentDescription = "Search LrcLib",
-                                    colorFilter = ColorFilter.tint(colorPalette().accent),
-                                    modifier = Modifier.size(12.dp)
-                                )
-                                BasicText(
-                                    text = "Lrc",
-                                    style = typography().xxs.semiBold.copy(color = colorPalette().accent)
-                                )
+                                if (isShowingSynchronizedLyrics) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(colorPalette().background2.copy(alpha = 0.9f))
+                                            .clickable {
+                                                showSimpMusicOptions = false
+                                                isPicking = true
+                                            }
+                                            .padding(horizontal = 8.dp, vertical = 6.dp)
+                                    ) {
+                                        Image(
+                                            painter = painterResource(R.drawable.search),
+                                            contentDescription = "Search LrcLib",
+                                            colorFilter = ColorFilter.tint(colorPalette().accent),
+                                            modifier = Modifier.size(12.dp)
+                                        )
+                                        BasicText(
+                                            text = "Lrc",
+                                            style = typography().xxs.semiBold.copy(color = colorPalette().accent)
+                                        )
+                                    }
+                                }
+
+                                listOf(
+                                    "lrclib" to "Lrc",
+                                    "kugou" to "Kg",
+                                    "simpmusic" to "Simp"
+                                ).forEach { (sourceKey, label) ->
+                                    BasicText(
+                                        text = label,
+                                        style = typography().xxs.semiBold.copy(
+                                            color = if (selectedLyricsSource == sourceKey) colorPalette().accent else Color.White.copy(alpha = 0.82f)
+                                        ),
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(14.dp))
+                                            .background(
+                                                if (selectedLyricsSource == sourceKey) colorPalette().background2.copy(alpha = 0.9f)
+                                                else Color.Transparent
+                                            )
+                                            .clickable {
+                                                if (sourceKey == "simpmusic") {
+                                                    selectedLyricsSource = sourceKey
+                                                    showSimpMusicOptions = !showSimpMusicOptions
+                                                } else {
+                                                    showSimpMusicOptions = false
+                                                    selectedLyricsSource = sourceKey
+                                                    coroutineScope.launch {
+                                                        fetchLyricsFromSource(sourceKey)
+                                                    }
+                                                }
+                                            }
+                                            .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    )
+                                }
                             }
                         }
+                    }
 
-                        listOf(
-                            "lrclib" to "Lrc",
-                            "kugou" to "Kg",
-                            "simpmusic" to "Simp"
-                        ).forEach { (sourceKey, label) ->
+                    AnimatedVisibility(visible = sourceSwitcherExpanded) {
+                        Column(
+                            horizontalAlignment = Alignment.End
+                        ) {
+                            if (showSimpMusicOptions) {
+                                Column(
+                                    horizontalAlignment = Alignment.End,
+                                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                                    modifier = Modifier
+                                        .padding(top = 8.dp)
+                                        .clip(RoundedCornerShape(16.dp))
+                                        .background(Color.Black.copy(alpha = 0.42f))
+                                        .padding(horizontal = 10.dp, vertical = 10.dp)
+                                ) {
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        BasicText(
+                                            text = if (simpMusicTranslationEnabled) "Translated" else "Original",
+                                            style = typography().xxs.semiBold.copy(color = Color.White),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(colorPalette().background2.copy(alpha = 0.9f))
+                                                .clickable { simpMusicTranslationEnabled = !simpMusicTranslationEnabled }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                        BasicText(
+                                            text = languageDestinationName(otherLanguageApp),
+                                            style = typography().xxs.semiBold.copy(color = Color.White),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(colorPalette().background2.copy(alpha = 0.9f))
+                                                .clickable {
+                                                    changingSimpMusicLanguage = true
+                                                    showLanguagesList = true
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+
+                                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        BasicText(
+                                            text = if (defaultLyricsSource == "simpmusic") "Default: Simp" else "Make Default",
+                                            style = typography().xxs.semiBold.copy(
+                                                color = if (defaultLyricsSource == "simpmusic") colorPalette().accent else Color.White
+                                            ),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(colorPalette().background2.copy(alpha = 0.9f))
+                                                .clickable {
+                                                    defaultLyricsSource =
+                                                        if (defaultLyricsSource == "simpmusic") "lrclib" else "simpmusic"
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                        BasicText(
+                                            text = "Fetch",
+                                            style = typography().xxs.semiBold.copy(color = colorPalette().accent),
+                                            modifier = Modifier
+                                                .clip(RoundedCornerShape(12.dp))
+                                                .background(colorPalette().background2.copy(alpha = 0.9f))
+                                                .clickable {
+                                                    coroutineScope.launch {
+                                                        fetchLyricsFromSource("simpmusic")
+                                                    }
+                                                }
+                                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                        )
+                                    }
+                                }
+                            }
+
                             BasicText(
-                                text = label,
+                                text = "Share Card",
                                 style = typography().xxs.semiBold.copy(
-                                    color = if (selectedLyricsSource == sourceKey) colorPalette().accent else Color.White.copy(alpha = 0.82f)
+                                    color = if (text.isNullOrBlank()) Color.White.copy(alpha = 0.45f) else colorPalette().accent
                                 ),
                                 modifier = Modifier
+                                    .padding(top = 8.dp)
                                     .clip(RoundedCornerShape(14.dp))
-                                    .background(
-                                        if (selectedLyricsSource == sourceKey) colorPalette().background2.copy(alpha = 0.9f)
-                                        else Color.Transparent
-                                    )
-                                    .clickable {
-                                        if (sourceKey == "simpmusic") {
-                                            selectedLyricsSource = sourceKey
-                                            showSimpMusicOptions = !showSimpMusicOptions
-                                        } else {
-                                            showSimpMusicOptions = false
-                                            selectedLyricsSource = sourceKey
-                                            coroutineScope.launch {
-                                                fetchLyricsFromSource(sourceKey)
-                                            }
-                                        }
+                                    .background(Color.Black.copy(alpha = 0.36f))
+                                    .clickable(enabled = !text.isNullOrBlank()) {
+                                        shareSliceStartLine = 0f
+                                        showShareCardPreview = true
                                     }
-                                    .padding(horizontal = 10.dp, vertical = 6.dp)
+                                    .padding(horizontal = 12.dp, vertical = 8.dp)
                             )
                         }
                     }
-
-                    if (showSimpMusicOptions) {
-                        Column(
-                            horizontalAlignment = Alignment.End,
-                            verticalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier
-                                .padding(top = 8.dp, end = 14.dp)
-                                .clip(RoundedCornerShape(16.dp))
-                                .background(Color.Black.copy(alpha = 0.38f))
-                                .padding(horizontal = 10.dp, vertical = 10.dp)
-                        ) {
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                BasicText(
-                                    text = if (simpMusicTranslationEnabled) "Translated" else "Original",
-                                    style = typography().xxs.semiBold.copy(color = Color.White),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(colorPalette().background2.copy(alpha = 0.9f))
-                                        .clickable { simpMusicTranslationEnabled = !simpMusicTranslationEnabled }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                                BasicText(
-                                    text = languageDestinationName(otherLanguageApp),
-                                    style = typography().xxs.semiBold.copy(color = Color.White),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(colorPalette().background2.copy(alpha = 0.9f))
-                                        .clickable {
-                                            changingSimpMusicLanguage = true
-                                            showLanguagesList = true
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
-
-                            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                BasicText(
-                                    text = if (defaultLyricsSource == "simpmusic") "Default: Simp" else "Make Default",
-                                    style = typography().xxs.semiBold.copy(
-                                        color = if (defaultLyricsSource == "simpmusic") colorPalette().accent else Color.White
-                                    ),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(colorPalette().background2.copy(alpha = 0.9f))
-                                        .clickable {
-                                            defaultLyricsSource =
-                                                if (defaultLyricsSource == "simpmusic") "lrclib" else "simpmusic"
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                                BasicText(
-                                    text = "Fetch",
-                                    style = typography().xxs.semiBold.copy(color = colorPalette().accent),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(12.dp))
-                                        .background(colorPalette().background2.copy(alpha = 0.9f))
-                                        .clickable {
-                                            coroutineScope.launch {
-                                                fetchLyricsFromSource("simpmusic")
-                                            }
-                                        }
-                                        .padding(horizontal = 10.dp, vertical = 6.dp)
-                                )
-                            }
-                        }
-                    }
-
-                    BasicText(
-                        text = "Share Card",
-                        style = typography().xxs.semiBold.copy(
-                            color = if (text.isNullOrBlank()) Color.White.copy(alpha = 0.45f) else colorPalette().accent
-                        ),
-                        modifier = Modifier
-                            .padding(top = 8.dp, end = 14.dp)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(Color.Black.copy(alpha = 0.32f))
-                            .clickable(enabled = !text.isNullOrBlank()) {
-                                shareSliceStartLine = 0f
-                                showShareCardPreview = true
-                            }
-                            .padding(horizontal = 12.dp, vertical = 8.dp)
-                    )
                 }
             }
 
@@ -1715,20 +1760,28 @@ fun SelectLyricFromTrack(
                                 .roundToPx()
                         }
 
-                        lazyListState.animateScrollToItem(
-                            index = synchronizedLyrics.index + 1,
-                            scrollOffset = centerOffset
-                        )
+                        try {
+                            lazyListState.animateScrollToItem(
+                                index = synchronizedLyrics.index + 1,
+                                scrollOffset = centerOffset
+                            )
+                        } catch (e: CancellationException) {
+                            if (!isActive) throw e
+                        }
 
                         while (isActive) {
                             delay(50)
                             karaokePosition = player.currentPosition
                             if (!synchronizedLyrics.update()) continue
 
-                            lazyListState.animateScrollToItem(
-                                index = synchronizedLyrics.index + 1,
-                                scrollOffset = centerOffset
-                            )
+                            try {
+                                lazyListState.animateScrollToItem(
+                                    index = synchronizedLyrics.index + 1,
+                                    scrollOffset = centerOffset
+                                )
+                            } catch (e: CancellationException) {
+                                if (!isActive) throw e
+                            }
                         }
                     }
 

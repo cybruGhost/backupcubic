@@ -1090,16 +1090,16 @@ fun Thumbnail(
                     )
                 }
 
-                var errorCounter by remember { mutableIntStateOf(0) }
+                var lastPlaybackError by remember { mutableStateOf<PlaybackException?>(null) }
 
-                if (error != null) {
-                    errorCounter = errorCounter.plus(1)
-                    if (errorCounter < 3) {
-                        Timber.e("Playback error: ${error?.cause?.cause}")
+                LaunchedEffect(error) {
+                    val currentError = error
+                    if (currentError != null && currentError !== lastPlaybackError) {
+                        lastPlaybackError = currentError
                         Toaster.e(
                             if (currentDisplayedMediaItem.isLocal)
                                 localMusicFileNotFoundError
-                            else when (error?.cause?.cause) {
+                            else when (currentError.cause?.cause) {
                                 is UnresolvedAddressException, is UnknownHostException -> networkerror
                                 is PlayableFormatNotFoundException -> notfindplayableaudioformaterror
                                 is UnplayableException -> originalvideodeletederror
@@ -1112,7 +1112,7 @@ fun Thumbnail(
                                 else -> unknownplaybackerror
                             }
                         )
-                    } else errorCounter = 0
+                    }
                 }
             }
         }

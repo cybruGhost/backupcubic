@@ -14,11 +14,13 @@ data class PlayerBody(
     val cpn: String? = "dPK7AEPTvFz8geNI",
     val params: String? = null,
     val serviceIntegrityDimensions: ServiceIntegrityDimensions? = null,
+    val thirdParty: ThirdParty? = null,
 ) {
     @Serializable
     data class ServiceIntegrityDimensions(
         val poToken: String,
     )
+
     @Serializable
     data class PlaybackContext(
         val contentPlaybackContext: ContentPlaybackContext = ContentPlaybackContext(),
@@ -29,4 +31,9 @@ data class PlayerBody(
             val signatureTimestamp: Int = 20110,
         )
     }
+
+    @Serializable
+    data class ThirdParty(
+        val embedUrl: String,
+    )
 }

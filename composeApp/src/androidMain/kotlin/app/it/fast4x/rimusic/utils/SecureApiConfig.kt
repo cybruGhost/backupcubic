@@ -32,6 +32,14 @@ object SecureApiConfig {
         "https://update-buddy-core.lovable.app/api/public/latest-release"
     }
 
+    val crystalApiBaseUrl: String by lazy {
+        "https://v0-innertube-api-clone.vercel.app/api"
+    }
+
+    val flowTuneBaseUrl: String by lazy {
+        "https://yt.omada.cafe"
+    }
+
     val cShareEndpoint: String by lazy {
         "https://update-buddy-core.lovable.app/api/public/share"
     }

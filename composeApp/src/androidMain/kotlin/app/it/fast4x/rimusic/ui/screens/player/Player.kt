@@ -300,6 +300,7 @@ import androidx.media3.common.MimeTypes
 import app.it.fast4x.rimusic.ui.screens.spotify.CanvasPlayerManager
 import androidx.compose.material3.CircularProgressIndicator
 import app.it.fast4x.rimusic.service.MyDownloadHelper
+import timber.log.Timber
 
 // ─────────────────────────────────────────────────────────────
 // FIX 1 helper: network availability check.
@@ -569,7 +570,7 @@ private fun PlayerContent(
     //   half-buffered, playerError fires. We check connectivity first — if still
     //   offline, we skip the search and let ExoPlayer retry on its own.
     LaunchedEffect(playerError, alternateSourceRetryEnabled, retryWithAlternateSourcesNonce) {
-        if (alternateSourceRetryEnabled && playerError != null) {
+        if (false && alternateSourceRetryEnabled && playerError != null) {
             val currentItem = binder.displayedMediaItem ?: binder.player.currentMediaItem ?: return@LaunchedEffect
             if (currentItem.isLocal || isCurrentSongDownloaded) return@LaunchedEffect
 
@@ -765,6 +766,18 @@ private fun PlayerContent(
                 e.printStackTrace()
             }
         }
+    }
+
+    LaunchedEffect(retryWithAlternateSourcesNonce) {
+        if (retryWithAlternateSourcesNonce <= 0 || playerError == null) return@LaunchedEffect
+        val wasPlaying = binder.player.playWhenReady || binder.player.isPlaying
+        runCatching { binder.player.prepare() }
+            .onSuccess {
+                if (wasPlaying) runCatching { binder.player.play() }
+                playbackErrorMessage = null
+                playerError = null
+            }
+            .onFailure { Timber.e(it, "Manual playback retry failed for mediaId=%s", binder.player.currentMediaItem?.mediaId) }
     }
 
     val pagerState = rememberPagerState(pageCount = { mediaItems.size })
@@ -2263,7 +2276,7 @@ private fun PlayerContent(
             actionLabel = when {
                 playerError != null && isCurrentSongDownloaded && hasNetworkConnection ->
                     stringResource(R.string.redownload_song)
-                playerError != null && !isCurrentSongDownloaded && hasNetworkConnection && alternateSourceRetryEnabled ->
+                playerError != null && !isCurrentSongDownloaded && hasNetworkConnection ->
                     stringResource(R.string.retry_with_other_sources)
                 else -> null
             },
@@ -2272,7 +2285,7 @@ private fun PlayerContent(
                     stringResource(R.string.redownload_song_hint)
                 playerError != null && isCurrentSongDownloaded ->
                     stringResource(R.string.downloaded_song_corrupt_offline_message)
-                playerError != null && !isCurrentSongDownloaded && hasNetworkConnection && alternateSourceRetryEnabled ->
+                playerError != null && !isCurrentSongDownloaded && hasNetworkConnection ->
                     stringResource(R.string.retry_with_other_sources_hint)
                 else -> null
             },
@@ -2461,8 +2474,13 @@ private fun OptimizedCanvasVideoPlayer(
             CanvasPlayerManager.setupPlayer(context = context, canvasUrl = canvasUrl, isPlaying = isPlaying, mediaItemId = mediaItemId)
         },
         update = { playerView ->
-            CanvasPlayerManager.bindPlayerView(playerView)
-            CanvasPlayerManager.updatePlayState(isPlaying)
+            CanvasPlayerManager.attachOrUpdate(
+                playerView = playerView,
+                context = context,
+                canvasUrl = canvasUrl,
+                isPlaying = isPlaying,
+                mediaItemId = mediaItemId
+            )
         },
         modifier = modifier
             .clip(RoundedCornerShape(16.dp))

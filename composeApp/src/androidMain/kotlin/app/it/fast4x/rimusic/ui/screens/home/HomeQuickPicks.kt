@@ -1368,12 +1368,18 @@ fun HomeQuickPicks(
                             // Play icon
                             IconButton(
                                 onClick = {
-                                    val queue = buildList {
-                                        trending?.let { add(it.asMediaItem) }
-                                        addAll(relatedInit?.songs?.map { it.asMediaItem }.orEmpty())
-                                    }.distinctBy { it.mediaId }
-                                    binder?.stopRadio()
-                                    binder?.player?.forcePlayAtIndex(queue, 0)
+                                    refreshScope.launch {
+                                        val queue = buildList {
+                                            trending?.let { add(preferredCachedSong(it).asMediaItem) }
+                                            addAll(
+                                                relatedInit?.songs
+                                                    ?.map { preferredCachedSong(it.asSong).asMediaItem }
+                                                    .orEmpty()
+                                            )
+                                        }.distinctBy { it.mediaId }
+                                        binder?.stopRadio()
+                                        binder?.player?.forcePlayAtIndex(queue, 0)
+                                    }
                                 },
                                 modifier = Modifier.size(24.dp)
                             ) {

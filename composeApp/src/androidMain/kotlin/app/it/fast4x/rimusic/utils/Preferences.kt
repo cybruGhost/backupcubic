@@ -322,6 +322,7 @@ const val exportifyWebUrlKey = "exportifyWebUrl"
 const val showSecondLineKey = "showSecondLine"
 const val settingsAssistantEnabledKey = "settingsAssistantEnabled"
 const val settingsAssistantAutoPopupKey = "settingsAssistantAutoPopup"
+const val showRescueCenterInMenuKey = "showRescueCenterInMenu"
 const val VinylSizeKey = "VinylSize"
 const val romanizationKey = "romanization"
 

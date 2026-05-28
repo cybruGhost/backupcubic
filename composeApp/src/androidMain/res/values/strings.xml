@@ -476,8 +476,8 @@
 <string name="cover_saved">Cover saved</string>
 <string name="cover_save_failed">Couldn\'t save cover</string>
 <string name="tap_anywhere_to_dismiss">Tap anywhere to dismiss</string>
-<string name="retry_with_other_sources">Retry with other sources</string>
-<string name="retry_with_other_sources_hint">Try alternate playback sources such as YouTube match search and fallback stream providers.</string>
+<string name="retry_with_other_sources">Retry playback</string>
+<string name="retry_with_other_sources_hint">Try the selected source again without replacing the current song.</string>
 <string name="redownload_song">Re-download song</string>
 <string name="redownload_song_hint">This downloaded file looks corrupted. Cubic Music will clear the broken offline copy and download it again.</string>
 <string name="menu_style">Menu style</string>
@@ -1477,5 +1477,9 @@
 <string name="rewind_unique_albums">Unique albums</string>
 <string name="rewind_empty_line">Play more music and this slide will glow next time.</string>
 <string name="rewind_finale_subtitle">Built locally from your listening history. Keep listening, keep shaping the cube.</string>
+<string name="rescue_center">Rescue Center</string>
+<string name="show_rescue_center_in_menu">Show Rescue Center in menu</string>
+<string name="show_rescue_center_in_menu_description">Adds quick access between Donate and Settings.</string>
+<string name="show_rescue_center_in_menu_debug_description">Debug logging is on, so Rescue Center is always shown.</string>
 
 </resources>
