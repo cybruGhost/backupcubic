@@ -74,9 +74,12 @@ val Context.defaultDataSourceFactory
     @OptIn(UnstableApi::class)
     get() = DefaultDataSource.Factory(
         this,
-        DefaultHttpDataSource.Factory().setConnectTimeoutMs(16000)
-            .setReadTimeoutMs(8000)
-            .setUserAgent("Mozilla/5.0 (Windows NT 10.0; rv:91.0) Gecko/20100101 Firefox/91.0")
+        DefaultHttpDataSource.Factory()
+            .setConnectTimeoutMs(15_000)
+            .setReadTimeoutMs(30_000)
+            .setAllowCrossProtocolRedirects(true)
+            .setDefaultRequestProperties(streamingRequestHeaders)
+            .setUserAgent(STREAMING_USER_AGENT)
     )
 
 val Context.okHttpDataSourceFactory
@@ -84,10 +87,24 @@ val Context.okHttpDataSourceFactory
     get() = DefaultDataSource.Factory(
         this,
         OkHttpDataSource.Factory(okHttpClient())
-            .setUserAgent("Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/65.0.3325.181 Mobile Safari/537.36")
+            .setDefaultRequestProperties(streamingRequestHeaders)
+            .setUserAgent(STREAMING_USER_AGENT)
     )
         .handleRangeErrors()
         .handleCatchingErrors()
+
+private const val STREAMING_USER_AGENT =
+    "Mozilla/5.0 (Linux; Android 14; Pixel 8 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/134.0.0.0 Mobile Safari/537.36"
+
+private val streamingRequestHeaders = mapOf(
+    "Origin" to "https://www.youtube.com",
+    "Referer" to "https://www.youtube.com/",
+    "Accept" to "*/*",
+    "Accept-Encoding" to "identity",
+    "Sec-Fetch-Dest" to "empty",
+    "Sec-Fetch-Mode" to "cors",
+    "Sec-Fetch-Site" to "cross-site"
+)
 
 private fun okHttpClient(): OkHttpClient {
     ProxyPreferences.preference?.let {
@@ -95,13 +112,14 @@ private fun okHttpClient(): OkHttpClient {
             .proxy(
                 getProxy(it)
             )
-            .connectTimeout(Duration.ofSeconds(16))
-            .readTimeout(Duration.ofSeconds(8))
+            .connectTimeout(Duration.ofSeconds(15))
+            .readTimeout(Duration.ofSeconds(30))
+            .retryOnConnectionFailure(true)
             .build()
     }
     return OkHttpClient.Builder()
-        .connectTimeout(Duration.ofSeconds(16))
-        .readTimeout(Duration.ofSeconds(20))
+        .connectTimeout(Duration.ofSeconds(15))
+        .readTimeout(Duration.ofSeconds(30))
         .retryOnConnectionFailure(true)
         .build()
 }

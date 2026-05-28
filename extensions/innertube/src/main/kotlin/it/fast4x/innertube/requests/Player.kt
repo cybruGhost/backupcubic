@@ -9,18 +9,26 @@ import it.fast4x.innertube.models.PlayerResponse
 import it.fast4x.innertube.models.bodies.PlayerBody
 import it.fast4x.innertube.utils.runCatchingCancellable
 
+// it/fast4x/innertube/requests/player.kt
+
 suspend fun Innertube.player(
     videoId: String,
     poToken: String? = null,
     playlistId: String? = null,
+    context: Context? = null,
 ) = runCatchingCancellable {
+    // ✅ Use ANDROID_VR as the default context
+    val effectiveContext = context ?: Context.DefaultAndroidVr
+
     client.post(player) {
-        setLogin(Context.DefaultWeb.client, setLogin = cookie != null)
+        setLogin(effectiveContext.client, setLogin = cookie != null)
         setBody(
             PlayerBody(
-                context = Context.DefaultWeb,
+                context = effectiveContext,
                 videoId = videoId,
                 playlistId = playlistId,
+                contentCheckOk = true,      // required for ANDROID_VR
+                racyCheckOk = true,         // required for ANDROID_VR
                 serviceIntegrityDimensions = poToken?.let(PlayerBody::ServiceIntegrityDimensions)
             )
         )

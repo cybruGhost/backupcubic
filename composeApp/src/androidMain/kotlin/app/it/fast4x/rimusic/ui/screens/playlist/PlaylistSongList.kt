@@ -237,7 +237,7 @@ fun PlaylistSongList(
         mutableStateOf(false)
     }
 
-    val translator = Translator(NetworkClientFactory.getKtorClient())
+    val translator = Translator(NetworkClientFactory.getTranslatorKtorClient())
     val languageDestination = languageDestination()
 
     val localPlaylist by remember( saveCheck ) {
@@ -1065,6 +1065,4 @@ fun PlaylistSongList(
         }
     }
 }
-
-
 

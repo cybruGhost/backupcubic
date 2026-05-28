@@ -545,7 +545,7 @@ interface SongTable {
         SongSortBy.Artist           -> sortFavoritesByArtist()
         SongSortBy.Duration         -> sortFavoritesByDuration()
         SongSortBy.AlbumName        -> sortFavoritesByAlbumName()
-    }.map( sortOrder::applyTo ).take( limit )
+    }.map { list -> sortOrder.applyTo(list).take(limit) }
     //</editor-fold>
 
     @Transaction

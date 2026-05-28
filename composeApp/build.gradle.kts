@@ -85,6 +85,7 @@ kotlin {
     
     // Ktor OkHttp engine (THIS WAS MISSING)
     implementation(libs.ktor.client.okhttp)
+    implementation(project(":metrolist-innertube"))
     
     // Your existing dependencies
     implementation(libs.media3.session)
@@ -120,7 +121,6 @@ kotlin {
             implementation(projects.oldtube)
             implementation(projects.piped)
             implementation(projects.invidious)
-            implementation(projects.environment)
 
             implementation(libs.room)
             implementation(libs.room.runtime)
@@ -169,7 +169,7 @@ android {
         minSdk = 23
         targetSdk = 36
         versionCode = 108
-        versionName = "1.7.9"
+        versionName = "1.8.2"
 
         /*
                 UNIVERSAL VARIABLES

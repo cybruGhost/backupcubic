@@ -83,7 +83,9 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaStyleNotificationHelper
 import androidx.media3.session.SessionToken
 import app.kreate.android.R
+import app.kreate.android.service.PlaybackSourceMonitor
 import app.kreate.android.service.createDataSourceFactory
+import app.kreate.android.service.invalidatePlaybackFormatCache
 import app.kreate.android.widget.Widget
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.MoreExecutors
@@ -119,6 +121,8 @@ import app.it.fast4x.rimusic.models.asMediaItem
 import app.it.fast4x.rimusic.service.BitmapProvider
 import app.it.fast4x.rimusic.service.MyDownloadHelper
 import app.it.fast4x.rimusic.service.MyDownloadService
+import app.it.fast4x.rimusic.service.NoInternetException
+import app.it.fast4x.rimusic.service.PlayableFormatNotFoundException
 import app.it.fast4x.rimusic.utils.CoilBitmapLoader
 import app.it.fast4x.rimusic.utils.TimerJob
 import app.it.fast4x.rimusic.utils.YouTubeRadio
@@ -215,11 +219,16 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import app.kreate.android.me.knighthat.utils.Toaster
 import timber.log.Timber
+import java.io.InterruptedIOException
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
 import java.io.ObjectInputStream
 import java.io.ObjectOutputStream
+import java.net.ConnectException
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import kotlin.io.path.createTempDirectory
@@ -237,6 +246,23 @@ const val LOCAL_KEY_PREFIX = "local:"
 
 val MediaItem.isLocal get() = mediaId.startsWith(LOCAL_KEY_PREFIX) || localConfiguration?.uri?.scheme in setOf("content", "file")
 val Song.isLocal get() = id.startsWith(LOCAL_KEY_PREFIX) || id.startsWith("content://") || id.startsWith("file://")
+
+private fun Throwable.isNetworkUnavailablePlaybackFailure(): Boolean =
+    generateSequence(this) { it.cause }.any { cause ->
+        cause is NoInternetException ||
+            cause is UnknownHostException ||
+            cause is ConnectException ||
+            cause is NoRouteToHostException ||
+            cause is SocketTimeoutException ||
+            cause is InterruptedIOException ||
+            cause.message?.contains("Unable to resolve host", ignoreCase = true) == true ||
+            cause.message?.contains("Failed to connect", ignoreCase = true) == true ||
+            cause.message?.contains("timeout", ignoreCase = true) == true ||
+            cause.message?.contains("Read timed out", ignoreCase = true) == true ||
+            cause.message?.contains("ENETUNREACH", ignoreCase = true) == true ||
+            cause.message?.contains("EAI_NODATA", ignoreCase = true) == true ||
+            cause.message?.contains("ECONNABORTED", ignoreCase = true) == true
+    }
 
 @UnstableApi
 class PlayerServiceModern : MediaLibraryService(),
@@ -291,7 +317,6 @@ class PlayerServiceModern : MediaLibraryService(),
     private var lastEndedRecoveryMediaId: String? = null
     private var lastEndedRecoveryMs = 0L
     private var currentSongRetryCount = 0
-    private val maxCurrentSongRetries = 5
     private var resumeOnNetworkRestore = false
     private var pauseTriggeredByNetworkWait = false
     private var networkRecoveryMediaId: String? = null
@@ -300,6 +325,7 @@ class PlayerServiceModern : MediaLibraryService(),
     private val playbackRecoveryHelper = PlaybackRecoveryHelper()
     private var consecutiveErrorSkipCount = 0
     private val maxConsecutiveErrorSkips = 5
+    private val maxCurrentSongRetries = 2
     private var lastWidgetUpdateMs = 0L
     private var widgetUpdateJob: Job? = null
     private var cacheCompletionJob: Job? = null
@@ -542,6 +568,11 @@ class PlayerServiceModern : MediaLibraryService(),
                         .buildUpon()
                         .addAllCommands()
                         .build()
+                }
+
+                override fun getBufferedPercentage(): Int {
+                    return runCatching { super.getBufferedPercentage().coerceIn(0, 100) }
+                        .getOrDefault(0)
                 }
             }
 
@@ -1081,7 +1112,15 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         super.onPlayerError(error)
 
         val currentMediaId = player.currentMediaItem?.mediaId.orEmpty()
-        val deepestCause = generateSequence(error as Throwable?) { it.cause }.lastOrNull()
+        val errorCauses = generateSequence(error as Throwable?) { it.cause }.toList()
+        val deepestCause = errorCauses.lastOrNull()
+        val isInvalidResponse = errorCauses.any { it.javaClass.simpleName == "InvalidResponseCodeException" }
+        val isRefreshableStreamFailure =
+            isInvalidResponse ||
+                error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
+                error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
+        val isPlayableFormatMissing = errorCauses.any { it is PlayableFormatNotFoundException }
+        val isNetworkUnavailable = error.isNetworkUnavailablePlaybackFailure()
 
         Timber.e(
             error,
@@ -1093,7 +1132,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             deepestCause?.javaClass?.simpleName
         )
 
-        if (!isNetworkAvailable.value) {
+        if (!isNetworkAvailable.value || isNetworkUnavailable) {
             applyRecoveryDecision(
                 PlaybackRecoveryHelper.Decision.WaitForNetwork(
                     mediaId = currentMediaId.ifBlank { player.currentMediaItem?.mediaId.orEmpty() },
@@ -1129,7 +1168,61 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             return
         }
 
+        if (currentMediaId.isNotBlank() && isRefreshableStreamFailure) {
+            val failedSource = PlaybackSourceMonitor.status.value
+                .takeIf { it.videoId == currentMediaId }
+                ?.source
+            invalidatePlaybackFormatCache(
+                videoId = currentMediaId,
+                punishFlowTune = failedSource == null || failedSource.name.contains("FlowTune", ignoreCase = true),
+                failedSource = failedSource
+            )
+            Timber.w(
+                "Refreshable stream failure for %s - cleared cached playback URL and marked source=%s for fallback",
+                currentMediaId,
+                failedSource?.label
+            )
+        }
+
+        if (isRefreshableStreamFailure && currentMediaId.isNotBlank() && currentSongRetryCount < maxCurrentSongRetries) {
+            val shouldAutoResume = player.playWhenReady || player.isPlaying || player.playbackState == Player.STATE_BUFFERING
+            currentSongRetryCount++
+            val delayMs = 450L
+            Timber.i(
+                "Refreshing blocked stream URL for %s (attempt %d/%d)",
+                currentMediaId,
+                currentSongRetryCount,
+                maxCurrentSongRetries
+            )
+            showSmartMessage("Refreshing stream link...")
+            runCatching { player.pause() }
+            player.playWhenReady = shouldAutoResume
+            val prepared = player.safePrepare()
+            player.playWhenReady = shouldAutoResume
+            if (!prepared) {
+                skipOrPause("Source unrecoverable for $currentMediaId.")
+                return
+            }
+            handler.postDelayed({
+                if (!isServiceReady) return@postDelayed
+                if (player.currentMediaItem?.mediaId != currentMediaId) return@postDelayed
+                player.safeSeekTo(lastPlaybackPositionMs.coerceAtLeast(0L))
+                if (shouldAutoResume) {
+                    player.playWhenReady = true
+                    runCatching { binder.gracefulPlay() }
+                        .onFailure { Timber.e(it, "Failed to resume after blocked stream refresh for %s", currentMediaId) }
+                }
+            }, delayMs)
+            return
+        }
+
+        if (isRefreshableStreamFailure || isPlayableFormatMissing) {
+            skipOrPause("Source unavailable for this song.")
+            return
+        }
+
         if (currentMediaId.isNotBlank() && currentSongRetryCount < maxCurrentSongRetries) {
+            val shouldAutoResume = player.playWhenReady || player.isPlaying || player.playbackState == Player.STATE_BUFFERING
             currentSongRetryCount++
             val delayMs = when (currentSongRetryCount) {
                 1 -> 800L
@@ -1144,7 +1237,10 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             showSmartMessage("Retrying... ($currentSongRetryCount/$maxCurrentSongRetries)")
 
             runCatching { player.pause() }
-            if (!player.safePrepare()) {
+            player.playWhenReady = shouldAutoResume
+            val prepared = player.safePrepare()
+            player.playWhenReady = shouldAutoResume
+            if (!prepared) {
                 skipOrPause("Source unrecoverable for $currentMediaId.")
                 return
             }
@@ -1152,13 +1248,23 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 if (!isServiceReady) return@postDelayed
                 if (player.currentMediaItem?.mediaId != currentMediaId) return@postDelayed
                 player.safeSeekTo(lastPlaybackPositionMs.coerceAtLeast(0L))
-                runCatching { binder.gracefulPlay() }
-                    .onFailure { Timber.e(it, "Failed to resume after retry for %s", currentMediaId) }
+                if (shouldAutoResume) {
+                    player.playWhenReady = true
+                    runCatching { binder.gracefulPlay() }
+                        .onFailure { Timber.e(it, "Failed to resume after retry for %s", currentMediaId) }
+                }
             }, delayMs)
             return
         }
 
         Timber.w("All %d retries exhausted for %s", maxCurrentSongRetries, currentMediaId)
+        if (!preferences.getBoolean(skipMediaOnErrorKey, true)) {
+            applyRecoveryDecision(
+                PlaybackRecoveryHelper.Decision.Pause("Playback stopped. Skip on error is disabled.")
+            )
+            return
+        }
+
         consecutiveErrorSkipCount++
         if (consecutiveErrorSkipCount >= maxConsecutiveErrorSkips) {
             applyRecoveryDecision(
@@ -1196,7 +1302,9 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
     }
 
     private fun skipOrPause(reason: String) {
-        if (player.hasNextMediaItem()) {
+        if (!preferences.getBoolean(skipMediaOnErrorKey, true)) {
+            applyRecoveryDecision(PlaybackRecoveryHelper.Decision.Pause(reason))
+        } else if (player.hasNextMediaItem()) {
             val prev = player.currentMediaItem
             val skipped = player.skipBrokenMediaItem(reason)
             if (skipped && prev != null) {
@@ -1543,6 +1651,13 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             }
 
         if (!isNetworkConnected(this) || MyDownloadHelper.isSongDownloaded(mediaId)) {
+            cacheCompletionJob?.cancel()
+            cacheCompletionJob = null
+            cacheCompletionMediaId = null
+            return
+        }
+
+        if (player.currentMediaItem?.mediaId == mediaItem?.mediaId && (player.isPlaying || player.playWhenReady)) {
             cacheCompletionJob?.cancel()
             cacheCompletionJob = null
             cacheCompletionMediaId = null
@@ -2411,6 +2526,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                         ?.itemsPage
                         ?.items
                         ?.map(Innertube.SongItem::asMediaItem)
+                        ?.distinctBy { it.mediaId }
                         ?.let { relatedSongs ->
                             Database.asyncTransaction {
                                 relatedSongs.forEach(::insertIgnore)
@@ -2420,7 +2536,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                                 player.mediaItems.fastMap(MediaItem::mediaId)
                             }
 
-                            relatedSongs.dropWhile { it.mediaId == sanitizedMediaItem.mediaId || it.mediaId in currentQueue }
+                            relatedSongs.filter { it.mediaId != sanitizedMediaItem.mediaId && it.mediaId !in currentQueue }
                         }
                         ?.also {
                             withContext(Dispatchers.Main) {

@@ -236,8 +236,8 @@ fun DefaultUiSettings() {
 
     var skipSilence by rememberPreference(skipSilenceKey, false)
     skipSilence = false
-    var skipMediaOnError by rememberPreference(skipMediaOnErrorKey, false)
-    skipMediaOnError = false
+    var skipMediaOnError by rememberPreference(skipMediaOnErrorKey, true)
+    skipMediaOnError = true
     var volumeNormalization by rememberPreference(volumeNormalizationKey, false)
     volumeNormalization = false
 

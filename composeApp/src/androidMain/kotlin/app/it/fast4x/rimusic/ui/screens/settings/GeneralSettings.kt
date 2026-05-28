@@ -116,6 +116,7 @@ import app.it.fast4x.rimusic.utils.innertubePlayerSourceKey
 import app.it.fast4x.rimusic.utils.jumpPreviousKey
 import app.it.fast4x.rimusic.utils.keepPlayerMinimizedKey
 import app.it.fast4x.rimusic.utils.languageAppKey
+import app.it.fast4x.rimusic.utils.logDebugEnabledKey
 import app.it.fast4x.rimusic.utils.loudnessBaseGainKey
 import app.it.fast4x.rimusic.utils.maxSongsInQueueKey
 import app.it.fast4x.rimusic.utils.minimumSilenceDurationKey
@@ -139,6 +140,7 @@ import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.settingsAssistantAutoPopupKey
 import app.it.fast4x.rimusic.utils.settingsAssistantEnabledKey
 import app.it.fast4x.rimusic.utils.shakeEventEnabledKey
+import app.it.fast4x.rimusic.utils.showRescueCenterInMenuKey
 import app.it.fast4x.rimusic.utils.showLyricsSourceSwitcherKey
 import app.it.fast4x.rimusic.utils.skipMediaOnErrorKey
 import app.it.fast4x.rimusic.utils.skipSilenceKey
@@ -264,6 +266,8 @@ fun GeneralSettings(
     var showCommentsButton     by rememberPreference("show_comments_button", true)
     var settingsAssistantEnabled by rememberPreference(settingsAssistantEnabledKey, true)
     var settingsAssistantAutoPopup by rememberPreference(settingsAssistantAutoPopupKey, true)
+    var showRescueCenterInMenu by rememberPreference(showRescueCenterInMenuKey, false)
+    val logDebugEnabled by rememberPreference(logDebugEnabledKey, false)
     var showSettingsAssistant by rememberSaveable { mutableStateOf(false) }
     val settingsAssistantShown = rememberSaveable { mutableStateOf(false) }
     val scrollState = rememberScrollState()
@@ -441,6 +445,18 @@ fun GeneralSettings(
                                 ?.set("settings_tab_index", 7)
                             navController.navigate(app.it.fast4x.rimusic.enums.NavRoutes.settings.name)
                         }
+                    )
+
+                    OtherSwitchSettingEntry(
+                        title = stringResource(R.string.show_rescue_center_in_menu),
+                        text = if (logDebugEnabled) {
+                            stringResource(R.string.show_rescue_center_in_menu_debug_description)
+                        } else {
+                            stringResource(R.string.show_rescue_center_in_menu_description)
+                        },
+                        isChecked = showRescueCenterInMenu,
+                        onCheckedChange = { showRescueCenterInMenu = it },
+                        icon = R.drawable.rescue
                     )
                 }
             )
@@ -1098,37 +1114,37 @@ fun GeneralSettings(
                     var alternateSourceRetryEnabled by rememberPreference(alternateSourceRetryKey, true)
                     var innertubePlayerSource by rememberPreference(
                         innertubePlayerSourceKey,
-                        InnertubePlayerSource.OldInnertube
+                        InnertubePlayerSource.CrystalApi
                     )
                     var showInnertubeSourceDialog by remember { mutableStateOf(false) }
                     val playbackSourceStatus by PlaybackSourceMonitor.status.collectAsState()
                     if (search.inputValue.isBlank() || "Alternate Source Retry".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
                             title           = "Alternate Source Retry",
-                            text            = "After a playback error, retry with another YouTube result, then Invidious, then Piped if connected",
+                            text            = "If the selected source fails, try the other playback sources before giving up",
                             isChecked       = alternateSourceRetryEnabled,
                             onCheckedChange = { alternateSourceRetryEnabled = it },
                             icon            = R.drawable.refresh
                         )
                         SettingsDescription(
-                            text      = "Fallback order: normal YouTube resolver, alternate YouTube match, Invidious, then your connected Piped account. This only runs after playback errors.",
+                            text      = "Fallback order: selected source, then the other sources. Turn this off to lock playback to one source.",
                             modifier  = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
                         )
                         OtherSettingsEntry(
-                            title = "Innertube player source",
+                            title = "Playback source",
                             text = "Locked to ${innertubePlayerSource.text}",
                             onClick = { showInnertubeSourceDialog = true },
                             icon = R.drawable.ytmusic
                         )
                         SettingsDescription(
-                            text = "Old mode uses YouTube, old Innertube, then iOS. Environment mode uses Environment first, then YouTube fallbacks.",
+                            text = "Sources: Crystal API Direct, Omada Proxy, MetroList Innertube, and Innertube. Crystal API Direct uses your Vercel /api/stream response as documented.",
                             modifier = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
                         )
                         if (showInnertubeSourceDialog) {
                             ValueSelectorDialog(
-                                title = "Innertube player source",
+                                title = "Playback source",
                                 selectedValue = innertubePlayerSource,
                                 onValueSelected = {
                                     innertubePlayerSource = it
@@ -1161,8 +1177,8 @@ fun GeneralSettings(
                             Spacer(modifier = Modifier.width(8.dp))
                             BasicText(
                                 text = buildString {
-                                    append("Current source: ")
-                                    append(playbackSourceStatus.source.label)
+                                    append("Selected source: ")
+                                    append(innertubePlayerSource.text)
                                     if (playbackSourceStatus.isFallback) append(" fallback")
                                 },
                                 style = typography().xxs.copy(color = colorPalette().text)
