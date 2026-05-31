@@ -75,7 +75,6 @@ import app.it.fast4x.rimusic.ui.styling.DefaultLightColorPalette
 import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.utils.RestartActivity
 import app.it.fast4x.rimusic.utils.RestartPlayerService
-import app.it.fast4x.rimusic.utils.alternateSourceRetryKey
 import app.it.fast4x.rimusic.utils.audioReverbPresetKey
 import app.it.fast4x.rimusic.utils.autoLoadSongsInQueueKey
 import app.it.fast4x.rimusic.utils.bassboostEnabledKey
@@ -1101,36 +1100,23 @@ fun GeneralSettings(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Alternate Source Retry
+        // Playback source is Innertube-only now; keep this hidden so settings do not expose fake source choices.
         AnimatedVisibility(
-            visible = true,
+            visible = false,
             enter   = androidx.compose.animation.fadeIn(animationSpec = tween(675)) +
                       androidx.compose.animation.scaleIn(animationSpec = tween(675), initialScale = 0.9f)
         ) {
             SettingsSectionCard(
-                title   = "Alternate Source Retry",
+                title   = "Playback Source",
                 icon    = R.drawable.refresh,
                 content = {
-                    var alternateSourceRetryEnabled by rememberPreference(alternateSourceRetryKey, true)
                     var innertubePlayerSource by rememberPreference(
                         innertubePlayerSourceKey,
-                        InnertubePlayerSource.CrystalApi
+                        InnertubePlayerSource.OldInnertube
                     )
                     var showInnertubeSourceDialog by remember { mutableStateOf(false) }
                     val playbackSourceStatus by PlaybackSourceMonitor.status.collectAsState()
-                    if (search.inputValue.isBlank() || "Alternate Source Retry".contains(search.inputValue, true)) {
-                        OtherSwitchSettingEntry(
-                            title           = "Alternate Source Retry",
-                            text            = "If the selected source fails, try the other playback sources before giving up",
-                            isChecked       = alternateSourceRetryEnabled,
-                            onCheckedChange = { alternateSourceRetryEnabled = it },
-                            icon            = R.drawable.refresh
-                        )
-                        SettingsDescription(
-                            text      = "Fallback order: selected source, then the other sources. Turn this off to lock playback to one source.",
-                            modifier  = Modifier.padding(start = 25.dp, top = 4.dp),
-                            textAlign = TextAlign.Start
-                        )
+                    if (search.inputValue.isBlank() || "Playback Source".contains(search.inputValue, true)) {
                         OtherSettingsEntry(
                             title = "Playback source",
                             text = "Locked to ${innertubePlayerSource.text}",
@@ -1138,7 +1124,7 @@ fun GeneralSettings(
                             icon = R.drawable.ytmusic
                         )
                         SettingsDescription(
-                            text = "Sources: Crystal API Direct, Omada Proxy, MetroList Innertube, and Innertube. Crystal API Direct uses your Vercel /api/stream response as documented.",
+                            text = "Playback is locked to Innertube only. Lovable, MetroList, Invidious, Piped, Android, and iOS source fallbacks are disabled.",
                             modifier = Modifier.padding(start = 25.dp, top = 4.dp),
                             textAlign = TextAlign.Start
                         )
@@ -1151,7 +1137,7 @@ fun GeneralSettings(
                                     showInnertubeSourceDialog = false
                                 },
                                 valueText = { it.text },
-                                values = InnertubePlayerSource.values().toList(),
+                                values = listOf(InnertubePlayerSource.OldInnertube),
                                 onDismiss = { showInnertubeSourceDialog = false }
                             )
                         }

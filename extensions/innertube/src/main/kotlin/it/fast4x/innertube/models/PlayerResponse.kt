@@ -1,9 +1,16 @@
 package it.fast4x.innertube.models
 
-import it.fast4x.invidious.models.AdaptiveFormat
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonPrimitive
 
+private fun JsonElement?.intValue(): Int? =
+    this?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toInt()
+
+private fun JsonElement?.longValue(): Long? =
+    this?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toLong()
 
 @Serializable
 data class PlayerResponse(
@@ -28,7 +35,6 @@ data class PlayerResponse(
         data class AudioConfig(
             val loudnessDb: Float?
         ) {
-            // For music clients only
             val normalizedLoudnessDb: Float?
                 get() = loudnessDb?.plus(7)
         }
@@ -40,89 +46,91 @@ data class PlayerResponse(
         val adaptiveFormats: List<Format>?,
         val expiresInSeconds: Int,
     ) {
-
         val autoMaxQualityFormat: Format?
             get() = adaptiveFormats?.filter { it.url != null || it.signatureCipher != null }
                 ?.let { formats ->
-                    formats.findLast { it.itag == 774 || it.itag == 251 || it.itag == 141 ||
-                            it.itag == 250 || it.itag == 140 ||
-                            it.itag == 249 || it.itag == 139 || it.itag == 171
-                    } ?: formats.maxByOrNull { it.bitrate ?: 0 }
+                    formats.findLast { it.itagValue == 774 || it.itagValue == 251 || it.itagValue == 141 ||
+                            it.itagValue == 250 || it.itagValue == 140 ||
+                            it.itagValue == 249 || it.itagValue == 139 || it.itagValue == 171
+                    } ?: formats.maxByOrNull { it.bitrateValue ?: 0 }
                 }
-
 
         val highestQualityFormat: Format?
             get() = adaptiveFormats?.filter { it.url != null || it.signatureCipher != null }
                 ?.let { formats ->
-                    formats.findLast { it.itag == 774 || it.itag == 251 || it.itag == 140 || it.itag == 141 }
-                        ?: formats.maxByOrNull { it.bitrate ?: 0 }
+                    formats.findLast { it.itagValue == 774 || it.itagValue == 251 || it.itagValue == 140 || it.itagValue == 141 }
+                        ?: formats.maxByOrNull { it.bitrateValue ?: 0 }
                 }
 
         val mediumQualityFormat: Format?
             get() = adaptiveFormats?.filter { it.url != null || it.signatureCipher != null }
                 ?.let { formats ->
-                    formats.findLast { it.itag == 250 || it.itag == 140 }
-                        ?: formats.maxByOrNull { it.bitrate ?: 0 }
+                    formats.findLast { it.itagValue == 250 || it.itagValue == 140 }
+                        ?: formats.maxByOrNull { it.bitrateValue ?: 0 }
                 }
 
         val lowestQualityFormat: Format?
             get() = adaptiveFormats?.filter { it.url != null || it.signatureCipher != null }
                 ?.let { formats ->
-                    formats.findLast { it.itag == 249 || it.itag == 139 || it.itag == 171 }
-                        ?: formats.maxByOrNull { it.bitrate ?: 0 }
+                    formats.findLast { it.itagValue == 249 || it.itagValue == 139 || it.itagValue == 171 }
+                        ?: formats.maxByOrNull { it.bitrateValue ?: 0 }
                 }
-
-
-
-//        @Serializable
-//        data class AdaptiveFormat(
-//            val itag: Int,
-//            val mimeType: String,
-//            val bitrate: Long?,
-//            val averageBitrate: Long?,
-//            val contentLength: Long?,
-//            val audioQuality: String?,
-//            val approxDurationMs: Long?,
-//            val lastModified: Long?,
-//            val loudnessDb: Double?,
-//            val audioSampleRate: Int?,
-//            val url: String?,
-//            val width: Int?,
-//            val signatureCipher: String?
-//        ) {
-//            val isAudio: Boolean
-//                get() = width == null
-//
-//            val isVideo: Boolean
-//                get() = width != null
-//        }
 
         @Serializable
         data class Format(
-            val itag: Int,
+            val itag: JsonElement?,
             val url: String?,
             val mimeType: String,
-            val bitrate: Int,
-            val width: Int?,
-            val height: Int?,
-            val contentLength: Long?,
+            val bitrate: JsonElement?,
+            val width: JsonElement?,
+            val height: JsonElement?,
+            val contentLength: JsonElement?,
             val quality: String,
-            val fps: Int?,
+            val fps: JsonElement?,
             val qualityLabel: String?,
-            val averageBitrate: Int?,
+            val averageBitrate: JsonElement?,
             val audioQuality: String?,
             val approxDurationMs: String?,
-            val audioSampleRate: Int?,
-            val audioChannels: Int?,
+            val audioSampleRate: JsonElement?,
+            val audioChannels: JsonElement?,
             val loudnessDb: Double?,
-            val lastModified: Long?,
+            val lastModified: JsonElement?,
             val signatureCipher: String?,
         ) {
+            val itagValue: Int?
+                get() = itag.intValue()
+
+            val bitrateValue: Int?
+                get() = bitrate.intValue()
+
+            val widthValue: Int?
+                get() = width.intValue()
+
+            val heightValue: Int?
+                get() = height.intValue()
+
+            val contentLengthValue: Long?
+                get() = contentLength.longValue()
+
+            val fpsValue: Int?
+                get() = fps.intValue()
+
+            val averageBitrateValue: Int?
+                get() = averageBitrate.intValue()
+
+            val audioSampleRateValue: Int?
+                get() = audioSampleRate.intValue()
+
+            val audioChannelsValue: Int?
+                get() = audioChannels.intValue()
+
+            val lastModifiedValue: Long?
+                get() = lastModified.longValue()
+
             val isAudio: Boolean
-                get() = width == null
+                get() = widthValue == null
         }
     }
-
 
     @Serializable
     data class VideoDetails(

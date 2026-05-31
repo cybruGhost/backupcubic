@@ -85,7 +85,6 @@ import androidx.media3.session.SessionToken
 import app.kreate.android.R
 import app.kreate.android.service.PlaybackSourceMonitor
 import app.kreate.android.service.createDataSourceFactory
-import app.kreate.android.service.invalidatePlaybackFormatCache
 import app.kreate.android.widget.Widget
 import com.google.common.collect.ImmutableList
 import com.google.common.util.concurrent.MoreExecutors
@@ -1172,13 +1171,8 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             val failedSource = PlaybackSourceMonitor.status.value
                 .takeIf { it.videoId == currentMediaId }
                 ?.source
-            invalidatePlaybackFormatCache(
-                videoId = currentMediaId,
-                punishFlowTune = failedSource == null || failedSource.name.contains("FlowTune", ignoreCase = true),
-                failedSource = failedSource
-            )
             Timber.w(
-                "Refreshable stream failure for %s - cleared cached playback URL and marked source=%s for fallback",
+                "Refreshable stream failure for %s from source=%s - retrying Innertube resolver",
                 currentMediaId,
                 failedSource?.label
             )

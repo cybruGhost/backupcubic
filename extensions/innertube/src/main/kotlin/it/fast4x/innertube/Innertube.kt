@@ -10,7 +10,6 @@ import io.ktor.client.plugins.compression.brotli
 import io.ktor.client.plugins.contentnegotiation.ContentNegotiation
 import io.ktor.client.plugins.defaultRequest
 import io.ktor.client.request.HttpRequestBuilder
-import io.ktor.client.request.get
 import io.ktor.client.request.header
 import io.ktor.client.request.headers
 import io.ktor.client.request.parameter
@@ -52,15 +51,12 @@ import it.fast4x.innertube.utils.YoutubePreferences
 import it.fast4x.innertube.utils.getProxy
 import it.fast4x.innertube.utils.parseCookieString
 import it.fast4x.innertube.utils.sha1
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
 import nl.adaptivity.xmlutil.XmlDeclMode
 import nl.adaptivity.xmlutil.serialization.XML
 import java.net.Proxy
-import java.net.URLDecoder
 import java.util.Locale
 
 object Innertube {
@@ -68,32 +64,6 @@ object Innertube {
     private const val YOUTUBE_MUSIC_HOST = "music.youtube.com"
     private const val VISITOR_DATA_PREFIX = "Cgt"
     const val DEFAULT_VISITOR_DATA = "CgtMN0FkbDFaWERfdyi8t4u7BjIKCgJWThIEGgAgWQ%3D%3D"
-
-    private suspend fun fetchFreshVisitorData(): String? = withContext(Dispatchers.IO) {
-        runCatching {
-            val response = client.get("https://music.youtube.com/sw.js_data") {
-                header(
-                    HttpHeaders.UserAgent,
-                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-                )
-            }
-            val body = response.bodyAsText()
-            Regex("""Cg[a-zA-Z0-9%_-]{20,}""")
-                .find(body)
-                ?.value
-                ?.let { URLDecoder.decode(it, "UTF-8") }
-                ?.takeIf { it.startsWith(VISITOR_DATA_PREFIX) }
-        }.getOrNull()
-    }
-
-    suspend fun ensureFreshVisitorData() {
-        val current = visitorData.trim()
-        if (current.isBlank() || current == "null" || current == DEFAULT_VISITOR_DATA) {
-            fetchFreshVisitorData()
-                ?.takeIf { it.isNotBlank() }
-                ?.let { visitorData = it }
-        }
-    }
 
     @OptIn(ExperimentalSerializationApi::class)
       private fun createClient() = HttpClient(OkHttp) {

@@ -85,7 +85,6 @@ kotlin {
     
     // Ktor OkHttp engine (THIS WAS MISSING)
     implementation(libs.ktor.client.okhttp)
-    implementation(project(":metrolist-innertube"))
     
     // Your existing dependencies
     implementation(libs.media3.session)
