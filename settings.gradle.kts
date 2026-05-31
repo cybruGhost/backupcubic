@@ -32,8 +32,6 @@ include(":piped")
 project(":piped").projectDir = file("extensions/piped")
 include(":invidious")
 project(":invidious").projectDir = file("extensions/invidious")
-include(":metrolist-innertube")
-project(":metrolist-innertube").projectDir = file("extensions/metrolist/innertube")
 // Submodules
 include(":innertube")
 project(":innertube").projectDir = file("modules/innertube")

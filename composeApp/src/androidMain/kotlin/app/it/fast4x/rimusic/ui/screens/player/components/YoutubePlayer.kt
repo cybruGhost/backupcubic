@@ -262,8 +262,8 @@ private suspend fun resolveYoutubeVideo(videoId: String): ResolvedYoutubeVideoSt
         ?.asSequence()
         ?.filter { !it.isAudio }
         ?.sortedWith(
-            compareByDescending<PlayerResponse.StreamingData.Format> { it.height ?: 0 }
-                .thenByDescending { it.bitrate }
+            compareByDescending<PlayerResponse.StreamingData.Format> { it.heightValue ?: 0 }
+                .thenByDescending { it.bitrateValue ?: 0 }
         )
         ?.firstOrNull { it.mimeType.startsWith("video/mp4") }
         ?: playerResponse.streamingData

@@ -16,6 +16,10 @@ import app.it.fast4x.rimusic.utils.CaptureCrash
 import app.it.fast4x.rimusic.utils.FileLoggingTree
 import app.it.fast4x.rimusic.utils.logDebugEnabledKey
 import app.it.fast4x.rimusic.utils.preferences
+import app.it.fast4x.rimusic.utils.ytCookieKey
+import app.it.fast4x.rimusic.utils.ytDataSyncIdKey
+import app.it.fast4x.rimusic.utils.ytVisitorDataKey
+import it.fast4x.innertube.Innertube
 import timber.log.Timber
 import java.io.File
 
@@ -25,6 +29,7 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         //DatabaseInitializer()
         Dependencies.init(this)
+        initializeYouTubeSession()
 
         createNotificationChannels()
 
@@ -58,6 +63,17 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
 
         AppAnnouncementNotifier.maybeShow(this)
         AppAnnouncementNotifier.scheduleBackgroundChecks(this)
+    }
+
+    private fun initializeYouTubeSession() {
+        val savedCookie = preferences.getString(ytCookieKey, "").orEmpty()
+        if (savedCookie.isBlank()) return
+
+        Innertube.cookie = savedCookie
+        Innertube.visitorData = preferences.getString(ytVisitorDataKey, "").orEmpty()
+            .ifBlank { Innertube.DEFAULT_VISITOR_DATA }
+        Innertube.dataSyncId = preferences.getString(ytDataSyncIdKey, "").orEmpty()
+            .ifBlank { null }
     }
 
     private fun createNotificationChannels() {
