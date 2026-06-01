@@ -89,6 +89,7 @@ kotlin {
     // Your existing dependencies
     implementation(libs.media3.session)
     implementation(libs.kotlinx.coroutines.guava)
+    implementation("com.google.guava:guava:31.1-android")
     implementation(libs.newpipe.extractor)
     implementation(libs.nanojson)
     implementation(libs.androidx.webkit)
@@ -317,8 +318,7 @@ dependencies {
     implementation(projects.kugou)
     implementation(projects.lrclib)
     implementation(projects.piped)
-
-    coreLibraryDesugaring(libs.desugaring.nio)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.4")
 
     // Debug only
     debugImplementation(libs.ui.tooling.preview.android)

@@ -23,12 +23,12 @@ suspend fun Innertube.player(
                 context = context,
                 videoId = videoId,
                 playlistId = playlistId,
-                playbackContext = PlayerBody.PlaybackContext(
+                playbackContext = if (context.client.useSignatureTimestamp) PlayerBody.PlaybackContext(
                     PlayerBody.PlaybackContext.ContentPlaybackContext(
                         signatureTimestamp = signatureTimestamp ?: 20110
                     )
-                ),
-                serviceIntegrityDimensions = poToken?.let(PlayerBody::ServiceIntegrityDimensions)
+                ) else null,
+                serviceIntegrityDimensions = if (context.client.useWebPoTokens && poToken != null) PlayerBody.ServiceIntegrityDimensions(poToken) else null
             )
         )
     }.body<PlayerResponse>()
