@@ -3,14 +3,20 @@ package it.fast4x.innertube.models
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonPrimitive
 
-private fun JsonElement?.intValue(): Int? =
-    this?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toInt()
+private fun JsonElement?.intValue(): Int? = when (this) {
+    null -> null
+    is JsonPrimitive -> contentOrNull?.toDoubleOrNull()?.toInt()
+    else -> null
+}
 
-private fun JsonElement?.longValue(): Long? =
-    this?.jsonPrimitive?.contentOrNull?.toDoubleOrNull()?.toLong()
+private fun JsonElement?.longValue(): Long? = when (this) {
+    null -> null
+    is JsonPrimitive -> contentOrNull?.toDoubleOrNull()?.toLong()
+    else -> null
+}
 
 @Serializable
 data class PlayerResponse(
@@ -44,7 +50,7 @@ data class PlayerResponse(
     data class StreamingData(
         val formats: List<Format>?,
         val adaptiveFormats: List<Format>?,
-        val expiresInSeconds: Int,
+        val expiresInSeconds: JsonElement?,
     ) {
         val autoMaxQualityFormat: Format?
             get() = adaptiveFormats?.filter { it.url != null || it.signatureCipher != null }

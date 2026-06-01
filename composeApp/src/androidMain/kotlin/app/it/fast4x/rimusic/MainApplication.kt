@@ -9,6 +9,8 @@ import coil3.SingletonImageLoader
 import coil3.ImageLoader
 
 import app.kreate.android.R
+import app.n_zik.android.core.network.NetworkClientFactory
+import app.n_zik.android.core.utils.cipher.CipherDeobfuscator
 import app.it.fast4x.rimusic.notifications.AppAnnouncementNotifier
 import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 import app.it.fast4x.rimusic.service.MyDownloadHelper
@@ -29,6 +31,8 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
         super.onCreate()
         //DatabaseInitializer()
         Dependencies.init(this)
+        CipherDeobfuscator.initialize(this)
+        NetworkClientFactory.configure(proxy = null, cacheDir = cacheDir)
         initializeYouTubeSession()
 
         createNotificationChannels()

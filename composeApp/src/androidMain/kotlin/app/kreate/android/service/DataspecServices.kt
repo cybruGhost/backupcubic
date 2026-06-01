@@ -17,6 +17,8 @@ import com.google.gson.Gson
 import com.grack.nanojson.JsonObject
 import io.ktor.client.statement.bodyAsText
 import it.fast4x.innertube.Innertube
+import it.fast4x.innertube.clients.YouTubeClient
+import it.fast4x.innertube.clients.YouTubeLocale
 import app.it.fast4x.rimusic.models.Song
 import it.fast4x.innertube.Innertube.createPoTokenChallenge
 import it.fast4x.innertube.Innertube.SearchFilter
@@ -47,7 +49,9 @@ import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.utils.isConnectionMetered
 import app.it.fast4x.rimusic.utils.okHttpDataSourceFactory
 import app.it.fast4x.rimusic.utils.getPipedSession
-import com.dd3boh.outertune.utils.potoken.PoTokenGenerator
+import app.n_zik.android.core.network.NetworkClientFactory
+import app.n_zik.android.core.utils.cipher.CipherDeobfuscator
+import app.n_zik.android.core.utils.potoken.PoTokenGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -66,7 +70,6 @@ import org.json.JSONArray
 import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.localization.Localization
 import org.schabi.newpipe.extractor.services.youtube.PoTokenResult
-import org.schabi.newpipe.extractor.services.youtube.YoutubeJavaScriptPlayerManager
 import org.schabi.newpipe.extractor.services.youtube.YoutubeStreamHelper
 import java.net.HttpURLConnection
 import java.net.URL
@@ -78,6 +81,21 @@ import it.fast4x.innertube.utils.from
 import timber.log.Timber
 
 private const val CHUNK_LENGTH = 512 * 1024L     // 512Kb
+
+private val FALLBACK_CLIENTS = listOf(
+    YouTubeClient.WEB_REMIX,
+    YouTubeClient.TVHTML5_SIMPLY_EMBEDDED_PLAYER,
+    YouTubeClient.TVHTML5,
+    YouTubeClient.ANDROID_VR_1_43_32,
+    YouTubeClient.ANDROID_VR_1_61_48,
+    YouTubeClient.ANDROID_CREATOR,
+    YouTubeClient.IPADOS,
+    YouTubeClient.ANDROID_VR_NO_AUTH,
+    YouTubeClient.MOBILE,
+    YouTubeClient.IOS,
+    YouTubeClient.WEB,
+    YouTubeClient.WEB_CREATOR
+)
 
 enum class PlaybackSourceKind(val label: String) {
     Unknown("Waiting"),
@@ -261,15 +279,18 @@ private fun getFormatUrl(
 
     val format = extractFormat( playerResponse.streamingData, audioQualityFormat, connectionMetered )
         ?: throw PlayableFormatNotFoundException()
-    val formatUrl = format.url?.takeIf { it.isNotBlank() }
-        ?: throw PlayableFormatNotFoundException()
+    val formatUrl = runBlocking(Dispatchers.IO) {
+        format.signatureCipher?.takeIf { it.isNotBlank() }?.let { signatureCipher ->
+            CipherDeobfuscator.deobfuscateStreamUrl(signatureCipher, videoId)
+                ?: NewPipeUtils.decodeSignatureCipher(videoId, signatureCipher)
+        } ?: NewPipeUtils.getStreamUrl(format, videoId)
+            .onFailure { Timber.w(it, "Failed to resolve YouTube stream URL for %s", videoId) }
+            .getOrNull()
+    } ?: throw PlayableFormatNotFoundException()
 
-    format?.let {
-        CoroutineScope( Threads.DATASPEC_DISPATCHER ).launch { upsertSongFormat( videoId, it ) }
-    }
+    CoroutineScope( Threads.DATASPEC_DISPATCHER ).launch { upsertSongFormat( videoId, format ) }
 
-    return YoutubeJavaScriptPlayerManager.getUrlWithThrottlingParameterDeobfuscated( videoId, formatUrl )
-                                         .toUri()
+    return formatUrl.toUri()
                                          .buildUpon()
                                          .appendQueryParameter( "cpn", cpn )
                                          .apply {
@@ -318,7 +339,7 @@ suspend fun getIosFormatUrl(
     if (isYouTubeLoggedIn()) {
         YouTubeSessionStore.applyCurrentSession()
         val authenticated = runCatching {
-            val poToken = PoTokenGenerator().getWebClientPoToken(videoId)?.playerRequestPoToken
+            val poToken = PoTokenGenerator().getWebClientPoToken(videoId, Store.getIosVisitorData())?.playerRequestPoToken
             val response = YouTubeRequestThrottler.run {
                 Innertube.player(videoId = videoId, poToken = poToken)
             }?.getOrThrow() ?: throw IllegalStateException("Null player response")
@@ -352,62 +373,103 @@ suspend fun getInnertubePlayerFormatUrl(
     connectionMetered: Boolean
 ): Uri {
     YouTubeSessionStore.applyCurrentSession()
+
+    val locale = YouTubeLocale(
+        gl = java.util.Locale.getDefault().country.takeIf { it.isNotEmpty() } ?: "US",
+        hl = java.util.Locale.getDefault().language.takeIf { it.isNotEmpty() } ?: "en"
+    )
+    val visitorData = Store.getIosVisitorData().ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
+    val isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
+
     val signatureTimestamp = NewPipeUtils.getSignatureTimestamp(videoId)
         .onFailure { Timber.w(it, "Could not get signature timestamp for %s; using default", videoId) }
         .getOrNull()
+
     val poToken = runCatching {
-        PoTokenGenerator().getWebClientPoToken(videoId)
+        PoTokenGenerator().getWebClientPoToken(videoId, visitorData)
     }.onFailure {
-        Timber.w(it, "Innertube PoToken generation failed for %s; continuing without token", videoId)
+        Timber.w(it, "Innertube PoToken generation failed for %s; continuing with fallback clients", videoId)
     }.getOrNull()
 
-    val attempts = listOf(
-        "WEB_REMIX" to Context.DefaultWeb,
-        "IOS" to Context.DefaultIOS,
-        "ANDROID_MUSIC" to Context.DefaultAndroid,
-        "WEB_CREATOR" to Context.DefaultWebCreator,
-    )
     var firstError: Throwable? = null
-    var lastStatus: String? = null
+    var lastFailureReason: String? = null
 
-    val response = attempts.firstNotNullOfOrNull { (label, context) ->
-        runCatching {
+    FALLBACK_CLIENTS.forEachIndexed { index, ytClient ->
+        if (ytClient.loginRequired && !isLoggedIn) {
+            Timber.d("Skipping Innertube client %s for %s because login is required", ytClient.clientName, videoId)
+            return@forEachIndexed
+        }
+
+        val context = ytClient.toContext(
+            locale = locale,
+            visitorData = visitorData,
+            dataSyncId = if (isLoggedIn) Innertube.dataSyncId else null
+        )
+
+        val playerResponse = runCatching {
+            Timber.d("Trying Innertube client (%d/%d): %s for %s", index + 1, FALLBACK_CLIENTS.size, ytClient.clientName, videoId)
             YouTubeRequestThrottler.run {
                 Innertube.player(
                     videoId = videoId,
-                    poToken = poToken?.playerRequestPoToken,
+                    poToken = if (ytClient.useWebPoTokens) poToken?.playerRequestPoToken else null,
                     context = context,
-                    signatureTimestamp = signatureTimestamp
+                    signatureTimestamp = if (ytClient.useSignatureTimestamp) signatureTimestamp else null
                 )
             }?.getOrThrow() ?: throw IllegalStateException("Null Innertube player response")
-        }.onSuccess { playerResponse ->
-            lastStatus = playerResponse.playabilityStatus?.status
-            Timber.d(
-                "Innertube client %s for %s returned status=%s audioFormats=%d",
-                label,
-                videoId,
-                playerResponse.playabilityStatus?.status,
-                playerResponse.streamingData?.adaptiveFormats?.count { it.isAudio } ?: 0
+        }.onFailure { error ->
+            if (firstError == null) firstError = error
+            lastFailureReason = "${ytClient.clientName}: ${error::class.simpleName}: ${error.message}"
+            Timber.w(error, "Innertube client %s failed for %s", ytClient.clientName, videoId)
+        }.getOrNull() ?: return@forEachIndexed
+
+        Timber.d(
+            "Innertube client %s for %s returned status=%s audioFormats=%d",
+            ytClient.clientName,
+            videoId,
+            playerResponse.playabilityStatus?.status,
+            playerResponse.streamingData?.adaptiveFormats?.count { it.isAudio } ?: 0
+        )
+
+        if (playerResponse.playabilityStatus?.status != "OK") {
+            lastFailureReason = "${ytClient.clientName}: status=${playerResponse.playabilityStatus?.status} reason=${playerResponse.playabilityStatus?.reason}"
+            return@forEachIndexed
+        }
+
+        if (!playerResponse.hasPlayableAudioFormats()) {
+            lastFailureReason = "${ytClient.clientName}: no playable audio formats"
+            return@forEachIndexed
+        }
+
+        val uri = runCatching {
+            val jsonString = Gson().toJson(playerResponse)
+            getFormatUrl(
+                videoId = videoId,
+                cpn = CharUtils.randomString(16),
+                responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
+                audioQualityFormat = audioQualityFormat,
+                connectionMetered = connectionMetered,
+                streamingDataPoToken = if (ytClient.useWebPoTokens) poToken?.streamingDataPoToken else null
             )
         }.onFailure { error ->
             if (firstError == null) firstError = error
-            Timber.w(error, "Innertube client %s failed for %s", label, videoId)
-        }.getOrNull()?.takeIf { playerResponse ->
-            playerResponse.playabilityStatus?.status == "OK" && playerResponse.hasPlayableAudioFormats()
+            lastFailureReason = "${ytClient.clientName}: URL resolution failed: ${error.message}"
+            Timber.w(error, "Innertube client %s URL resolution failed for %s", ytClient.clientName, videoId)
+        }.getOrNull() ?: return@forEachIndexed
+
+        val isValid = NetworkClientFactory.validateStreamUrl(uri.toString(), ytClient.userAgent)
+        if (!isValid) {
+            lastFailureReason = "${ytClient.clientName}: stream URL validation failed"
+            Timber.w("Innertube client %s stream URL validation failed for %s", ytClient.clientName, videoId)
+            return@forEachIndexed
         }
-    } ?: throw (firstError as? Exception ?: UnplayableException())
 
-    val jsonString = Gson().toJson(response)
-    return getFormatUrl(
-        videoId = videoId,
-        cpn = CharUtils.randomString(16),
-        responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
-        audioQualityFormat = audioQualityFormat,
-        connectionMetered = connectionMetered,
-        streamingDataPoToken = poToken?.streamingDataPoToken
-    )
+        Timber.d("Innertube client %s stream resolved successfully for %s", ytClient.clientName, videoId)
+        return uri
+    }
+
+    Timber.e("Innertube playback failed for %s: %s", videoId, lastFailureReason)
+    throw (firstError as? Exception ?: UnplayableException())
 }
-
 private suspend fun resolvePrimaryFormatUrl(
     videoId: String,
     audioQualityFormat: AudioQualityFormat,
