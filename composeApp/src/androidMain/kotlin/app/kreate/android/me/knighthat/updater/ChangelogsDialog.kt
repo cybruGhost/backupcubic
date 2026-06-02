@@ -82,32 +82,52 @@ class ChangelogsDialog(
         var currentTitle: String? = null
         val currentChanges = mutableListOf<String>()
 
-        fun packSection( title: String = currentTitle!! ) {
+        fun packSection( title: String? = currentTitle ) {
+            val sectionTitle = title?.takeIf { it.isNotBlank() } ?: return
+            if (currentChanges.isEmpty()) return
             // Because [currentChanges] is a mutable list, passing it here
             // will only pass the reference, any subsequent changes will be
             // updated to this list.
-            sections.add( Section(title, currentChanges.toList()) )
+            sections.add( Section(sectionTitle, currentChanges.toList()) )
             currentChanges.clear()
         }
 
         lines.forEach {  line ->
+            val trimmedLine = line.trim()
             when {
-                line.endsWith( ":" ) -> {
+                trimmedLine.isBlank() -> Unit
+
+                trimmedLine.endsWith( ":" ) -> {
                     // If [currentTitle] is not null, it means another section is reached.
                     // Therefore, pack last section to a [Section]
-                    currentTitle?.let( ::packSection )
+                    packSection()
 
-                    currentTitle = line.removeSuffix(":")
+                    currentTitle = trimmedLine.removeSuffix(":")
                 }
-                line.trim().startsWith("-") -> {
-                    if( line.isNotBlank() )
-                        currentChanges.add( line.trim() )
+
+                trimmedLine.startsWith("-") -> {
+                    currentChanges.add( trimmedLine )
+                }
+
+                currentTitle == null -> {
+                    currentTitle = trimmedLine
+                }
+
+                currentChanges.isEmpty() -> {
+                    currentChanges.add(trimmedLine)
+                }
+
+                else -> {
+                    packSection()
+                    currentTitle = trimmedLine
                 }
             }
         }
         packSection()
 
-        return sections
+        return sections.ifEmpty {
+            listOf(Section("Release notes", listOf("No release notes are available for this version.")))
+        }
     }
 
     @Composable

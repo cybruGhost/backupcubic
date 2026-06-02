@@ -11,7 +11,7 @@ import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
 import app.kreate.android.R
 import app.kreate.android.Threads
-import app.kreate.android.network.innertube.Store
+import app.cubic.android.core.network.Store
 import app.kreate.android.utils.CharUtils
 import com.google.gson.Gson
 import com.grack.nanojson.JsonObject
@@ -49,11 +49,12 @@ import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.utils.isConnectionMetered
 import app.it.fast4x.rimusic.utils.okHttpDataSourceFactory
 import app.it.fast4x.rimusic.utils.getPipedSession
-import app.n_zik.android.core.network.NetworkClientFactory
-import app.n_zik.android.core.utils.cipher.CipherDeobfuscator
-import app.n_zik.android.core.utils.potoken.PoTokenGenerator
+import app.cubic.android.core.network.NetworkClientFactory
+import app.cubic.android.core.utils.cipher.CipherDeobfuscator
+import app.cubic.android.core.utils.potoken.PoTokenGenerator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -81,18 +82,23 @@ import it.fast4x.innertube.utils.from
 import timber.log.Timber
 
 private const val CHUNK_LENGTH = 512 * 1024L     // 512Kb
+private const val STREAM_RESOLVE_RETRIES = 3
+private const val FORMAT_CACHE_EXPIRY_SAFETY_MS = 30_000L
+
+private val formatCache = mutableMapOf<String, Uri>()
+private val formatCacheLock = Any()
 
 private val FALLBACK_CLIENTS = listOf(
+    YouTubeClient.ANDROID_VR_1_43_32,
+    YouTubeClient.ANDROID_VR_1_61_48,
+    YouTubeClient.ANDROID_VR_NO_AUTH,
+    YouTubeClient.IOS,
+    YouTubeClient.MOBILE,
+    YouTubeClient.ANDROID_CREATOR,
+    YouTubeClient.IPADOS,
     YouTubeClient.WEB_REMIX,
     YouTubeClient.TVHTML5_SIMPLY_EMBEDDED_PLAYER,
     YouTubeClient.TVHTML5,
-    YouTubeClient.ANDROID_VR_1_43_32,
-    YouTubeClient.ANDROID_VR_1_61_48,
-    YouTubeClient.ANDROID_CREATOR,
-    YouTubeClient.IPADOS,
-    YouTubeClient.ANDROID_VR_NO_AUTH,
-    YouTubeClient.MOBILE,
-    YouTubeClient.IOS,
     YouTubeClient.WEB,
     YouTubeClient.WEB_CREATOR
 )
@@ -247,21 +253,71 @@ private fun PlayerResponse.hasPlayableAudioFormats(): Boolean =
     streamingData?.adaptiveFormats?.any { it.isAudio && (!it.url.isNullOrBlank() || !it.signatureCipher.isNullOrBlank()) } == true ||
         streamingData?.formats?.any { it.isAudio && (!it.url.isNullOrBlank() || !it.signatureCipher.isNullOrBlank()) } == true
 
+private val knownAudioItags = setOf(139, 140, 141, 171, 249, 250, 251, 774)
+private val preferredAudioItags = listOf(140, 251, 250, 249, 139, 171, 774, 141)
+private val supportedAudioCodecHints = listOf("mp4a.", "opus")
+
+private fun PlayerResponse.StreamingData.Format.hasStreamUrl(): Boolean =
+    !url.isNullOrBlank() || !signatureCipher.isNullOrBlank()
+
+private fun PlayerResponse.StreamingData.Format.isPlayableAudioCandidate(): Boolean {
+    if (!isAudio || !hasStreamUrl()) return false
+
+    val itag = itagValue
+    if (itag != null) return itag in knownAudioItags
+
+    val normalizedMimeType = mimeType.lowercase()
+    val hasSupportedCodecHint = supportedAudioCodecHints.any { normalizedMimeType.contains(it) }
+    if (!hasSupportedCodecHint) {
+        Timber.w("Rejecting audio format with unknown itag and codec for mime=%s", mimeType)
+    } else {
+        Timber.d("Accepting audio format with missing itag via mime/codec fallback: %s", mimeType)
+    }
+    return hasSupportedCodecHint
+}
+
+private fun List<PlayerResponse.StreamingData.Format>.preferAudioItag(order: List<Int>): PlayerResponse.StreamingData.Format? =
+    order.firstNotNullOfOrNull { preferredItag -> firstOrNull { it.itagValue == preferredItag } }
+
 private fun extractFormat(
     streamingData: PlayerResponse.StreamingData?,
     audioQualityFormat: AudioQualityFormat,
     connectionMetered: Boolean
-): PlayerResponse.StreamingData.Format? =
-    when (audioQualityFormat) {
-        AudioQualityFormat.High -> streamingData?.highestQualityFormat
-        AudioQualityFormat.Medium -> streamingData?.mediumQualityFormat
-        AudioQualityFormat.Low -> streamingData?.lowestQualityFormat
+): PlayerResponse.StreamingData.Format? {
+    val audioFormats = buildList {
+        streamingData?.adaptiveFormats
+            ?.filter { it.isPlayableAudioCandidate() }
+            ?.let(::addAll)
+        streamingData?.formats
+            ?.filter { it.isPlayableAudioCandidate() }
+            ?.let(::addAll)
+    }.distinctBy { it.itagValue ?: it.mimeType + it.url.orEmpty() + it.signatureCipher.orEmpty() }
+
+    if (audioFormats.isEmpty()) return null
+
+    return when (audioQualityFormat) {
+        AudioQualityFormat.High ->
+            audioFormats.preferAudioItag(listOf(140, 251, 141, 250, 249, 139, 171, 774))
+                ?: audioFormats.maxByOrNull { it.bitrateValue ?: 0 }
+
+        AudioQualityFormat.Medium ->
+            audioFormats.preferAudioItag(listOf(140, 250, 251, 249, 139, 171, 774))
+                ?: audioFormats.maxByOrNull { it.bitrateValue ?: 0 }
+
+        AudioQualityFormat.Low ->
+            audioFormats.preferAudioItag(listOf(139, 249, 250, 140, 251, 171, 774))
+                ?: audioFormats.minByOrNull { it.bitrateValue ?: Int.MAX_VALUE }
+
         AudioQualityFormat.Auto ->
-            if (connectionMetered && isConnectionMeteredEnabled())
-                streamingData?.mediumQualityFormat
-            else
-                streamingData?.autoMaxQualityFormat
+            if (connectionMetered && isConnectionMeteredEnabled()) {
+                audioFormats.preferAudioItag(listOf(140, 250, 249, 139, 171, 251, 774))
+                    ?: audioFormats.minByOrNull { it.bitrateValue ?: Int.MAX_VALUE }
+            } else {
+                audioFormats.preferAudioItag(preferredAudioItags)
+                    ?: audioFormats.maxByOrNull { it.bitrateValue ?: 0 }
+            }
     }
+}
 
 @UnstableApi
 private fun getFormatUrl(
@@ -271,6 +327,7 @@ private fun getFormatUrl(
     audioQualityFormat: AudioQualityFormat,
     connectionMetered: Boolean,
     streamingDataPoToken: String? = null,
+    appendPlaybackParameters: Boolean = true,
 ): Uri {
     val jsonString = normalizePlayerResponseJson(Gson().toJson(responseJson))
     val playerResponse = jsonParser.decodeFromString<PlayerResponse>( jsonString )
@@ -288,21 +345,24 @@ private fun getFormatUrl(
             .getOrNull()
     } ?: throw PlayableFormatNotFoundException()
 
+    Timber.d("Resolved audio stream for %s: itag=%s mime=%s bitrate=%s contentLength=%s isAudio=%s", videoId, format.itagValue, format.mimeType, format.bitrateValue, format.contentLengthValue, format.isAudio)
     CoroutineScope( Threads.DATASPEC_DISPATCHER ).launch { upsertSongFormat( videoId, format ) }
 
-    return formatUrl.toUri()
-                                         .buildUpon()
-                                         .appendQueryParameter( "cpn", cpn )
-                                         .apply {
-                                             streamingDataPoToken
-                                                 ?.takeIf { it.isNotBlank() }
-                                                 ?.let { appendQueryParameter("pot", it) }
-                                         }
-                                         .build()
+    val uri = formatUrl.toUri()
+    if (!appendPlaybackParameters) return uri
+
+    return uri.buildUpon()
+        .appendQueryParameter( "cpn", cpn )
+        .apply {
+            streamingDataPoToken
+                ?.takeIf { it.isNotBlank() }
+                ?.let { appendQueryParameter("pot", it) }
+        }
+        .build()
 }
 
 @UnstableApi
-fun getAndroidReelFormatUrl(
+suspend fun getAndroidReelFormatUrl(
     videoId: String,
     audioQualityFormat: AudioQualityFormat,
     connectionMetered: Boolean
@@ -440,15 +500,17 @@ suspend fun getInnertubePlayerFormatUrl(
             return@forEachIndexed
         }
 
+        val cpn = CharUtils.randomString(16)
         val uri = runCatching {
             val jsonString = Gson().toJson(playerResponse)
             getFormatUrl(
                 videoId = videoId,
-                cpn = CharUtils.randomString(16),
+                cpn = cpn,
                 responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
                 audioQualityFormat = audioQualityFormat,
                 connectionMetered = connectionMetered,
-                streamingDataPoToken = if (ytClient.useWebPoTokens) poToken?.streamingDataPoToken else null
+                streamingDataPoToken = if (ytClient.useWebPoTokens) poToken?.streamingDataPoToken else null,
+                appendPlaybackParameters = false
             )
         }.onFailure { error ->
             if (firstError == null) firstError = error
@@ -456,7 +518,7 @@ suspend fun getInnertubePlayerFormatUrl(
             Timber.w(error, "Innertube client %s URL resolution failed for %s", ytClient.clientName, videoId)
         }.getOrNull() ?: return@forEachIndexed
 
-        val isValid = NetworkClientFactory.validateStreamUrl(uri.toString(), ytClient.userAgent)
+        val isValid = NetworkClientFactory.validateStreamUrl(uri.toString())
         if (!isValid) {
             lastFailureReason = "${ytClient.clientName}: stream URL validation failed"
             Timber.w("Innertube client %s stream URL validation failed for %s", ytClient.clientName, videoId)
@@ -464,7 +526,16 @@ suspend fun getInnertubePlayerFormatUrl(
         }
 
         Timber.d("Innertube client %s stream resolved successfully for %s", ytClient.clientName, videoId)
-        return uri
+        return uri.buildUpon()
+            .appendQueryParameter("cpn", cpn)
+            .apply {
+                if (ytClient.useWebPoTokens) {
+                    poToken?.streamingDataPoToken
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { appendQueryParameter("pot", it) }
+                }
+            }
+            .build()
     }
 
     Timber.e("Innertube playback failed for %s: %s", videoId, lastFailureReason)
@@ -704,6 +775,17 @@ private suspend fun findReplacementVideoId(videoId: String): String? {
 }
 //</editor-fold>
 
+private fun formatCacheKey(
+    videoId: String,
+    audioQualityFormat: AudioQualityFormat,
+    connectionMetered: Boolean
+): String = "$videoId:${audioQualityFormat.name}:$connectionMetered"
+
+private fun Uri.isExpiredSoon(): Boolean {
+    val expiresAt = getQueryParameter("expire")?.toLongOrNull()?.times(1000) ?: return false
+    return System.currentTimeMillis() >= expiresAt - FORMAT_CACHE_EXPIRY_SAFETY_MS
+}
+
 @UnstableApi
 fun DataSpec.process(
     videoId: String,
@@ -714,9 +796,46 @@ fun DataSpec.process(
         throw NoInternetException()
     }
 
-    val formatUri = resolvePrimaryFormatUrl(videoId, audioQualityFormat, connectionMetered, isFallback = false)
+    val cacheKey = formatCacheKey(videoId, audioQualityFormat, connectionMetered)
+    var formatUri = synchronized(formatCacheLock) {
+        formatCache[cacheKey]?.takeUnless { cachedUri ->
+            cachedUri.isExpiredSoon().also { expired ->
+                if (expired) {
+                    Timber.d("Cached stream URL expired/near-expired for %s; resolving again", videoId)
+                    formatCache.remove(cacheKey)
+                }
+            }
+        }
+    }
 
-    withUri( formatUri ).subrange( uriPositionOffset )
+    if (formatUri == null) {
+        var attempt = 0
+        var lastException: Exception? = null
+
+        while (attempt < STREAM_RESOLVE_RETRIES && formatUri == null) {
+            attempt++
+            try {
+                formatUri = resolvePrimaryFormatUrl(videoId, audioQualityFormat, connectionMetered, isFallback = false)
+            } catch (e: Exception) {
+                lastException = e
+                Timber.w(e, "Stream extraction failed on attempt %d/%d for %s", attempt, STREAM_RESOLVE_RETRIES, videoId)
+                if (attempt < STREAM_RESOLVE_RETRIES) {
+                    delay(500L * attempt)
+                }
+            }
+        }
+
+        val newlyResolvedUri = formatUri ?: throw (lastException ?: UnplayableException())
+        synchronized(formatCacheLock) {
+            formatCache[cacheKey] = newlyResolvedUri
+        }
+        formatUri = newlyResolvedUri
+    } else {
+        Timber.d("Using cached stream URL for %s", videoId)
+    }
+
+    val resolvedFormatUri = formatUri ?: throw UnplayableException()
+    withUri( resolvedFormatUri ).subrange( uriPositionOffset )
 }
 
 //<editor-fold defaultstate="collapsed" desc="Data source factories">

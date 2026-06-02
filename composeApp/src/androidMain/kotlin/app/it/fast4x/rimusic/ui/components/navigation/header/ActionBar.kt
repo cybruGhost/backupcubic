@@ -48,7 +48,7 @@ private fun HamburgerMenu(
     onDismissRequest: () -> Unit
 ) {
     val enablePictureInPicture by rememberPreference(enablePictureInPictureKey, false)
-    val showRescueCenterInMenu by rememberPreference(showRescueCenterInMenuKey, false)
+    val showRescueCenterInMenu by rememberPreference(showRescueCenterInMenuKey, true)
     val logDebugEnabled by rememberPreference(logDebugEnabledKey, false)
     val pipHandler = rememberPipHandler()
     val showRescueCenter = showRescueCenterInMenu || logDebugEnabled

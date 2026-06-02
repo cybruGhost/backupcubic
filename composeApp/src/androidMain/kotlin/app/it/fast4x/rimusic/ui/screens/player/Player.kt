@@ -409,7 +409,7 @@ private fun PlayerContent(
     var expandedplayer by expandPlayerState
     val spotifyCanvasEnabled = uiConfig.spotifyCanvasEnabled
     var playerVideoModeActive by rememberPreference(playerVideoModeActiveKey, false)
-    val showButtonPlayerVideo by rememberPreference(showButtonPlayerVideoKey, true)
+    val showButtonPlayerVideo by rememberPreference(showButtonPlayerVideoKey, false)
     val showSpotifyCanvasLogs = uiConfig.showSpotifyCanvasLogs
     val alternateSourceRetryEnabled = uiConfig.alternateSourceRetryEnabled
     val playbackFadeAudioDuration = uiConfig.playbackFadeAudioDuration

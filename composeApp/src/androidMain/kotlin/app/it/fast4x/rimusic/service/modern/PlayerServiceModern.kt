@@ -527,6 +527,10 @@ class PlayerServiceModern : MediaLibraryService(),
             renderersFactory = createRendersFactory(),
         )
         player = playerSet.player
+        player.trackSelectionParameters = player.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, true)
+            .build()
         sessionPlayer = player
 
         // FIX: Request audio focus ONCE. Abandon any stale focus from previous crashed
