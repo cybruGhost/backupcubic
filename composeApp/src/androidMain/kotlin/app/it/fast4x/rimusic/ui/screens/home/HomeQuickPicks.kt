@@ -2516,6 +2516,8 @@ private fun RemoteConfigQuickPicksCard(
     onOpenAboutUpdate: () -> Unit,
 ) {
     val context = LocalContext.current
+    var contentExpanded by remember(notification.contents) { mutableStateOf(false) }
+    val canExpandContent = notification.contents.length > 220
 
     Column(
         modifier = Modifier
@@ -2571,9 +2573,18 @@ private fun RemoteConfigQuickPicksCard(
                 BasicText(
                     text = notification.contents,
                     style = typography().s.color(colorPalette().textSecondary),
-                    maxLines = if (notification.showImage) 4 else 6,
+                    maxLines = if (contentExpanded) Int.MAX_VALUE else if (notification.showImage) 4 else 6,
                     overflow = TextOverflow.Ellipsis
                 )
+
+                if (canExpandContent) {
+                    Spacer(modifier = Modifier.height(6.dp))
+                    BasicText(
+                        text = if (contentExpanded) "Read less" else "Read more",
+                        style = typography().xs.semiBold.color(colorPalette().accent),
+                        modifier = Modifier.clickable { contentExpanded = !contentExpanded }
+                    )
+                }
             }
 
             Spacer(modifier = Modifier.height(8.dp))

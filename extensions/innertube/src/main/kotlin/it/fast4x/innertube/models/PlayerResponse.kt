@@ -134,7 +134,10 @@ data class PlayerResponse(
                 get() = lastModified.longValue()
 
             val isAudio: Boolean
-                get() = widthValue == null
+                get() = mimeType.startsWith("audio/", ignoreCase = true)
+
+            val isVideo: Boolean
+                get() = mimeType.startsWith("video/", ignoreCase = true)
         }
     }
 

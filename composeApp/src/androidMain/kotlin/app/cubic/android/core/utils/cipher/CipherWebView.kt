@@ -1,4 +1,4 @@
-package app.n_zik.android.core.utils.cipher
+package app.cubic.android.core.utils.cipher
 
 import android.content.Context
 import android.webkit.ConsoleMessage

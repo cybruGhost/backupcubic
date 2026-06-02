@@ -132,6 +132,7 @@ fun HomeSongs(
     //</editor-fold>
 
     var items by remember { mutableStateOf(emptyList<Song>()) }
+    var customFolderSongs by remember { mutableStateOf(emptyList<Song>()) }
     var ytmFavoritesSynced by remember { mutableStateOf(false) }
     var currentPlayingMediaId by remember {
         mutableStateOf(binder?.player?.currentMediaItem?.mediaId.orEmpty())
@@ -177,6 +178,13 @@ fun HomeSongs(
      */
     var isLoading by remember { mutableStateOf(false) }
 
+    LaunchedEffect(customDownloadUri) {
+        customFolderSongs = emptyList()
+        if (customDownloadUri.isBlank()) return@LaunchedEffect
+
+        customFolderSongs = loadCustomDownloadFolderSongs(context, customDownloadUri)
+    }
+
     //<editor-fold defaultstate="collapsed" desc="Smart recommendation state">
     val recommendationsNumber by rememberPreference( recommendationsNumberKey, RecommendationsNumber.Adaptive )
     var relatedSongs by remember { mutableStateOf(emptyList<Song>()) }
@@ -209,7 +217,7 @@ fun HomeSongs(
 
     // This phrase loads all songs across types into [items]
     // No filtration applied to this stage, only sort
-    LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon, customDownloadUri ) {
+    LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon, customFolderSongs ) {
         isLoading = true
 
         val retrievedSongs = when( builtInPlaylist ) {
@@ -231,11 +239,11 @@ fun HomeSongs(
                                                                .filter { it.state == Download.STATE_COMPLETED }
                                                                .fastMap { it.request.id }
                                                                .toSet()
-                val customFolderSongs = loadCustomDownloadFolderSongs(context, customDownloadUri)
+                val customFolderSongsSnapshot = customFolderSongs
                 Database.songTable
                         .sortAll( songSort.sortBy, songSort.sortOrder )
                         .map { list ->
-                            (list.fastFilter { it.id in downloaded } + customFolderSongs)
+                            (list.fastFilter { it.id in downloaded } + customFolderSongsSnapshot)
                                 .distinctBy(Song::id)
                                 .sortedForHome(songSort.sortBy, songSort.sortOrder)
                         }

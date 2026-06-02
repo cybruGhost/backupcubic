@@ -9,8 +9,8 @@ import coil3.SingletonImageLoader
 import coil3.ImageLoader
 
 import app.kreate.android.R
-import app.n_zik.android.core.network.NetworkClientFactory
-import app.n_zik.android.core.utils.cipher.CipherDeobfuscator
+import app.cubic.android.core.network.NetworkClientFactory
+import app.cubic.android.core.utils.cipher.CipherDeobfuscator
 import app.it.fast4x.rimusic.notifications.AppAnnouncementNotifier
 import app.it.fast4x.rimusic.service.modern.PlayerServiceModern
 import app.it.fast4x.rimusic.service.MyDownloadHelper

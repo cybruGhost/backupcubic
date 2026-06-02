@@ -1,4 +1,4 @@
-package app.n_zik.android.core.utils.potoken
+package app.cubic.android.core.utils.potoken
 
 class PoTokenException(message: String) : Exception(message)
 

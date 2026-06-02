@@ -1,4 +1,4 @@
-package app.n_zik.android.core.utils.cipher
+package app.cubic.android.core.utils.cipher
 
 import it.fast4x.innertube.utils.getProxy
 import kotlinx.coroutines.Dispatchers
@@ -21,7 +21,7 @@ object PlayerJsFetcher {
     private const val CACHE_TTL_MS = 6 * 60 * 60 * 1000L // 6 hours
 
     private val httpClient: OkHttpClient
-        get() = app.n_zik.android.core.network.NetworkClientFactory.getCachelessClient()
+        get() = app.cubic.android.core.network.NetworkClientFactory.getCachelessClient()
 
     // Regex to extract player hash from iframe_api response
     private val PLAYER_HASH_REGEX = Regex("""\\?/s\\?/player\\?/([a-zA-Z0-9_-]+)\\?/""")

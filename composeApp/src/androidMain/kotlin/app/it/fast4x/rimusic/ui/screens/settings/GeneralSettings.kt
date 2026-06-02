@@ -265,7 +265,7 @@ fun GeneralSettings(
     var showCommentsButton     by rememberPreference("show_comments_button", true)
     var settingsAssistantEnabled by rememberPreference(settingsAssistantEnabledKey, true)
     var settingsAssistantAutoPopup by rememberPreference(settingsAssistantAutoPopupKey, true)
-    var showRescueCenterInMenu by rememberPreference(showRescueCenterInMenuKey, false)
+    var showRescueCenterInMenu by rememberPreference(showRescueCenterInMenuKey, true)
     val logDebugEnabled by rememberPreference(logDebugEnabledKey, false)
     var showSettingsAssistant by rememberSaveable { mutableStateOf(false) }
     val settingsAssistantShown = rememberSaveable { mutableStateOf(false) }
@@ -1188,7 +1188,7 @@ fun GeneralSettings(
                 icon    = R.drawable.comments,
                 content = {
                     var showCommentsButton by rememberPreference("show_comments_button", true)
-                    var showVideoButton by rememberPreference(showButtonPlayerVideoKey, true)
+                    var showVideoButton by rememberPreference(showButtonPlayerVideoKey, false)
                     var showLyricsSourceSwitcher by rememberPreference(showLyricsSourceSwitcherKey, true)
                     if (search.inputValue.isBlank() || "Cool buttons comments video".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
@@ -2101,4 +2101,3 @@ private fun SettingsAssistantResult.matchScore(rawQuery: String): Int {
         }
     }
 }
-

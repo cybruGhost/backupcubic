@@ -1,4 +1,4 @@
-package app.n_zik.android.core.utils.potoken
+package app.cubic.android.core.utils.potoken
 
 import android.content.Context
 import android.webkit.ConsoleMessage
@@ -58,7 +58,7 @@ class PoTokenWebView private constructor(
                 // Log all console messages for debugging
                 when (m.messageLevel()) {
                     ConsoleMessage.MessageLevel.ERROR -> Timber.tag(TAG).e("JS: $msg")
-                    ConsoleMessage.MessageLevel.WARNING -> Timber.tag(TAG).w("JS: $msg")
+                    ConsoleMessage.MessageLevel.WARNING -> Timber.tag(TAG).d("JS warning: $msg")
                     else -> Timber.tag(TAG).d("JS: $msg")
                 }
 
@@ -329,7 +329,7 @@ class PoTokenWebView private constructor(
         private const val JS_INTERFACE = "PoTokenWebView"
 
         private val httpClient: OkHttpClient
-            get() = app.n_zik.android.core.network.NetworkClientFactory.getCachelessClient()
+            get() = app.cubic.android.core.network.NetworkClientFactory.getCachelessClient()
 
         suspend fun getNewPoTokenGenerator(context: Context): PoTokenWebView {
             return withContext(Dispatchers.Main) {
@@ -341,4 +341,3 @@ class PoTokenWebView private constructor(
         }
     }
 }
-

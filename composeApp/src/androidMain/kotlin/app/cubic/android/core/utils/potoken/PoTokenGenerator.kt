@@ -1,7 +1,7 @@
-package app.n_zik.android.core.utils.potoken
+package app.cubic.android.core.utils.potoken
 
 import android.webkit.CookieManager
-import app.n_zik.android.core.utils.cipher.CipherDeobfuscator
+import app.cubic.android.core.utils.cipher.CipherDeobfuscator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.runBlocking

@@ -775,7 +775,7 @@ fun Thumbnail(
     var showlyricsthumbnail by rememberPreference(showlyricsthumbnailKey, false)
  
     val showCommentsButton by rememberPreference("show_comments_button", true)
-    val showVideoButton by rememberPreference(showButtonPlayerVideoKey, true)
+    val showVideoButton by rememberPreference(showButtonPlayerVideoKey, false)
     var showVideo by rememberPreference(playerVideoModeActiveKey, false)
 
     var error by remember {

@@ -1,4 +1,4 @@
-package app.n_zik.android.core.utils.cipher
+package app.cubic.android.core.utils.cipher
 
 import timber.log.Timber
 import java.security.MessageDigest
