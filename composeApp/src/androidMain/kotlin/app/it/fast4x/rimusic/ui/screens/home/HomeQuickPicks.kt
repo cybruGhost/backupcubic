@@ -134,6 +134,7 @@ import app.it.fast4x.rimusic.utils.isLandscape
 import app.it.fast4x.rimusic.utils.isNowPlaying
 import app.it.fast4x.rimusic.utils.loadedDataKey
 import app.it.fast4x.rimusic.utils.parentalControlEnabledKey
+import app.it.fast4x.rimusic.utils.PlaybackContextStore
 import app.it.fast4x.rimusic.utils.playEventsTypeKey
 import app.it.fast4x.rimusic.utils.playVideo
 import app.it.fast4x.rimusic.utils.quickPicsDiscoverPageKey
@@ -739,6 +740,7 @@ fun HomeQuickPicks(
             }.takeIf { it >= 0 }
             ?: 0
         binder?.stopRadio()
+        PlaybackContextStore.set("Playing from Quick Picks", targetTitle.ifBlank { "Home" })
         binder?.player?.forcePlayAtIndex(playableItems, startIndex)
     }
 
@@ -773,6 +775,7 @@ fun HomeQuickPicks(
         val startIndex = listOf(exactIndex, idIndex, metadataIndex).firstOrNull { it >= 0 } ?: 0
 
         binder?.stopRadio()
+        PlaybackContextStore.set("Playing from Quick Picks", clickedTitle.ifBlank { "Home" })
         binder?.player?.forcePlayAtIndex(queuedSongs.map { it.second }, startIndex)
     }
 
@@ -1378,6 +1381,7 @@ fun HomeQuickPicks(
                                             )
                                         }.distinctBy { it.mediaId }
                                         binder?.stopRadio()
+                                        PlaybackContextStore.set("Playing from Quick Picks", context.resources.getString(playEventType.textId))
                                         binder?.player?.forcePlayAtIndex(queue, 0)
                                     }
                                 },
@@ -1482,7 +1486,10 @@ fun HomeQuickPicks(
                                 app.kreate.android.me.knighthat.component.SongItem(
                                     song = song,
                                     navController = navController,
-                                    onClick = { binder?.startRadio(song, true) },
+                                    onClick = {
+                                        PlaybackContextStore.set("Playing from Quick Picks", context.resources.getString(playEventType.textId))
+                                        binder?.startRadio(song, true)
+                                    },
                                     modifier = Modifier.width(itemInHorizontalGridWidth),
                                     thumbnailOverlay = {
                                         if (playEventType != PlayEventsType.CasualPlayed &&
@@ -2077,6 +2084,7 @@ fun HomeQuickPicks(
                                                             val mediaItems = songs.map { preferredCachedMediaItem(it) }
                                                             val mediaItemIndex = mediaItems.indexOfFirst { it.mediaId == song.key }
                                                             binder?.stopRadio()
+                                                            PlaybackContextStore.set("Playing from Quick Picks", "Top songs")
                                                             binder?.player?.forcePlayAtIndex(
                                                                 mediaItems,
                                                                 mediaItemIndex.takeIf { it >= 0 } ?: 0

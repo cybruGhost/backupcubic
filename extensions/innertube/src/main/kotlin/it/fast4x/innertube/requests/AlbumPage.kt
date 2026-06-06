@@ -88,13 +88,13 @@ data class AlbumPage(
         }
 
         fun getSong(renderer: MusicResponsiveListItemRenderer, album: Innertube.AlbumItem? = null): Innertube.SongItem {
-            println("mediaItem getSong ${renderer.flexColumns.get(1).musicResponsiveListItemFlexColumnRenderer?.text?.runs}")
+            println("mediaItem getSong videoId=${renderer.videoId} ${renderer.flexColumns.getOrNull(1)?.musicResponsiveListItemFlexColumnRenderer?.text?.runs}")
             return Innertube.SongItem(
                 info = Info(
                     name = PageHelper.extractRuns(renderer.flexColumns, "MUSIC_VIDEO")
                         .firstOrNull()?.text ?: "",
                     endpoint = NavigationEndpoint.Endpoint.Watch(
-                        videoId = renderer.playlistItemData?.videoId
+                        videoId = renderer.videoId
                     )
                 ),
 //                authors = PageHelper.extractRuns(renderer.flexColumns, "MUSIC_PAGE_TYPE_ARTIST")

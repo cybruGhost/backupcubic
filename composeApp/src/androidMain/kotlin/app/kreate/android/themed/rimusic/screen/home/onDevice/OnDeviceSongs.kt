@@ -9,6 +9,7 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -33,6 +34,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -63,19 +65,22 @@ import app.it.fast4x.rimusic.utils.asMediaItem
 import app.it.fast4x.rimusic.utils.bold
 import app.it.fast4x.rimusic.utils.enqueue
 import app.it.fast4x.rimusic.utils.forcePlayAtIndex
+import app.it.fast4x.rimusic.utils.PlaybackContextStore
 import app.it.fast4x.rimusic.utils.isAtLeastAndroid13
 import app.it.fast4x.rimusic.utils.parentalControlEnabledKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.showFoldersOnDeviceKey
 import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.onEach
 import app.kreate.android.me.knighthat.component.FolderItem
 import app.kreate.android.me.knighthat.component.SongItem
 import app.kreate.android.me.knighthat.component.tab.ItemSelector
 import app.kreate.android.me.knighthat.component.tab.Search
+import app.kreate.android.themed.rimusic.component.AlphabetIndexBar
+import app.kreate.android.themed.rimusic.component.buildSongAlphabetIndex
 import app.kreate.android.me.knighthat.utils.PathUtils
 import app.kreate.android.me.knighthat.utils.Toaster
 import app.kreate.android.me.knighthat.utils.getLocalSongs
+import kotlinx.coroutines.launch
 
 @UnstableApi
 @ExperimentalFoundationApi
@@ -92,6 +97,7 @@ fun OnDeviceSong(
     // Essentials
     val context = LocalContext.current
     val binder = LocalPlayerServiceBinder.current
+    val coroutineScope = rememberCoroutineScope()
 
     //<editor-fold defaultstate="collapsed" desc="Settings">
     val parentalControlEnabled by rememberPreference( parentalControlEnabledKey, false )
@@ -103,9 +109,6 @@ fun OnDeviceSong(
     }
     var currentPath by remember( songsOnDevice.values ) {
         mutableStateOf( PathUtils.findCommonPath( songsOnDevice.values ) )
-    }
-    var currentPlayingMediaId by remember {
-        mutableStateOf(binder?.player?.currentMediaItem?.mediaId.orEmpty())
     }
 
     //<editor-fold defaultstate="collapsed" desc="Permission handler">
@@ -140,28 +143,11 @@ fun OnDeviceSong(
         HOME_SONGS_SORT_ORDER
     )
 
-    DisposableEffect(binder?.player) {
-        val player = binder?.player
-        if (player == null) {
-            onDispose { }
-        } else {
-            val listener = object : Player.Listener {
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    currentPlayingMediaId = mediaItem?.mediaId.orEmpty()
-                }
-            }
-            currentPlayingMediaId = player.currentMediaItem?.mediaId.orEmpty()
-            player.addListener(listener)
-            onDispose { player.removeListener(listener) }
-        }
-    }
-
     LaunchedEffect( isPermissionGranted, odSort.sortBy, odSort.sortOrder ) {
         if( !isPermissionGranted ) return@LaunchedEffect
 
         context.getLocalSongs( odSort.sortBy, odSort.sortOrder )
                .distinctUntilChanged()
-               .onEach { lazyListState.scrollToItem( 0, 0 ) }
                .collect { songsMap ->
                    songsOnDevice = songsMap
                    val availablePaths = songsMap.values.map(PathUtils::normalizePath).toSet()
@@ -171,7 +157,7 @@ fun OnDeviceSong(
                        ?: fallbackPath
                }
     }
-    LaunchedEffect( songsOnDevice, search.inputValue, currentPath, currentPlayingMediaId ) {
+    LaunchedEffect( songsOnDevice, search.inputValue, currentPath ) {
         val normalizedCurrentPath = PathUtils.normalizePath(currentPath)
         val filteredSongs = songsOnDevice.keys.filter { !parentalControlEnabled || !it.title.startsWith( EXPLICIT_PREFIX, true ) }
                           .filter {
@@ -190,20 +176,8 @@ fun OnDeviceSong(
 
                               containsTitle || containsArtist
                           }
-        val normalizedPlayingId = currentPlayingMediaId.substringAfterLast("/", currentPlayingMediaId)
-        val currentIndex = filteredSongs.indexOfFirst { song ->
-            song.id == currentPlayingMediaId || song.id == normalizedPlayingId
-        }
-        val reorderedSongs = if (currentIndex > 0) {
-            filteredSongs.toMutableList().apply { add(0, removeAt(currentIndex)) }
-        } else {
-            filteredSongs
-        }
         itemsOnDisplay.clear()
-        itemsOnDisplay.addAll(reorderedSongs)
-        if (currentIndex > 0 && search.inputValue.isBlank()) {
-            lazyListState.animateScrollToItem(0)
-        }
+        itemsOnDisplay.addAll(filteredSongs)
     }
     LaunchedEffect( Unit ) {
         buttons.add( 0, odSort )
@@ -261,11 +235,24 @@ fun OnDeviceSong(
             }
         }
 
-    LazyColumn(
-        state = lazyListState,
-        userScrollEnabled = songsOnDevice.isNotEmpty(),
-        contentPadding = PaddingValues( bottom = Dimensions.bottomSpacer )
-    ) {
+    val alphabetIndex = remember(itemsOnDisplay.toList()) {
+        buildSongAlphabetIndex(itemsOnDisplay)
+    }
+    val listHeaderOffset = if (showFolder4LocalSongs && songsOnDevice.isNotEmpty()) {
+        1 + PathUtils.getAvailablePaths(songsOnDevice.values, currentPath).size
+    } else {
+        0
+    }
+
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            state = lazyListState,
+            userScrollEnabled = songsOnDevice.isNotEmpty(),
+            contentPadding = PaddingValues(
+                end = 34.dp,
+                bottom = Dimensions.bottomSpacer
+            )
+        ) {
         if( showFolder4LocalSongs && songsOnDevice.isNotEmpty() ) {
             item( "folder_paths" ) {
                 PathUtils.AddressBar(
@@ -309,9 +296,24 @@ fun OnDeviceSong(
                         search.hideIfEmpty()
 
                         val mediaItems = itemsOnDisplay.fastMap( Song::asMediaItem )
+                        PlaybackContextStore.set("Playing from On Device")
                         binder?.player?.forcePlayAtIndex( mediaItems, index )
                     }
                 )
+            }
+        }
+        }
+
+        if (search.inputValue.isBlank() && alphabetIndex.size > 1 && itemsOnDisplay.size >= 20) {
+            AlphabetIndexBar(
+                alphabetIndex = alphabetIndex,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) { letter ->
+                alphabetIndex[letter]?.let { songIndex ->
+                    coroutineScope.launch {
+                        lazyListState.animateScrollToItem(songIndex + listHeaderOffset)
+                    }
+                }
             }
         }
     }

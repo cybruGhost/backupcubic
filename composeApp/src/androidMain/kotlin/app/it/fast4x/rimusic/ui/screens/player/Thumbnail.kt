@@ -112,6 +112,11 @@ import app.it.fast4x.rimusic.utils.showlyricsthumbnailKey
 import app.it.fast4x.rimusic.utils.showvisthumbnailKey
 import app.it.fast4x.rimusic.utils.thumbnailTypeKey
 import app.it.fast4x.rimusic.utils.thumbnailpauseKey
+import it.fast4x.innertube.Innertube
+import it.fast4x.innertube.Innertube.SearchFilter
+import it.fast4x.innertube.models.bodies.SearchBody
+import it.fast4x.innertube.requests.searchPage
+import it.fast4x.innertube.utils.from
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -122,6 +127,7 @@ import timber.log.Timber
 import java.net.UnknownHostException
 import java.nio.channels.UnresolvedAddressException
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -152,8 +158,16 @@ data class CommentResponse(
     val continuation: String?
 )
 
-// Function to fetch comments with pagination support
+private const val YOUTUBEI_KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX3"
+
+// Function to fetch comments with pagination support. Innertube is tried first, Omada stays as fallback.
 suspend fun fetchCommentsPage(videoId: String, continuation: String? = null): CommentResponse = withContext(Dispatchers.IO) {
+    runCatching { fetchInnertubeCommentsPage(videoId, continuation) }
+        .onFailure { Timber.w(it, "Innertube comments failed, falling back to Omada for %s", videoId) }
+        .getOrNull()
+        ?.takeIf { it.comments.isNotEmpty() }
+        ?.let { return@withContext it }
+
     val comments = mutableListOf<Comment>()
     var nextContinuation: String? = null
     
@@ -224,6 +238,122 @@ suspend fun fetchCommentsPage(videoId: String, continuation: String? = null): Co
     }
 
     return@withContext CommentResponse(comments, nextContinuation)
+}
+
+private fun innertubeContextJson(): JSONObject = JSONObject()
+    .put("client", JSONObject()
+        .put("clientName", "WEB")
+        .put("clientVersion", "2.20240605.01.00")
+        .put("hl", java.util.Locale.getDefault().language.ifBlank { "en" })
+        .put("gl", java.util.Locale.getDefault().country.ifBlank { "US" })
+    )
+
+private fun innertubeText(obj: JSONObject?): String =
+    obj?.optString("simpleText")?.takeIf { it.isNotBlank() }
+        ?: obj?.optJSONArray("runs")?.let { runs ->
+            buildString {
+                for (i in 0 until runs.length()) {
+                    append(runs.optJSONObject(i)?.optString("text").orEmpty())
+                }
+            }.trim()
+        }.orEmpty()
+
+private fun parseCompactCount(text: String): Int {
+    val cleaned = text.trim().replace(",", "")
+    if (cleaned.isBlank()) return 0
+    val multiplier = when {
+        cleaned.endsWith("K", ignoreCase = true) -> 1_000
+        cleaned.endsWith("M", ignoreCase = true) -> 1_000_000
+        else -> 1
+    }
+    return (cleaned.dropLast(if (multiplier == 1) 0 else 1).toDoubleOrNull() ?: 0.0).times(multiplier).toInt()
+}
+
+private fun parseInnertubeComment(renderer: JSONObject): Comment? {
+    val author = innertubeText(renderer.optJSONObject("authorText")).ifBlank { "Unknown" }
+    val content = innertubeText(renderer.optJSONObject("contentText"))
+    if (content.isBlank()) return null
+
+    val thumbnails = mutableListOf<AuthorThumbnail>()
+    renderer.optJSONObject("authorThumbnail")?.optJSONArray("thumbnails")?.let { array ->
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i) ?: continue
+            thumbnails.add(
+                AuthorThumbnail(
+                    url = item.optString("url", ""),
+                    width = item.optInt("width", 0),
+                    height = item.optInt("height", 0)
+                )
+            )
+        }
+    }
+
+    return Comment(
+        id = renderer.optString("commentId").ifBlank { renderer.optString("trackingParams", content.hashCode().toString()) },
+        author = author,
+        content = content,
+        timestamp = innertubeText(renderer.optJSONObject("publishedTimeText")),
+        likes = parseCompactCount(innertubeText(renderer.optJSONObject("voteCount"))),
+        authorThumbnails = thumbnails
+    )
+}
+
+private fun collectInnertubeComments(node: Any?, comments: MutableList<Comment>, continuations: MutableList<String>) {
+    when (node) {
+        is JSONObject -> {
+            node.optJSONObject("commentThreadRenderer")
+                ?.optJSONObject("comment")
+                ?.optJSONObject("commentRenderer")
+                ?.let { parseInnertubeComment(it) }
+                ?.let { comments.add(it) }
+
+            node.optJSONObject("commentRenderer")
+                ?.let { parseInnertubeComment(it) }
+                ?.let { comments.add(it) }
+
+            node.optJSONObject("continuationCommand")?.optString("token")?.takeIf { it.isNotBlank() }?.let(continuations::add)
+            node.optJSONObject("nextContinuationData")?.optString("continuation")?.takeIf { it.isNotBlank() }?.let(continuations::add)
+
+            val keys = node.keys()
+            while (keys.hasNext()) collectInnertubeComments(node.opt(keys.next()), comments, continuations)
+        }
+        is JSONArray -> {
+            for (i in 0 until node.length()) collectInnertubeComments(node.opt(i), comments, continuations)
+        }
+    }
+}
+
+private fun fetchInnertubeCommentsPage(videoId: String, continuation: String?): CommentResponse {
+    val endpoint = if (continuation == null) "next" else "browse"
+    val body = JSONObject()
+        .put("context", innertubeContextJson())
+        .apply {
+            if (continuation == null) put("videoId", videoId) else put("continuation", continuation)
+        }
+        .toString()
+
+    val connection = (URL("https://www.youtube.com/youtubei/v1/$endpoint?key=$YOUTUBEI_KEY").openConnection() as HttpURLConnection).apply {
+        requestMethod = "POST"
+        connectTimeout = 8000
+        readTimeout = 8000
+        doOutput = true
+        setRequestProperty("Content-Type", "application/json")
+        setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+    }
+
+    connection.outputStream.use { it.write(body.toByteArray(StandardCharsets.UTF_8)) }
+    if (connection.responseCode !in 200..299) error("Innertube comments HTTP ${connection.responseCode}")
+
+    val response = BufferedReader(InputStreamReader(connection.inputStream)).use { it.readText() }
+    val comments = mutableListOf<Comment>()
+    val continuations = mutableListOf<String>()
+    collectInnertubeComments(JSONObject(response), comments, continuations)
+    val uniqueComments = comments.distinctBy { it.id }
+    val nextContinuation = continuations.firstOrNull { it != continuation }
+    if (continuation == null && uniqueComments.isEmpty() && nextContinuation != null) {
+        return fetchInnertubeCommentsPage(videoId, nextContinuation)
+    }
+    return CommentResponse(uniqueComments, nextContinuation)
 }
 
 @Composable
@@ -778,6 +908,10 @@ fun Thumbnail(
     val showVideoButton by rememberPreference(showButtonPlayerVideoKey, false)
     var showVideo by rememberPreference(playerVideoModeActiveKey, false)
 
+    LaunchedEffect(showVideoButton) {
+        if (!showVideoButton) showVideo = false
+    }
+
     var error by remember {
         mutableStateOf<PlaybackException?>(player.playerError)
     }
@@ -836,19 +970,7 @@ fun Thumbnail(
     val baseVideoId = remember(displayedMediaItem.mediaId) {
         displayedMediaItem.mediaId.toYoutubeVideoId().takeIf { it.isYoutubeVideoId() }
     }
-    var resolvedVideoId by remember(displayedMediaItem.mediaId) { mutableStateOf(baseVideoId) }
-    LaunchedEffect(showVideo, displayedMediaItem.mediaId, displayedMediaItem.mediaMetadata.title, displayedMediaItem.mediaMetadata.artist) {
-        if (!showVideo || resolvedVideoId != null) return@LaunchedEffect
-        val title = displayedMediaItem.mediaMetadata.title?.toString().orEmpty()
-        val artist = displayedMediaItem.mediaMetadata.artist?.toString().orEmpty()
-        val query = listOf(title, artist).filter { it.isNotBlank() }.joinToString(" ").trim()
-        if (query.isNotBlank()) {
-            resolvedVideoId = OmadaSearchClient.search(query, type = "video")
-                .getOrNull()
-                ?.firstOrNull { it.type.contains("video") && it.id.isYoutubeVideoId() }
-                ?.id
-        }
-    }
+    val resolvedVideoId = baseVideoId
 
     LaunchedEffect(displayedMediaItem.mediaId, displayedMediaItem.mediaMetadata.artworkUri) {
         artImageAvailable = true
@@ -946,9 +1068,9 @@ fun Thumbnail(
             modifier = modifierUiType
         ) {
             if (showthumbnail) {
-                if (showVideo) {
+                if (showVideoButton && showVideo && resolvedVideoId != null) {
                     YoutubePlayer(
-                        ytVideoId = resolvedVideoId ?: currentDisplayedMediaItem.mediaId.toYoutubeVideoId(),
+                        ytVideoId = resolvedVideoId,
                         lifecycleOwner = lifecycleOwner,
                         showPlayer = true,
                         syncPlayer = player,
@@ -1030,7 +1152,7 @@ fun Thumbnail(
                     )
                 }
 
-                if (!showComments && showVideoButton) {
+                if (!showComments && showVideoButton && resolvedVideoId != null) {
                     Image(
                         painter = painterResource(if (showVideo) R.drawable.musical_notes else R.drawable.video),
                         contentDescription = if (showVideo) "Return to audio" else "Show video",
@@ -1046,7 +1168,7 @@ fun Thumbnail(
                             .clip(RoundedCornerShape(12.dp))
                             .background(Color.Black.copy(alpha = 0.62f))
                             .clickable {
-                                showVideo = !showVideo
+                                showVideo = !showVideo && resolvedVideoId != null
                                 if (showVideo) {
                                     showComments = false
                                     onShowLyrics(false)
@@ -1059,7 +1181,7 @@ fun Thumbnail(
 
                 // Comments overlay
                 CommentsOverlay(
-                    videoId = currentDisplayedMediaItem.mediaId,
+                    videoId = resolvedVideoId ?: currentDisplayedMediaItem.mediaId.toYoutubeVideoId(),
                     isVisible = showComments,
                     onDismiss = { showComments = false }
                 )

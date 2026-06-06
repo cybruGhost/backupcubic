@@ -4,6 +4,7 @@ import android.media.MediaMetadataRetriever
 import android.net.Uri
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,13 +16,13 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Surface
@@ -35,8 +36,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.util.fastFilter
 import androidx.compose.ui.util.fastMap
 import androidx.documentfile.provider.DocumentFile
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.exoplayer.offline.Download
 import androidx.navigation.NavController
@@ -83,6 +82,7 @@ import app.it.fast4x.rimusic.utils.importYTMLikedSongs
 import app.it.fast4x.rimusic.utils.isDownloadedSong
 import app.it.fast4x.rimusic.utils.manageDownload
 import app.it.fast4x.rimusic.utils.parentalControlEnabledKey
+import app.it.fast4x.rimusic.utils.PlaybackContextStore
 import app.it.fast4x.rimusic.utils.recommendationsNumberKey
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.semiBold
@@ -102,6 +102,9 @@ import app.kreate.android.me.knighthat.component.tab.HiddenSongs
 import app.kreate.android.me.knighthat.component.tab.ItemSelector
 import app.kreate.android.me.knighthat.component.tab.Search
 import app.kreate.android.me.knighthat.database.ext.FormatWithSong
+import app.kreate.android.themed.rimusic.component.AlphabetIndexBar
+import app.kreate.android.themed.rimusic.component.buildSongAlphabetIndex
+import kotlinx.coroutines.launch
 
 @UnstableApi
 @ExperimentalFoundationApi
@@ -122,6 +125,7 @@ fun HomeSongs(
     // Essentials
     val binder = LocalPlayerServiceBinder.current
     val context = LocalContext.current
+    val coroutineScope = rememberCoroutineScope()
 
     //<editor-fold defaultstate="collapsed" desc="Settings">
     val parentalControlEnabled by rememberPreference( parentalControlEnabledKey, false )
@@ -134,9 +138,6 @@ fun HomeSongs(
     var items by remember { mutableStateOf(emptyList<Song>()) }
     var customFolderSongs by remember { mutableStateOf(emptyList<Song>()) }
     var ytmFavoritesSynced by remember { mutableStateOf(false) }
-    var currentPlayingMediaId by remember {
-        mutableStateOf(binder?.player?.currentMediaItem?.mediaId.orEmpty())
-    }
 
     val songSort = Sort ( HOME_SONGS_SORT_BY, HOME_SONGS_SORT_ORDER )
     val topPlaylists = PeriodSelector( Preference.HOME_SONGS_TOP_PLAYLIST_PERIOD )
@@ -199,22 +200,6 @@ fun HomeSongs(
         }
     }
 
-    DisposableEffect(binder?.player) {
-        val player = binder?.player
-        if (player == null) {
-            onDispose { }
-        } else {
-            val listener = object : Player.Listener {
-                override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                    currentPlayingMediaId = mediaItem?.mediaId.orEmpty()
-                }
-            }
-            currentPlayingMediaId = player.currentMediaItem?.mediaId.orEmpty()
-            player.addListener(listener)
-            onDispose { player.removeListener(listener) }
-        }
-    }
-
     // This phrase loads all songs across types into [items]
     // No filtration applied to this stage, only sort
     LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon, customFolderSongs ) {
@@ -236,7 +221,10 @@ fun HomeSongs(
                 val downloaded: Set<String> = MyDownloadHelper.downloads
                                                                .value
                                                                .values
-                                                               .filter { it.state == Download.STATE_COMPLETED }
+                                                               .filter {
+                                                                   it.state == Download.STATE_COMPLETED &&
+                                                                       MyDownloadHelper.isDownloadCached(it.request.id)
+                                                               }
                                                                .fastMap { it.request.id }
                                                                .toSet()
                 val customFolderSongsSnapshot = customFolderSongs
@@ -253,9 +241,14 @@ fun HomeSongs(
                 val corruptDownloaded: Set<String> = MyDownloadHelper.downloads
                     .value
                     .values
-                    .filter { it.state == Download.STATE_COMPLETED }
+                    .filter {
+                        it.state == Download.STATE_FAILED ||
+                            (
+                                it.state == Download.STATE_COMPLETED &&
+                                    !MyDownloadHelper.isDownloadCached(it.request.id)
+                                )
+                    }
                     .fastMap { it.request.id }
-                    .filter { id -> !MyDownloadHelper.isDownloadCached(id) }
                     .toSet()
                 Database.songTable
                     .sortAll(songSort.sortBy, songSort.sortOrder)
@@ -269,8 +262,14 @@ fun HomeSongs(
                                                .sortAllWithSongs( songSort.sortBy, songSort.sortOrder, excludeHidden = hiddenSongs.isHiddenExcluded() )
                                                .map { list ->
                                                    list.fastFilter {
-                                                        val contentLength = it.format.contentLength ?: return@fastFilter false
-                                                        binder?.cache?.isCached( it.song.id, 0, contentLength ) == true
+                                                        val hasAnyCachedSpan = runCatching {
+                                                            binder?.cache?.getCachedSpans(it.song.id)?.isNotEmpty() == true
+                                                        }.getOrDefault(false)
+                                                        val contentLength = it.format.contentLength
+                                                        hasAnyCachedSpan || (
+                                                            contentLength != null &&
+                                                                binder?.cache?.isCached( it.song.id, 0, contentLength ) == true
+                                                            )
                                                     }.map( FormatWithSong::song )
                                                }
 
@@ -378,7 +377,7 @@ fun HomeSongs(
         onRecommendationsLoadingChange(false)
     }
 
-    LaunchedEffect( items, search.inputValue, isRecommendationEnabled, relatedSongsPositions, currentPlayingMediaId ) {
+    LaunchedEffect( items, search.inputValue, isRecommendationEnabled, relatedSongsPositions ) {
         val filteredItems = items
              .toMutableList()
              .apply {
@@ -398,24 +397,8 @@ fun HomeSongs(
                  containsTitle || containsArtist
              }
 
-        val normalizedPlayingId = currentPlayingMediaId.substringAfterLast("/", currentPlayingMediaId)
-        val currentIndex = filteredItems.indexOfFirst { song ->
-            song.id == currentPlayingMediaId || song.id == normalizedPlayingId
-        }
-        val reorderedItems = if (currentIndex > 0) {
-            filteredItems.toMutableList().apply {
-                add(0, removeAt(currentIndex))
-            }
-        } else {
-            filteredItems
-        }
-
         itemsOnDisplay.clear()
-        itemsOnDisplay.addAll(reorderedItems)
-
-        if (currentIndex > 0 && search.inputValue.isBlank()) {
-            lazyListState.animateScrollToItem(0)
-        }
+        itemsOnDisplay.addAll(filteredItems)
     }
 
     LaunchedEffect( relatedSongs.size, isRecommendationEnabled ) {
@@ -461,14 +444,25 @@ fun HomeSongs(
         }
     }
 
-    LazyColumn(
-        state = lazyListState,
-        userScrollEnabled = !isLoading,
-        contentPadding = PaddingValues( bottom = Dimensions.bottomSpacer ),
+    val alphabetIndex = remember(itemsOnDisplay.toList()) {
+        buildSongAlphabetIndex(itemsOnDisplay)
+    }
+    val listHeaderOffset = if (visibleBulkDownloadSongs.isNotEmpty()) 1 else 0
+
+    Box(
         modifier = Modifier
             .background(colorPalette().background0)
             .fillMaxSize()
     ) {
+        LazyColumn(
+            state = lazyListState,
+            userScrollEnabled = !isLoading,
+            contentPadding = PaddingValues(
+                end = 34.dp,
+                bottom = Dimensions.bottomSpacer
+            ),
+            modifier = Modifier.fillMaxSize()
+        ) {
         if (visibleBulkDownloadSongs.isNotEmpty()) {
             val total = visibleBulkDownloadSongs.size
             val completed = visibleBulkDownloadSongs.count { song ->
@@ -627,11 +621,26 @@ fun HomeSongs(
                         binder?.stopRadio()
 
                         val mediaItems = itemsOnDisplay.fastMap( Song::asMediaItem )
+                        PlaybackContextStore.set("Playing from ${context.resources.getString(builtInPlaylist.textId)}")
                         binder?.player?.forcePlayAtIndex( mediaItems, index )
                     }
                 )
             }
 
+        }
+        }
+
+        if (!isLoading && search.inputValue.isBlank() && alphabetIndex.size > 1 && itemsOnDisplay.size >= 20) {
+            AlphabetIndexBar(
+                alphabetIndex = alphabetIndex,
+                modifier = Modifier.align(Alignment.CenterEnd)
+            ) { letter ->
+                alphabetIndex[letter]?.let { songIndex ->
+                    coroutineScope.launch {
+                        lazyListState.animateScrollToItem(songIndex + listHeaderOffset)
+                    }
+                }
+            }
         }
     }
 }

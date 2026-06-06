@@ -100,6 +100,7 @@ import app.it.fast4x.rimusic.utils.isLandscape
 import app.it.fast4x.rimusic.utils.languageDestination
 import app.it.fast4x.rimusic.utils.medium
 import app.it.fast4x.rimusic.utils.parentalControlEnabledKey
+import app.it.fast4x.rimusic.utils.PlaybackContextStore
 import app.it.fast4x.rimusic.utils.rememberPreference
 import app.it.fast4x.rimusic.utils.secondary
 import app.it.fast4x.rimusic.utils.semiBold
@@ -435,6 +436,10 @@ fun AlbumDetails(
                             },
                             onClick = {
                                 binder?.stopRadio()
+                                PlaybackContextStore.set(
+                                    "Playing from Album",
+                                    album?.title.orEmpty()
+                                )
                                 binder?.player?.forcePlayAtIndex(
                                     getMediaItems(),
                                     index

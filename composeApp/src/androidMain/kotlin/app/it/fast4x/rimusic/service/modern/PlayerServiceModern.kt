@@ -713,13 +713,9 @@ class PlayerServiceModern : MediaLibraryService(),
         if (!playWhenReady) {
             releasePlaybackWakeLock()
             if (waitingForNetwork.value) {
-                if (pauseTriggeredByNetworkWait) {
-                    pauseTriggeredByNetworkWait = false
-                } else {
-                    waitingForNetwork.value = false
-                    resumeOnNetworkRestore = false
-                    networkRecoveryMediaId = null
-                }
+                // Keep restoration armed. Network-recovery pauses also trigger this callback;
+                // clearing the flags here makes playback stay paused after the stream returns.
+                pauseTriggeredByNetworkWait = false
             }
         }
     } catch (e: Exception) {
@@ -1565,7 +1561,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                 }
 
                 override fun onAudioDevicesAdded(addedDevices: Array<AudioDeviceInfo>) {
-                    if (isServiceReady && !player.isPlaying && addedDevices.any(::canPlayMusic)) {
+                    if (isServiceReady && player.playWhenReady && !player.isPlaying && addedDevices.any(::canPlayMusic)) {
                         runCatching { player.play() }
                             .onFailure { Timber.e(it, "Failed to resume playback after device connection") }
                     }
@@ -2104,7 +2100,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             title = currentItem?.mediaMetadata?.title?.toString(),
             currentPositionMs = runCatching { player.currentPosition.coerceAtLeast(0L) }.getOrDefault(lastPlaybackPositionMs),
             bufferedPositionMs = lastBufferedPositionMs.coerceAtLeast(0L),
-            playWhenReady = player.playWhenReady,
+            playWhenReady = player.playWhenReady || (waitingForNetwork.value && resumeOnNetworkRestore),
             isNetworkAvailable = isNetworkAvailable.value,
             hasNextMediaItem = player.hasNextMediaItem(),
             skipOnErrorEnabled = preferences.getBoolean(skipMediaOnErrorKey, true),
@@ -2242,8 +2238,9 @@ override fun onPlaybackStateChanged(playbackState: Int) {
     }
 
     private fun maybeResumePlaybackOnStart() {
-        if (isPersistentQueueEnabled && preferences.getBoolean(resumePlaybackOnStartKey, false))
-            binder.gracefulPlay()
+        if (isPersistentQueueEnabled && preferences.getBoolean(resumePlaybackOnStartKey, false)) {
+            Timber.d("PlayerServiceModern: resumePlaybackOnStart is disabled for wake/start safety")
+        }
     }
 
     @ExperimentalCoroutinesApi

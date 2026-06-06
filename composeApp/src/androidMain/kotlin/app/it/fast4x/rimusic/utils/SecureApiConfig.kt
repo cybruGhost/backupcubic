@@ -5,7 +5,7 @@ import java.net.URL
 
 object SecureApiConfig {
     private const val API_URL =
-        "https://dywyagjcuvxtjgtksyjn.supabase.co/functions/v1/app-config" +
+        "https://qvcuxlmdkrdumkmgdzui.supabase.co/functions/v1/app-config" +
         "?app=cubic_music&key=system_notification"
     private const val OMADA_SEARCH_API_FALLBACK = "https://yt.omada.cafe/api/v1/search"
 
@@ -14,7 +14,7 @@ object SecureApiConfig {
     }
 
     val cubicAppConfigBaseUrl: String by lazy {
-        reveal("//:sptth", "njysktgjtxvucjgaywyd", "oc.esabapus.", "/1v/snoitcnuf/", "gifnoc-ppa")
+        reveal("//:sptth", "iuzdgmkmudrkdmlxucvq", "oc.esabapus.", "/1v/snoitcnuf/", "gifnoc-ppa")
     }
 
     val cubicNotificationConfigUrl: String by lazy {

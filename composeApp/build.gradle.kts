@@ -169,7 +169,7 @@ android {
         minSdk = 23
         targetSdk = 36
         versionCode = 108
-        versionName = "1.8.2"
+        versionName = "1.8.3"
 
         /*
                 UNIVERSAL VARIABLES

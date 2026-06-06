@@ -759,6 +759,7 @@ class MainActivity :
                             customThemeDark_textDisabledKey,
                             customThemeDark_iconButtonPlayerKey,
                             customThemeDark_accentKey,
+                            customColorKey,
                                 -> {
                                 val colorPaletteName =
                                     sharedPreferences.getEnum(

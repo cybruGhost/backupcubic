@@ -457,7 +457,7 @@ fun BoxScope.ActionBar(
                                 Box {
                                     val artistsText by remember {
                                         derivedStateOf {
-                                            cleanPrefix( currentPreviewItem.mediaMetadata.artist.toString() )
+                                            cleanPrefix( currentPreviewItem.mediaMetadata.artist?.toString()?.takeUnless { it.equals("null", true) }.orEmpty() )
                                         }
                                     }
 

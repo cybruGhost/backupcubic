@@ -49,6 +49,7 @@ import app.it.fast4x.rimusic.extensions.youtubelogin.YouTubeRequestThrottler
 import app.it.fast4x.rimusic.utils.isConnectionMetered
 import app.it.fast4x.rimusic.utils.okHttpDataSourceFactory
 import app.it.fast4x.rimusic.utils.getPipedSession
+import app.it.fast4x.rimusic.utils.preferences
 import app.cubic.android.core.network.NetworkClientFactory
 import app.cubic.android.core.utils.cipher.CipherDeobfuscator
 import app.cubic.android.core.utils.potoken.PoTokenGenerator
@@ -61,6 +62,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import app.kreate.android.me.knighthat.utils.Toaster
 import it.fast4x.invidious.Invidious
@@ -84,6 +86,9 @@ import timber.log.Timber
 private const val CHUNK_LENGTH = 512 * 1024L     // 512Kb
 private const val STREAM_RESOLVE_RETRIES = 3
 private const val FORMAT_CACHE_EXPIRY_SAFETY_MS = 30_000L
+private const val INNERTUBE_CLIENT_TIMEOUT_MS = 5_000L
+private const val LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY = "last_successful_yt_client_auth"
+private const val LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY = "last_successful_yt_client_noauth"
 
 private val formatCache = mutableMapOf<String, Uri>()
 private val formatCacheLock = Any()
@@ -440,6 +445,22 @@ suspend fun getInnertubePlayerFormatUrl(
     )
     val visitorData = Store.getIosVisitorData().ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
     val isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
+    val prefs = appContext().preferences
+    val rememberedClientKey = if (isLoggedIn) LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY else LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY
+    val rememberedClientName = prefs.getString(rememberedClientKey, null)
+    val clientsToTry = rememberedClientName
+        ?.let { clientName ->
+            FALLBACK_CLIENTS.firstOrNull { it.clientName == clientName }
+                ?.let { rememberedClient ->
+                    Timber.d(
+                        "Prioritizing remembered Innertube client: %s (%s)",
+                        rememberedClient.clientName,
+                        if (isLoggedIn) "auth" else "noauth"
+                    )
+                    listOf(rememberedClient) + FALLBACK_CLIENTS.filterNot { it.clientName == clientName }
+                }
+        }
+        ?: FALLBACK_CLIENTS
 
     val signatureTimestamp = NewPipeUtils.getSignatureTimestamp(videoId)
         .onFailure { Timber.w(it, "Could not get signature timestamp for %s; using default", videoId) }
@@ -454,7 +475,7 @@ suspend fun getInnertubePlayerFormatUrl(
     var firstError: Throwable? = null
     var lastFailureReason: String? = null
 
-    FALLBACK_CLIENTS.forEachIndexed { index, ytClient ->
+    clientsToTry.forEachIndexed { index, ytClient ->
         if (ytClient.loginRequired && !isLoggedIn) {
             Timber.d("Skipping Innertube client %s for %s because login is required", ytClient.clientName, videoId)
             return@forEachIndexed
@@ -467,15 +488,17 @@ suspend fun getInnertubePlayerFormatUrl(
         )
 
         val playerResponse = runCatching {
-            Timber.d("Trying Innertube client (%d/%d): %s for %s", index + 1, FALLBACK_CLIENTS.size, ytClient.clientName, videoId)
-            YouTubeRequestThrottler.run {
-                Innertube.player(
-                    videoId = videoId,
-                    poToken = if (ytClient.useWebPoTokens) poToken?.playerRequestPoToken else null,
-                    context = context,
-                    signatureTimestamp = if (ytClient.useSignatureTimestamp) signatureTimestamp else null
-                )
-            }?.getOrThrow() ?: throw IllegalStateException("Null Innertube player response")
+            Timber.d("Trying Innertube client (%d/%d): %s for %s", index + 1, clientsToTry.size, ytClient.clientName, videoId)
+            withTimeout(INNERTUBE_CLIENT_TIMEOUT_MS) {
+                YouTubeRequestThrottler.run {
+                    Innertube.player(
+                        videoId = videoId,
+                        poToken = if (ytClient.useWebPoTokens) poToken?.playerRequestPoToken else null,
+                        context = context,
+                        signatureTimestamp = if (ytClient.useSignatureTimestamp) signatureTimestamp else null
+                    )
+                }?.getOrThrow() ?: throw IllegalStateException("Null Innertube player response")
+            }
         }.onFailure { error ->
             if (firstError == null) firstError = error
             lastFailureReason = "${ytClient.clientName}: ${error::class.simpleName}: ${error.message}"
@@ -502,23 +525,25 @@ suspend fun getInnertubePlayerFormatUrl(
 
         val cpn = CharUtils.randomString(16)
         val uri = runCatching {
-            val jsonString = Gson().toJson(playerResponse)
-            getFormatUrl(
-                videoId = videoId,
-                cpn = cpn,
-                responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
-                audioQualityFormat = audioQualityFormat,
-                connectionMetered = connectionMetered,
-                streamingDataPoToken = if (ytClient.useWebPoTokens) poToken?.streamingDataPoToken else null,
-                appendPlaybackParameters = false
-            )
+            withTimeout(INNERTUBE_CLIENT_TIMEOUT_MS) {
+                val jsonString = Gson().toJson(playerResponse)
+                getFormatUrl(
+                    videoId = videoId,
+                    cpn = cpn,
+                    responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
+                    audioQualityFormat = audioQualityFormat,
+                    connectionMetered = connectionMetered,
+                    streamingDataPoToken = if (ytClient.useWebPoTokens) poToken?.streamingDataPoToken else null,
+                    appendPlaybackParameters = false
+                )
+            }
         }.onFailure { error ->
             if (firstError == null) firstError = error
             lastFailureReason = "${ytClient.clientName}: URL resolution failed: ${error.message}"
             Timber.w(error, "Innertube client %s URL resolution failed for %s", ytClient.clientName, videoId)
         }.getOrNull() ?: return@forEachIndexed
 
-        val isValid = NetworkClientFactory.validateStreamUrl(uri.toString())
+        val isValid = NetworkClientFactory.validateStreamUrl(uri.toString(), expectedContentTypePrefix = "audio/")
         if (!isValid) {
             lastFailureReason = "${ytClient.clientName}: stream URL validation failed"
             Timber.w("Innertube client %s stream URL validation failed for %s", ytClient.clientName, videoId)
@@ -526,6 +551,7 @@ suspend fun getInnertubePlayerFormatUrl(
         }
 
         Timber.d("Innertube client %s stream resolved successfully for %s", ytClient.clientName, videoId)
+        prefs.edit().putString(rememberedClientKey, ytClient.clientName).apply()
         return uri.buildUpon()
             .appendQueryParameter("cpn", cpn)
             .apply {

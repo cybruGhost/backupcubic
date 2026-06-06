@@ -134,7 +134,7 @@ object NetworkClientFactory {
         }
     }
 
-    fun validateStreamUrl(streamUrl: String): Boolean {
+    fun validateStreamUrl(streamUrl: String, expectedContentTypePrefix: String? = null): Boolean {
         return try {
             val request = Request.Builder()
                 .url(streamUrl)
@@ -143,9 +143,20 @@ object NetworkClientFactory {
                 .build()
 
             getClientWithTimeout(3, 3).newCall(request).execute().use { response ->
-                val isSuccess = response.isSuccessful
+                val contentType = response.header("Content-Type").orEmpty()
+                val contentTypeMatches = expectedContentTypePrefix.isNullOrBlank() ||
+                    contentType.isBlank() ||
+                    contentType.startsWith(expectedContentTypePrefix, ignoreCase = true) ||
+                    (expectedContentTypePrefix == "audio/" && contentType.contains("audio", ignoreCase = true))
+                val isSuccess = response.isSuccessful && contentTypeMatches
                 if (!isSuccess) {
-                    Timber.w("validateStreamUrl failed with code %d for URL: %s", response.code, streamUrl.redactedUrl())
+                    Timber.w(
+                        "validateStreamUrl failed with code %d contentType=%s expected=%s for URL: %s",
+                        response.code,
+                        contentType,
+                        expectedContentTypePrefix,
+                        streamUrl.redactedUrl()
+                    )
                 }
                 isSuccess
             }

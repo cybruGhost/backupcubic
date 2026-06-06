@@ -123,6 +123,8 @@ import app.it.fast4x.rimusic.utils.navigationBarPositionKey
 import app.it.fast4x.rimusic.utils.navigationBarTypeKey
 import app.it.fast4x.rimusic.utils.newReleaseNotificationsEnabledKey
 import app.it.fast4x.rimusic.utils.showButtonPlayerVideoKey
+import app.it.fast4x.rimusic.utils.showPlayerOutputDeviceKey
+import app.it.fast4x.rimusic.utils.showPlayerPlaybackContextKey
 import app.it.fast4x.rimusic.utils.notificationTypeKey
 import app.it.fast4x.rimusic.utils.nowPlayingIndicatorKey
 import app.it.fast4x.rimusic.utils.nowPlayingProgressRingKey
@@ -324,13 +326,7 @@ fun GeneralSettings(
                             scrollState.animateScrollTo(result.scrollHint)
                         }
                     } else {
-                        navController.currentBackStackEntry
-                            ?.savedStateHandle
-                            ?.set("settings_tab_index", result.tabIndex)
-                        navController.navigate(NavRoutes.settings.name) {
-                            launchSingleTop = true
-                            restoreState = true
-                        }
+                        SettingsAssistantNavigation.request(result.tabIndex)
                     }
                 }
             )
@@ -1190,6 +1186,8 @@ fun GeneralSettings(
                     var showCommentsButton by rememberPreference("show_comments_button", true)
                     var showVideoButton by rememberPreference(showButtonPlayerVideoKey, false)
                     var showLyricsSourceSwitcher by rememberPreference(showLyricsSourceSwitcherKey, true)
+                    var showPlayerPlaybackContext by rememberPreference(showPlayerPlaybackContextKey, true)
+                    var showPlayerOutputDevice by rememberPreference(showPlayerOutputDeviceKey, true)
                     if (search.inputValue.isBlank() || "Cool buttons comments video".contains(search.inputValue, true)) {
                         OtherSwitchSettingEntry(
                             title           = "Show comments button",
@@ -1216,6 +1214,20 @@ fun GeneralSettings(
                             isChecked       = showLyricsSourceSwitcher,
                             onCheckedChange = { showLyricsSourceSwitcher = it },
                             icon            = R.drawable.song_lyrics
+                        )
+                        OtherSwitchSettingEntry(
+                            title           = "Show playing source",
+                            text            = "Show where the current queue started from",
+                            isChecked       = showPlayerPlaybackContext,
+                            onCheckedChange = { showPlayerPlaybackContext = it },
+                            icon            = R.drawable.playlist
+                        )
+                        OtherSwitchSettingEntry(
+                            title           = "Show listening device",
+                            text            = "Display the active Bluetooth or wired output",
+                            isChecked       = showPlayerOutputDevice,
+                            onCheckedChange = { showPlayerOutputDevice = it },
+                            icon            = R.drawable.music
                         )
                         ImportantSettingsDescription(text = "Changes take effect immediately")
                     }

@@ -343,8 +343,8 @@ fun SongItem(
     downloadedStateMedia = if (!mediaItem.isLocal) downloadedStateMedia(mediaItem.mediaId)
     else DownloadedStateMedia.DOWNLOADED
 
-    val title = mediaItem.mediaMetadata.title.toString()
-    val authors = mediaItem.mediaMetadata.artist.toString()
+    val title = mediaItem.mediaMetadata.title?.toString()?.takeUnless { it.equals("null", true) }.orEmpty()
+    val authors = mediaItem.mediaMetadata.artist?.toString()?.takeUnless { it.equals("null", true) }.orEmpty()
     val duration = mediaItem.mediaMetadata.extras?.getString("durationText")
 
     val playlistindicator by rememberPreference(playlistindicatorKey,false)
