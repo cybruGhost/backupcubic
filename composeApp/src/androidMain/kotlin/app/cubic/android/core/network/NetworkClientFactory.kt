@@ -134,31 +134,72 @@ object NetworkClientFactory {
         }
     }
 
-    fun validateStreamUrl(streamUrl: String, expectedContentTypePrefix: String? = null): Boolean {
-        return try {
-            val request = Request.Builder()
-                .url(streamUrl)
-                .head()
-                .header("User-Agent", CHROME_WINDOWS_USER_AGENT)
-                .build()
+    fun validateStreamUrl(
+        streamUrl: String,
+        expectedContentTypePrefix: String? = null,
+        userAgent: String = CHROME_WINDOWS_USER_AGENT,
+        origin: String? = null,
+        referer: String? = null
+    ): Boolean {
+        fun Request.Builder.applyPlaybackHeaders(): Request.Builder = apply {
+            header("User-Agent", userAgent)
+            origin?.let { header("Origin", it) }
+            referer?.let { header("Referer", it) }
+        }
 
-            getClientWithTimeout(3, 3).newCall(request).execute().use { response ->
+        fun responseIsUsable(response: okhttp3.Response): Boolean {
                 val contentType = response.header("Content-Type").orEmpty()
                 val contentTypeMatches = expectedContentTypePrefix.isNullOrBlank() ||
                     contentType.isBlank() ||
                     contentType.startsWith(expectedContentTypePrefix, ignoreCase = true) ||
                     (expectedContentTypePrefix == "audio/" && contentType.contains("audio", ignoreCase = true))
-                val isSuccess = response.isSuccessful && contentTypeMatches
-                if (!isSuccess) {
+            return response.code in 200..299 && contentTypeMatches
+        }
+
+        return try {
+            val client = getClientWithTimeout(3, 4)
+            val headRequest = Request.Builder()
+                .url(streamUrl)
+                .head()
+                .applyPlaybackHeaders()
+                .build()
+
+            val headResult = client.newCall(headRequest).execute().use { response ->
+                if (responseIsUsable(response)) {
+                    true
+                } else {
                     Timber.w(
-                        "validateStreamUrl failed with code %d contentType=%s expected=%s for URL: %s",
+                        "Stream HEAD validation returned code=%d contentType=%s expected=%s for URL: %s",
                         response.code,
-                        contentType,
+                        response.header("Content-Type").orEmpty(),
+                        expectedContentTypePrefix,
+                        streamUrl.redactedUrl()
+                    )
+                    false
+                }
+            }
+            if (headResult) return true
+
+            // Some googlevideo hosts reject HEAD while accepting normal range requests.
+            val rangeRequest = Request.Builder()
+                .url(streamUrl)
+                .get()
+                .header("Range", "bytes=0-1")
+                .applyPlaybackHeaders()
+                .build()
+
+            client.newCall(rangeRequest).execute().use { response ->
+                val isUsable = responseIsUsable(response)
+                if (!isUsable) {
+                    Timber.w(
+                        "Stream range validation failed code=%d contentType=%s expected=%s for URL: %s",
+                        response.code,
+                        response.header("Content-Type").orEmpty(),
                         expectedContentTypePrefix,
                         streamUrl.redactedUrl()
                     )
                 }
-                isSuccess
+                isUsable
             }
         } catch (e: Exception) {
             Timber.e(e, "validateStreamUrl exception for URL: %s", streamUrl.redactedUrl())

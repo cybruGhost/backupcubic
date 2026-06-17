@@ -71,11 +71,15 @@ class PoTokenGenerator {
         }
     }
 
-    private companion object {
+    companion object {
+        val shared: PoTokenGenerator by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+            PoTokenGenerator()
+        }
+
         // Healthy cold-start (WebView spin-up + botguard JS + token gen) is ~2–5s in practice;
         // 8s leaves slack for a slow device without making the user wait too long before the
         // fallback chain (ANDROID_VR, etc.) takes over when the WebView hangs.
-        const val POTOKEN_TIMEOUT_MS = 8_000L
+        private const val POTOKEN_TIMEOUT_MS = 8_000L
     }
 
     /**

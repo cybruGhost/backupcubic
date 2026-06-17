@@ -444,11 +444,7 @@ fun GeneralSettings(
 
                     OtherSwitchSettingEntry(
                         title = stringResource(R.string.show_rescue_center_in_menu),
-                        text = if (logDebugEnabled) {
-                            stringResource(R.string.show_rescue_center_in_menu_debug_description)
-                        } else {
-                            stringResource(R.string.show_rescue_center_in_menu_description)
-                        },
+                        text = stringResource(R.string.show_rescue_center_in_menu_description),
                         isChecked = showRescueCenterInMenu,
                         onCheckedChange = { showRescueCenterInMenu = it },
                         icon = R.drawable.rescue

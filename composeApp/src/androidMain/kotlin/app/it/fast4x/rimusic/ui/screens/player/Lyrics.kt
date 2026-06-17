@@ -146,6 +146,7 @@ import app.it.fast4x.rimusic.ui.styling.Dimensions
 import app.it.fast4x.rimusic.ui.styling.PureBlackColorPalette
 import app.it.fast4x.rimusic.ui.styling.onOverlayShimmer
 import app.it.fast4x.rimusic.utils.SynchronizedLyrics
+import app.it.fast4x.rimusic.utils.BetterLyricsProvider
 import app.it.fast4x.rimusic.utils.center
 import app.it.fast4x.rimusic.utils.color
 import app.it.fast4x.rimusic.utils.buildLyricsShareLink
@@ -591,6 +592,9 @@ fun Lyrics(
                 if ((lyrics?.synced.isNullOrBlank() && lyrics?.fixed.isNullOrBlank()) || isError) {
                     fetchLyricsFromSource("kugou", allowSimpFallback = false)
                 }
+                if ((lyrics?.synced.isNullOrBlank() && lyrics?.fixed.isNullOrBlank()) || isError) {
+                    fetchLyricsFromSource("betterlyrics", allowSimpFallback = false)
+                }
             }
 
             when (source) {
@@ -681,6 +685,42 @@ fun Lyrics(
                             fallbackFromSimpMusic()
                         } else {
                             markFailure()
+                        }
+                    }
+                }
+
+                "betterlyrics" -> {
+                    val duration = awaitPlaybackDurationMs()
+                    val result = BetterLyricsProvider.lyrics(
+                        title = metadataTitle,
+                        artist = metadataArtist,
+                        album = mediaMetadata.albumTitle?.toString(),
+                        durationSeconds = (duration / 1000).toInt()
+                    )
+                    if (result != null &&
+                        (!result.syncedLyrics.isNullOrBlank() || !result.plainLyrics.isNullOrBlank())
+                    ) {
+                        val updatedLyrics = Lyrics(
+                            songId = mediaId,
+                            fixed = result.plainLyrics ?: existingLyrics?.fixed,
+                            synced = result.syncedLyrics ?: existingLyrics?.synced
+                        )
+                        applyLyrics(updatedLyrics)
+                        persistLyricsSafely(updatedLyrics)
+                        if (playerEnableLyricsPopupMessage) {
+                            Toaster.s(
+                                R.string.info_lyrics_found_on_s,
+                                "BetterLyrics"
+                            )
+                        }
+                    } else {
+                        markFailure()
+                        if (playerEnableLyricsPopupMessage) {
+                            Toaster.e(
+                                R.string.info_lyrics_not_found_on_s,
+                                "BetterLyrics",
+                                duration = Toast.LENGTH_LONG
+                            )
                         }
                     }
                 }
@@ -1539,6 +1579,7 @@ fun SelectLyricFromTrack(
                 val selectedLyricsSourceLabel = when (selectedLyricsSource) {
                     "kugou" -> "Kg"
                     "simpmusic" -> "Simp"
+                    "betterlyrics" -> "Better"
                     else -> "Lrc"
                 }
 
@@ -1606,6 +1647,7 @@ fun SelectLyricFromTrack(
                                 listOf(
                                     "lrclib" to "Lrc",
                                     "kugou" to "Kg",
+                                    "betterlyrics" to "Better",
                                     "simpmusic" to "Simp"
                                 ).forEach { (sourceKey, label) ->
                                     BasicText(

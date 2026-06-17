@@ -10,13 +10,14 @@
 .gradle-local-run
 .gradle-user-home
 .vscode
+.assets/OpenTune-master
 
 ###      BUILDS
 **build/
 
 ###      BINS
 **bin/
-
+/assets/OpenTune-master
 ###      ANDROID
 **APK keystore/
 .DS_Store

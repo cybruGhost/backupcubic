@@ -16,10 +16,10 @@ object ExternalUris {
     fun youtubeMusicChannel(channelId: String) = "https://music.youtube.com/channel/$channelId"
 
     fun cubicMusicFallback(videoId: String): String =
-        "$CUBIC_FALLBACK_BASE_URL?v=$videoId"
+        CUBIC_FALLBACK_BASE_URL
 
     fun cubicMusicShare(videoId: String): String =
-        cubicMusicFallback(videoId)
+        CUBIC_FALLBACK_BASE_URL
 
     fun cubicMusicSong(videoId: String): String {
         val fallbackUrl = Uri.encode(cubicMusicFallback(videoId))

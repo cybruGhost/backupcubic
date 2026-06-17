@@ -415,6 +415,10 @@ private fun PlayerContent(
     val playbackFadeAudioDuration = uiConfig.playbackFadeAudioDuration
     val blurAdjuster = BlurAdjuster()
 
+    LaunchedEffect(Unit) {
+        playerVideoModeActive = false
+    }
+
     val fadeAdjuster = FadeAdjuster()
     fadeAdjuster.setContext(context)
     val currentSongDownloadState by binder.service.currentSongStateDownload.collectAsState()

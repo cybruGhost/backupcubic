@@ -239,6 +239,8 @@ import androidx.compose.ui.util.fastMap
 import app.it.fast4x.rimusic.utils.isDiscordPresenceEnabledKey
 import android.app.Notification
 import android.app.NotificationChannel
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import app.it.fast4x.rimusic.utils.safeSetMediaItems
 
 const val LOCAL_KEY_PREFIX = "local:"
@@ -262,6 +264,15 @@ private fun Throwable.isNetworkUnavailablePlaybackFailure(): Boolean =
             cause.message?.contains("EAI_NODATA", ignoreCase = true) == true ||
             cause.message?.contains("ECONNABORTED", ignoreCase = true) == true
     }
+
+private fun Context.hasValidatedNetwork(): Boolean {
+    val connectivityManager =
+        getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return false
+    val network = connectivityManager.activeNetwork ?: return false
+    val capabilities = connectivityManager.getNetworkCapabilities(network) ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+        capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+}
 
 @UnstableApi
 class PlayerServiceModern : MediaLibraryService(),
@@ -1131,15 +1142,14 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             deepestCause?.javaClass?.simpleName
         )
 
-        if (!isNetworkAvailable.value || isNetworkUnavailable) {
+        if (!isNetworkAvailable.value || !hasValidatedNetwork() || isNetworkUnavailable) {
             applyRecoveryDecision(
                 PlaybackRecoveryHelper.Decision.WaitForNetwork(
                     mediaId = currentMediaId.ifBlank { player.currentMediaItem?.mediaId.orEmpty() },
                     positionMs = lastPlaybackPositionMs.takeIf { it > 0L }
                         ?: player.currentPosition.coerceAtLeast(0L),
                     message = "No internet. Will retry when connection returns.",
-                    resumeWhenNetworkReturns = player.isPlaying || player.playWhenReady
-                        || player.playbackState == Player.STATE_BUFFERING
+                    resumeWhenNetworkReturns = player.currentMediaItem != null
                 )
             )
             return
@@ -2481,6 +2491,11 @@ override fun onPlaybackStateChanged(playbackState: Int) {
             append: Boolean = false,
             endpoint: NavigationEndpoint.Endpoint.Watch? = null
         ) {
+            if (Looper.myLooper() != Looper.getMainLooper()) {
+                handler.post { startRadio(mediaItem, append, endpoint) }
+                return
+            }
+
             this.stopRadio()
             if (!mediaItem.isPlayable()) {
                 Toaster.w("This song source is invalid and cannot be played")

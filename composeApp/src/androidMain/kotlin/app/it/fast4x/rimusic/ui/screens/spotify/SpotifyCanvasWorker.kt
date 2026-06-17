@@ -736,6 +736,15 @@ object SpotifyCanvasState {
         addLog(canvasString(R.string.cubic_canvas_all_state_cleared), LogType.INFO)
     }
 
+    fun clearCompletedSong() {
+        currentCanvasUrl = null
+        currentTrackId = null
+        isLoading = false
+        isPlaying = false
+        hasTriedFetching = true
+        shouldRetryFetch = false
+    }
+
     fun clearLogs() {
         logEntries = mutableListOf()
     }
@@ -859,6 +868,13 @@ fun SpotifyCanvasWorker() {
         snapshotFlow {
             Pair(binder.player.playbackState, binder.player.playWhenReady)
         }.collect { (playbackState, playWhenReady) ->
+            if (playbackState == Player.STATE_ENDED) {
+                CanvasPlayerManager.forceCleanup()
+                CanvasVideoCache.clearAll(context)
+                SpotifyCanvasState.clearCompletedSong()
+                return@collect
+            }
+
             if (appRunningInBackground) {
                 SpotifyCanvasState.isPlaying = false
                 CanvasPlayerManager.pauseKeepingState()

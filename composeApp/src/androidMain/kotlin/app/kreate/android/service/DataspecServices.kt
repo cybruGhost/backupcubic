@@ -125,6 +125,13 @@ data class PlaybackSourceStatus(
     val updatedAt: Long = 0L
 )
 
+data class ResolvedVideoStream(
+    val url: String,
+    val mimeType: String,
+    val width: Int?,
+    val height: Int?
+)
+
 object PlaybackSourceMonitor {
     private val _status = MutableStateFlow(PlaybackSourceStatus())
     val status: StateFlow<PlaybackSourceStatus> = _status.asStateFlow()
@@ -258,6 +265,10 @@ private fun PlayerResponse.hasPlayableAudioFormats(): Boolean =
     streamingData?.adaptiveFormats?.any { it.isAudio && (!it.url.isNullOrBlank() || !it.signatureCipher.isNullOrBlank()) } == true ||
         streamingData?.formats?.any { it.isAudio && (!it.url.isNullOrBlank() || !it.signatureCipher.isNullOrBlank()) } == true
 
+private fun PlayerResponse.hasPlayableVideoFormats(): Boolean =
+    streamingData?.adaptiveFormats?.any { it.isVideo && it.hasStreamUrl() } == true ||
+        streamingData?.formats?.any { it.isVideo && it.hasStreamUrl() } == true
+
 private val knownAudioItags = setOf(139, 140, 141, 171, 249, 250, 251, 774)
 private val preferredAudioItags = listOf(140, 251, 250, 249, 139, 171, 774, 141)
 private val supportedAudioCodecHints = listOf("mp4a.", "opus")
@@ -322,6 +333,58 @@ private fun extractFormat(
                     ?: audioFormats.maxByOrNull { it.bitrateValue ?: 0 }
             }
     }
+}
+
+private fun extractVideoFormat(
+    streamingData: PlayerResponse.StreamingData?
+): PlayerResponse.StreamingData.Format? {
+    val adaptive = streamingData?.adaptiveFormats.orEmpty()
+        .filter { it.isVideo && it.hasStreamUrl() }
+    val muxed = streamingData?.formats.orEmpty()
+        .filter { it.isVideo && it.hasStreamUrl() }
+
+    return (adaptive + muxed)
+        .distinctBy { it.itagValue ?: it.mimeType + it.url.orEmpty() + it.signatureCipher.orEmpty() }
+        .sortedWith(
+            compareByDescending<PlayerResponse.StreamingData.Format> {
+                it.mimeType.startsWith("video/mp4", ignoreCase = true)
+            }.thenByDescending {
+                val height = it.heightValue ?: 0
+                if (height in 144..720) height else 0
+            }.thenByDescending {
+                it.bitrateValue ?: 0
+            }
+        )
+        .firstOrNull()
+}
+
+private suspend fun resolveFormatStreamUrl(
+    videoId: String,
+    format: PlayerResponse.StreamingData.Format
+): String? {
+    val rawUrl = format.signatureCipher
+        ?.takeIf { it.isNotBlank() }
+        ?.let { signatureCipher ->
+            CipherDeobfuscator.deobfuscateStreamUrl(signatureCipher, videoId)
+                ?: NewPipeUtils.decodeSignatureCipher(videoId, signatureCipher)
+        }
+        ?: NewPipeUtils.getStreamUrl(format, videoId)
+            .onFailure { Timber.w(it, "Failed to resolve YouTube stream URL for %s", videoId) }
+            .getOrNull()
+
+    return rawUrl?.let { CipherDeobfuscator.transformNParamInUrl(it) }
+}
+
+private fun YouTubeClient.playbackOrigin(): String? = when {
+    clientName.startsWith("WEB") -> "https://music.youtube.com"
+    clientName.startsWith("TVHTML5") -> "https://www.youtube.com"
+    else -> null
+}
+
+private fun YouTubeClient.playbackReferer(): String? = when {
+    clientName.startsWith("WEB") -> "https://music.youtube.com/"
+    clientName.startsWith("TVHTML5") -> "https://www.youtube.com/tv"
+    else -> null
 }
 
 @UnstableApi
@@ -404,7 +467,9 @@ suspend fun getIosFormatUrl(
     if (isYouTubeLoggedIn()) {
         YouTubeSessionStore.applyCurrentSession()
         val authenticated = runCatching {
-            val poToken = PoTokenGenerator().getWebClientPoToken(videoId, Store.getIosVisitorData())?.playerRequestPoToken
+            val poToken = PoTokenGenerator.shared
+                .getWebClientPoToken(videoId, Store.getIosVisitorData())
+                ?.playerRequestPoToken
             val response = YouTubeRequestThrottler.run {
                 Innertube.player(videoId = videoId, poToken = poToken)
             }?.getOrThrow() ?: throw IllegalStateException("Null player response")
@@ -451,6 +516,7 @@ suspend fun getInnertubePlayerFormatUrl(
     val clientsToTry = rememberedClientName
         ?.let { clientName ->
             FALLBACK_CLIENTS.firstOrNull { it.clientName == clientName }
+                ?.takeUnless { it.useWebPoTokens }
                 ?.let { rememberedClient ->
                     Timber.d(
                         "Prioritizing remembered Innertube client: %s (%s)",
@@ -462,15 +528,33 @@ suspend fun getInnertubePlayerFormatUrl(
         }
         ?: FALLBACK_CLIENTS
 
-    val signatureTimestamp = NewPipeUtils.getSignatureTimestamp(videoId)
-        .onFailure { Timber.w(it, "Could not get signature timestamp for %s; using default", videoId) }
-        .getOrNull()
+    var signatureTimestamp: Int? = null
+    var signatureTimestampAttempted = false
+    suspend fun signatureTimestampFor(client: YouTubeClient): Int? {
+        if (!client.useSignatureTimestamp) return null
+        if (!signatureTimestampAttempted) {
+            signatureTimestampAttempted = true
+            signatureTimestamp = NewPipeUtils.getSignatureTimestamp(videoId)
+                .onFailure { Timber.w(it, "Could not get signature timestamp for %s; using default", videoId) }
+                .getOrNull()
+        }
+        return signatureTimestamp
+    }
 
-    val poToken = runCatching {
-        PoTokenGenerator().getWebClientPoToken(videoId, visitorData)
-    }.onFailure {
-        Timber.w(it, "Innertube PoToken generation failed for %s; continuing with fallback clients", videoId)
-    }.getOrNull()
+    var poToken: app.cubic.android.core.utils.potoken.PoTokenResult? = null
+    var poTokenAttempted = false
+    fun poTokenFor(client: YouTubeClient): app.cubic.android.core.utils.potoken.PoTokenResult? {
+        if (!client.useWebPoTokens) return null
+        if (!poTokenAttempted) {
+            poTokenAttempted = true
+            poToken = runCatching {
+                PoTokenGenerator.shared.getWebClientPoToken(videoId, visitorData)
+            }.onFailure {
+                Timber.w(it, "Innertube PoToken generation failed for %s; continuing with fallback clients", videoId)
+            }.getOrNull()
+        }
+        return poToken
+    }
 
     var firstError: Throwable? = null
     var lastFailureReason: String? = null
@@ -486,6 +570,8 @@ suspend fun getInnertubePlayerFormatUrl(
             visitorData = visitorData,
             dataSyncId = if (isLoggedIn) Innertube.dataSyncId else null
         )
+        val clientPoToken = poTokenFor(ytClient)
+        val clientSignatureTimestamp = signatureTimestampFor(ytClient)
 
         val playerResponse = runCatching {
             Timber.d("Trying Innertube client (%d/%d): %s for %s", index + 1, clientsToTry.size, ytClient.clientName, videoId)
@@ -493,9 +579,9 @@ suspend fun getInnertubePlayerFormatUrl(
                 YouTubeRequestThrottler.run {
                     Innertube.player(
                         videoId = videoId,
-                        poToken = if (ytClient.useWebPoTokens) poToken?.playerRequestPoToken else null,
+                        poToken = clientPoToken?.playerRequestPoToken,
                         context = context,
-                        signatureTimestamp = if (ytClient.useSignatureTimestamp) signatureTimestamp else null
+                        signatureTimestamp = clientSignatureTimestamp
                     )
                 }?.getOrThrow() ?: throw IllegalStateException("Null Innertube player response")
             }
@@ -533,7 +619,7 @@ suspend fun getInnertubePlayerFormatUrl(
                     responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
                     audioQualityFormat = audioQualityFormat,
                     connectionMetered = connectionMetered,
-                    streamingDataPoToken = if (ytClient.useWebPoTokens) poToken?.streamingDataPoToken else null,
+                    streamingDataPoToken = clientPoToken?.streamingDataPoToken,
                     appendPlaybackParameters = false
                 )
             }
@@ -543,7 +629,23 @@ suspend fun getInnertubePlayerFormatUrl(
             Timber.w(error, "Innertube client %s URL resolution failed for %s", ytClient.clientName, videoId)
         }.getOrNull() ?: return@forEachIndexed
 
-        val isValid = NetworkClientFactory.validateStreamUrl(uri.toString(), expectedContentTypePrefix = "audio/")
+        val playableUri = uri.buildUpon()
+            .appendQueryParameter("cpn", cpn)
+            .apply {
+                if (ytClient.useWebPoTokens) {
+                    clientPoToken?.streamingDataPoToken
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { appendQueryParameter("pot", it) }
+                }
+            }
+            .build()
+        val isValid = NetworkClientFactory.validateStreamUrl(
+            streamUrl = playableUri.toString(),
+            expectedContentTypePrefix = "audio/",
+            userAgent = ytClient.userAgent,
+            origin = ytClient.playbackOrigin(),
+            referer = ytClient.playbackReferer()
+        )
         if (!isValid) {
             lastFailureReason = "${ytClient.clientName}: stream URL validation failed"
             Timber.w("Innertube client %s stream URL validation failed for %s", ytClient.clientName, videoId)
@@ -552,21 +654,159 @@ suspend fun getInnertubePlayerFormatUrl(
 
         Timber.d("Innertube client %s stream resolved successfully for %s", ytClient.clientName, videoId)
         prefs.edit().putString(rememberedClientKey, ytClient.clientName).apply()
-        return uri.buildUpon()
-            .appendQueryParameter("cpn", cpn)
-            .apply {
-                if (ytClient.useWebPoTokens) {
-                    poToken?.streamingDataPoToken
-                        ?.takeIf { it.isNotBlank() }
-                        ?.let { appendQueryParameter("pot", it) }
-                }
-            }
-            .build()
+        return playableUri
     }
 
     Timber.e("Innertube playback failed for %s: %s", videoId, lastFailureReason)
     throw (firstError as? Exception ?: UnplayableException())
 }
+
+@UnstableApi
+suspend fun getInnertubeVideoStream(videoId: String): ResolvedVideoStream {
+    YouTubeSessionStore.applyCurrentSession()
+
+    val locale = YouTubeLocale(
+        gl = java.util.Locale.getDefault().country.takeIf { it.isNotEmpty() } ?: "US",
+        hl = java.util.Locale.getDefault().language.takeIf { it.isNotEmpty() } ?: "en"
+    )
+    val visitorData = Store.getIosVisitorData()
+        .ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
+    val isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
+    val prefs = appContext().preferences
+    val rememberedClientKey =
+        if (isLoggedIn) LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY else LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY
+    val rememberedClientName = prefs.getString(rememberedClientKey, null)
+    val clientsToTry = rememberedClientName
+        ?.let { name ->
+            FALLBACK_CLIENTS.firstOrNull { it.clientName == name }
+                ?.let { remembered -> listOf(remembered) + FALLBACK_CLIENTS.filterNot { it.clientName == name } }
+        }
+        ?: FALLBACK_CLIENTS
+
+    var signatureTimestamp: Int? = null
+    var signatureTimestampAttempted = false
+    suspend fun signatureTimestampFor(client: YouTubeClient): Int? {
+        if (!client.useSignatureTimestamp) return null
+        if (!signatureTimestampAttempted) {
+            signatureTimestampAttempted = true
+            signatureTimestamp = NewPipeUtils.getSignatureTimestamp(videoId).getOrNull()
+        }
+        return signatureTimestamp
+    }
+
+    var poToken: app.cubic.android.core.utils.potoken.PoTokenResult? = null
+    var poTokenAttempted = false
+    fun poTokenFor(client: YouTubeClient): app.cubic.android.core.utils.potoken.PoTokenResult? {
+        if (!client.useWebPoTokens) return null
+        if (!poTokenAttempted) {
+            poTokenAttempted = true
+            poToken = runCatching {
+                PoTokenGenerator.shared.getWebClientPoToken(videoId, visitorData)
+            }.onFailure {
+                Timber.w(it, "Video PoToken generation failed for %s", videoId)
+            }.getOrNull()
+        }
+        return poToken
+    }
+
+    var firstError: Throwable? = null
+    var lastFailureReason = "no client attempted"
+
+    clientsToTry.forEachIndexed { index, ytClient ->
+        if (ytClient.loginRequired && !isLoggedIn) return@forEachIndexed
+
+        val clientPoToken = poTokenFor(ytClient)
+        val context = ytClient.toContext(
+            locale = locale,
+            visitorData = visitorData,
+            dataSyncId = if (isLoggedIn) Innertube.dataSyncId else null
+        )
+        val playerResponse = runCatching {
+            Timber.d(
+                "Trying video Innertube client (%d/%d): %s for %s",
+                index + 1,
+                clientsToTry.size,
+                ytClient.clientName,
+                videoId
+            )
+            withTimeout(INNERTUBE_CLIENT_TIMEOUT_MS) {
+                YouTubeRequestThrottler.run {
+                    Innertube.player(
+                        videoId = videoId,
+                        poToken = clientPoToken?.playerRequestPoToken,
+                        context = context,
+                        signatureTimestamp = signatureTimestampFor(ytClient)
+                    )
+                }?.getOrThrow() ?: throw IllegalStateException("Null Innertube video response")
+            }
+        }.onFailure {
+            if (firstError == null) firstError = it
+            lastFailureReason = "${ytClient.clientName}: ${it.message}"
+            Timber.w(it, "Video Innertube client %s failed for %s", ytClient.clientName, videoId)
+        }.getOrNull() ?: return@forEachIndexed
+
+        if (playerResponse.playabilityStatus?.status != "OK" || !playerResponse.hasPlayableVideoFormats()) {
+            lastFailureReason =
+                "${ytClient.clientName}: status=${playerResponse.playabilityStatus?.status}, no video formats"
+            return@forEachIndexed
+        }
+
+        val format = extractVideoFormat(playerResponse.streamingData) ?: return@forEachIndexed
+        val rawUrl = runCatching {
+            withTimeout(INNERTUBE_CLIENT_TIMEOUT_MS) {
+                resolveFormatStreamUrl(videoId, format)
+            }
+        }.onFailure {
+            if (firstError == null) firstError = it
+            lastFailureReason = "${ytClient.clientName}: video URL resolution failed"
+        }.getOrNull() ?: return@forEachIndexed
+
+        val cpn = CharUtils.randomString(16)
+        val playableUri = rawUrl.toUri().buildUpon()
+            .appendQueryParameter("cpn", cpn)
+            .apply {
+                if (ytClient.useWebPoTokens) {
+                    clientPoToken?.streamingDataPoToken
+                        ?.takeIf { it.isNotBlank() }
+                        ?.let { appendQueryParameter("pot", it) }
+                }
+            }
+            .build()
+
+        val isValid = NetworkClientFactory.validateStreamUrl(
+            streamUrl = playableUri.toString(),
+            expectedContentTypePrefix = "video/",
+            userAgent = ytClient.userAgent,
+            origin = ytClient.playbackOrigin(),
+            referer = ytClient.playbackReferer()
+        )
+        if (!isValid) {
+            lastFailureReason = "${ytClient.clientName}: video URL validation failed"
+            return@forEachIndexed
+        }
+
+        prefs.edit().putString(rememberedClientKey, ytClient.clientName).apply()
+        Timber.d(
+            "Resolved video stream for %s using %s: itag=%s mime=%s size=%sx%s",
+            videoId,
+            ytClient.clientName,
+            format.itagValue,
+            format.mimeType,
+            format.widthValue,
+            format.heightValue
+        )
+        return ResolvedVideoStream(
+            url = playableUri.toString(),
+            mimeType = format.mimeType.substringBefore(";"),
+            width = format.widthValue,
+            height = format.heightValue
+        )
+    }
+
+    Timber.e("Innertube video resolution failed for %s: %s", videoId, lastFailureReason)
+    throw (firstError as? Exception ?: PlayableFormatNotFoundException())
+}
+
 private suspend fun resolvePrimaryFormatUrl(
     videoId: String,
     audioQualityFormat: AudioQualityFormat,

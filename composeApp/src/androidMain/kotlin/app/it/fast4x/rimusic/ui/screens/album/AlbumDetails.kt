@@ -107,6 +107,7 @@ import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.showFloatingIconKey
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import me.bush.translator.Language
 import me.bush.translator.Translator
@@ -154,6 +155,7 @@ fun AlbumDetails(
     val items by remember {
         Database.songAlbumMapTable
                 .allSongsOf( browseId )
+                .map { songs -> songs.deduplicateAlbumSongs() }
                 .distinctUntilChanged()
     }.collectAsState( emptyList(), Dispatchers.IO )
 

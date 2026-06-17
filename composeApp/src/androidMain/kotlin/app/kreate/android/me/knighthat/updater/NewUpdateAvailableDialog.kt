@@ -327,14 +327,22 @@ private fun checkIfAlreadyDownloaded() {
                     delay(1000)
                     onDismiss()
                 } else {
-                    installationStep = "Installation failed"
+                    installationStep = "Installation failed. Opening direct download..."
                     isInstalling = false
 
                     Toast.makeText(
                         appContext(),
-                        "Failed to start installation. Try again.",
+                        "Installation could not start. Download the APK directly from Cubic Music.",
                         Toast.LENGTH_LONG
                     ).show()
+                    runCatching {
+                        appContext().startActivity(
+                            Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse("https://thecub.netlify.app/cubicmusic")
+                            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        )
+                    }
                 }
             }
         }

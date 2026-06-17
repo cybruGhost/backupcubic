@@ -82,6 +82,7 @@ import app.it.fast4x.rimusic.utils.secondary
 import app.it.fast4x.rimusic.utils.semiBold
 import app.it.fast4x.rimusic.utils.shimmerEffect
 import app.kreate.android.me.knighthat.coil.ImageCacheFactory
+import app.kreate.android.me.knighthat.coil.resolveArtworkUrl
 import app.kreate.android.me.knighthat.coil.size
 import app.kreate.android.me.knighthat.coil.thumbnail
 import app.kreate.android.me.knighthat.utils.Toaster
@@ -209,7 +210,9 @@ fun SongItem(
     SongItem(
         thumbnailSizeDp = thumbnailSizeDp,
         thumbnailContent = {
-            ImageCacheFactory.Thumbnail( thumbnailUrl )
+            ImageCacheFactory.Thumbnail(
+                resolveArtworkUrl(mediaItem.mediaId, thumbnailUrl)
+            )
 
             onThumbnailContent?.invoke(this)
 

@@ -796,6 +796,20 @@ suspend fun downloadSyncedLyrics( song: Song ) {
         }
     }
 
+    if (fetchedLyrics?.synced.isNullOrBlank()) {
+        BetterLyricsProvider.lyrics(
+            title = song.cleanTitle(),
+            artist = song.cleanArtistsText(),
+            durationSeconds = (durationTextToMillis(song.durationText.orEmpty()) / 1000).toInt()
+        )?.let { betterLyrics ->
+            fetchedLyrics = Lyrics(
+                songId = song.id,
+                fixed = betterLyrics.plainLyrics ?: fetchedLyrics?.fixed ?: storedLyrics?.fixed,
+                synced = betterLyrics.syncedLyrics ?: fetchedLyrics?.synced ?: storedLyrics?.synced
+            )
+        }
+    }
+
     if( fetchedLyrics != null )
         Database.asyncTransaction {
             lyricsTable.upsert( fetchedLyrics!! )

@@ -73,7 +73,7 @@ import androidx.compose.ui.util.fastFirst
 import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import app.kreate.android.R
-import app.cubic.android.core.coil.ImageCacheFactory
+import app.kreate.android.me.knighthat.coil.ImageCacheFactory
 import app.cubic.android.core.coil.resize
 import app.it.fast4x.compose.persist.persist
 import app.it.fast4x.compose.persist.persistList

@@ -15,10 +15,25 @@ class AndroidConnectivityObserverLegacy(context: Context) {
     private val _networkStatus = Channel<Boolean>(Channel.CONFLATED)
     val networkStatus = _networkStatus.receiveAsFlow()
 
+    private fun isValidated(network: Network): Boolean =
+        connectivityManager.getNetworkCapabilities(network)
+            ?.let { capabilities ->
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            } == true
+
     private val internetNetworkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
             super.onAvailable(network)
-            _networkStatus.trySend(true)
+            _networkStatus.trySend(isValidated(network))
+        }
+
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            super.onCapabilitiesChanged(network, capabilities)
+            _networkStatus.trySend(
+                capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) &&
+                    capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)
+            )
         }
 
         override fun onLost(network: Network) {
@@ -34,10 +49,12 @@ class AndroidConnectivityObserverLegacy(context: Context) {
 
     init {
         val request = NetworkRequest.Builder()
-            // add Internet capability to request
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .build()
         connectivityManager.registerNetworkCallback(request, internetNetworkCallback)
+        _networkStatus.trySend(
+            connectivityManager.activeNetwork?.let(::isValidated) == true
+        )
     }
 
     fun unregister() {

@@ -1,480 +1,197 @@
-@file:Suppress("DEPRECATION")
-
 package app.it.fast4x.rimusic.ui.screens.donate
 
-import androidx.compose.animation.core.*
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.outlined.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material.icons.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.CreditCard
+import androidx.compose.material.icons.outlined.OpenInNew
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.VolunteerActivism
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.*
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.*
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
-import app.it.fast4x.rimusic.ui.styling.*
-import coil3.compose.AsyncImage
+import app.it.fast4x.rimusic.ui.styling.LocalAppearance
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DonateScreen(
-    onBackClick: () -> Unit
-) {
+fun DonateScreen(onBackClick: () -> Unit) {
     val uriHandler = LocalUriHandler.current
     val appearance = LocalAppearance.current
-    val colorPalette = appearance.colorPalette
+    val colors = appearance.colorPalette
     val typography = appearance.typography
 
-    val koFiUrl = "https://ko-fi.com/anonghost40418/"
-    val githubUrl = "https://github.com/cybruGhost/Cubic-Music"
-    val profileImageUrl = "https://avatars.githubusercontent.com/u/113809799?v=4&size=200"
-    val koFiImageUrl = "https://storage.ko-fi.com/cdn/useruploads/351b9585-ab4f-4264-82bf-bd4f6a21619f_89c804f1-994c-412d-b21a-a110c577b372.jpeg"
-    
-    val infiniteTransition = rememberInfiniteTransition()
-    val glowAlpha by infiniteTransition.animateFloat(
-        initialValue = 0.3f,
-        targetValue = 0.7f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(1500, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        )
-    )
-
-    Box(
+    LazyColumn(
         modifier = Modifier
             .fillMaxSize()
-            .background(colorPalette.background0)
+            .background(colors.background0)
+            .padding(horizontal = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
     ) {
-        // Animated Background
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val centerX = size.width / 2
-            val centerY = size.height / 2
-            val radius = size.minDimension * 0.8f
-            
-            // Rotating gradient circles
-            for (i in 0..2) {
-                val offset = i * 120f
-                rotate(offset) {
-                    drawCircle(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                colorPalette.accent.copy(alpha = glowAlpha * 0.15f),
-                                Color.Transparent
-                            ),
-                            center = Offset(centerX - radius * 0.2f, centerY - radius * 0.2f)
-                        ),
-                        radius = radius * 0.4f,
-                        center = Offset(centerX, centerY)
+        item {
+            Spacer(Modifier.height(12.dp))
+            IconButton(
+                onClick = onBackClick,
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(colors.background2, RoundedCornerShape(8.dp))
+            ) {
+                Icon(Icons.Outlined.ArrowBack, contentDescription = "Back", tint = colors.text)
+            }
+        }
+
+        item {
+            Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                Text(
+                    text = "Support Cubic Music",
+                    style = typography.xxl.copy(fontWeight = FontWeight.Bold),
+                    color = colors.text
+                )
+                Text(
+                    text = "Your contribution keeps playback fixes, infrastructure, and new releases moving.",
+                    style = typography.s,
+                    color = colors.textSecondary,
+                    modifier = Modifier.padding(top = 8.dp)
+                )
+            }
+        }
+
+        item {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(colors.background2, RoundedCornerShape(8.dp))
+                    .padding(18.dp)
+            ) {
+                Column {
+                    Text(
+                        text = "Maintainer Pass",
+                        style = typography.l.copy(fontWeight = FontWeight.Bold),
+                        color = colors.text
+                    )
+                    Text(
+                        text = "$4  |  $5  |  $15  |  $30",
+                        style = typography.m.copy(fontWeight = FontWeight.SemiBold),
+                        color = colors.accent,
+                        modifier = Modifier.padding(top = 8.dp)
+                    )
+                    Text(
+                        text = "This is a donation. No physical or digital product is delivered.",
+                        style = typography.xs,
+                        color = colors.textSecondary,
+                        modifier = Modifier.padding(top = 8.dp)
                     )
                 }
             }
         }
 
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(horizontal = 20.dp)
-        ) {
-            item {
-                Spacer(modifier = Modifier.height(24.dp))
-                
-                // Back Button
-                IconButton(
-                    onClick = onBackClick,
-                    modifier = Modifier
-                        .size(40.dp)
-                        .clip(RoundedCornerShape(12.dp))
-                        .background(colorPalette.background2.copy(alpha = 0.5f))
-                ) {
-                    Icon(
-                        imageVector = Icons.Outlined.ArrowBack,
-                        contentDescription = "Back",
-                        tint = colorPalette.text
-                    )
-                }
-                
-                Spacer(modifier = Modifier.height(16.dp))
-            }
+        item {
+            DonationMethod(
+                title = "Fourthwall",
+                subtitle = "PayPal, card, and other available methods",
+                detail = "cyberghost-shop.fourthwall.com",
+                icon = { Icon(Icons.Outlined.CreditCard, null, tint = colors.accent) },
+                onClick = { uriHandler.openUri("https://cyberghost-shop.fourthwall.com") }
+            )
+        }
 
-            item {
-                // Header
-                Column(
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    // Profile Image with glow
-                    Box(
-                        modifier = Modifier
-                            .size(100.dp)
-                            .drawBehind {
-                                drawCircle(
-                                    color = colorPalette.accent.copy(alpha = glowAlpha * 0.3f),
-                                    radius = size.minDimension / 2 + 15f
-                                )
-                            }
-                    ) {
-                        AsyncImage(
-                            model = profileImageUrl,
-                            contentDescription = "Developer Profile",
-                            modifier = Modifier
-                                .size(100.dp)
-                                .clip(CircleShape)
-                                .border(
-                                    width = 3.dp,
-                                    color = colorPalette.accent,
-                                    shape = CircleShape
-                                ),
-                            contentScale = ContentScale.Crop
-                        )
-                    }
+        item {
+            DonationMethod(
+                title = "Ko-fi",
+                subtitle = "PayPal support from $2",
+                detail = "ko-fi.com/anonghost40418",
+                icon = { Icon(Icons.Outlined.VolunteerActivism, null, tint = colors.accent) },
+                onClick = { uriHandler.openUri("https://ko-fi.com/anonghost40418") }
+            )
+        }
 
-                    Spacer(modifier = Modifier.height(20.dp))
+        item {
+            DonationMethod(
+                title = "M-Pesa",
+                subtitle = "Local support from KSh 30",
+                detail = "Support Pal Global",
+                icon = { Icon(Icons.Outlined.Payments, null, tint = colors.accent) },
+                onClick = { uriHandler.openUri("https://support-pal-global.lovable.app/") }
+            )
+        }
 
-                    Text(
-                        text = "Anon Ghost",
-                        style = typography.xxxl.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
-                        color = colorPalette.text
-                    )
-
-                    Text(
-                        text = "Mobile App Developer",
-                        style = typography.m.copy(
-                            fontWeight = FontWeight.Medium
-                        ),
-                        color = colorPalette.accent,
-                        modifier = Modifier.padding(top = 4.dp)
-                    )
-
-                    Spacer(modifier = Modifier.height(16.dp))
-
-                    // GitHub Link
-                    Card(
-                        onClick = { uriHandler.openUri(githubUrl) },
-                        modifier = Modifier.fillMaxWidth(0.8f),
-                        shape = RoundedCornerShape(16.dp),
-                        colors = CardDefaults.cardColors(
-                            containerColor = colorPalette.background2
-                        ),
-                        elevation = CardDefaults.cardElevation(defaultElevation = 4.dp)
-                    ) {
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 12.dp),
-                            horizontalArrangement = Arrangement.Center,
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            Icon(
-                                imageVector = Icons.Outlined.Code,
-                                contentDescription = null,
-                                tint = colorPalette.accent,
-                                modifier = Modifier.size(20.dp)
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "github.com/cybruGhost",
-                                style = typography.s,
-                                color = colorPalette.textSecondary
-                            )
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Icon(
-                                imageVector = Icons.Outlined.OpenInNew,
-                                contentDescription = null,
-                                tint = colorPalette.accent,
-                                modifier = Modifier.size(16.dp)
-                            )
-                        }
-                    }
-                }
-            }
-
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
-
-                // Support Header
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(120.dp)
-                        .clip(RoundedCornerShape(24.dp))
-                        .background(
-                            brush = Brush.linearGradient(
-                                colors = listOf(
-                                    colorPalette.accent,
-                                    colorPalette.accent.copy(alpha = 0.7f),
-                                    colorPalette.background2
-                                )
-                            )
-                        )
-                ) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(20.dp),
-                        verticalArrangement = Arrangement.Center
-                    ) {
-                        Text(
-                            text = "❤️ Support Development ❤️",
-                            style = typography.xl.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = colorPalette.onAccent
-                        )
-                        Text(
-                            text = "Keep the music playing",
-                            style = typography.s,
-                            color = colorPalette.onAccent.copy(alpha = 0.9f)
-                        )
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Ko-fi Banner
-                Card(
-                    onClick = { uriHandler.openUri(koFiUrl) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(160.dp),
-                    shape = RoundedCornerShape(20.dp),
-                    elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
-                ) {
-                    Box(modifier = Modifier.fillMaxSize()) {
-                        AsyncImage(
-                            model = koFiImageUrl,
-                            contentDescription = "Ko-fi Banner",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
-                        
-                        // Gradient Overlay
-                        Box(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .background(
-                                    Brush.verticalGradient(
-                                        colors = listOf(
-                                            Color.Transparent,
-                                            colorPalette.background0.copy(alpha = 0.7f)
-                                        )
-                                    )
-                                )
-                        )
-                        
-                        // Text Overlay
-                        Column(
-                            modifier = Modifier
-                                .fillMaxSize()
-                                .padding(20.dp),
-                            verticalArrangement = Arrangement.Bottom
-                        ) {
-                            Text(
-                                text = "Support on Ko-fi",
-                                style = typography.xl.copy(
-                                    fontWeight = FontWeight.Bold
-                                ),
-                                color = Color.White
-                            )
-                            Text(
-                                text = "Buy me a coffee ☕",
-                                style = typography.m,
-                                color = Color.White.copy(alpha = 0.9f)
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Support Info
-                Text(
-                    text = "Support via Ko-fi:",
-                    style = typography.l.copy(
-                        fontWeight = FontWeight.SemiBold
-                    ),
-                    color = colorPalette.text,
-                    modifier = Modifier.padding(bottom = 12.dp)
-                )
-
-                // Payment Methods Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(16.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = colorPalette.background2
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(16.dp)
-                    ) {
-                        Text(
-                            text = "Ko-fi accepts:",
-                            style = typography.s.copy(
-                                fontWeight = FontWeight.Medium
-                            ),
-                            color = colorPalette.textSecondary,
-                            modifier = Modifier.padding(bottom = 12.dp)
-                        )
-                        
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceEvenly
-                        ) {
-                            PaymentMethod(
-                                icon = "💳",
-                                name = "Credit Card",
-                                colorPalette = colorPalette
-                            )
-                            PaymentMethod(
-                                icon = "💰",
-                                name = "PayPal",
-                                colorPalette = colorPalette
-                            )
-                            PaymentMethod(
-                                icon = "🏦",
-                                name = "Bank Transfer",
-                                colorPalette = colorPalette
-                            )
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(20.dp))
-
-                // Main Support Button
-                Button(
-                    onClick = { uriHandler.openUri(koFiUrl) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(64.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = Color(0xFF29ABE0)
-                    ),
-                    shape = RoundedCornerShape(20.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Favorite,
-                        contentDescription = null,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    Text(
-                        "Support on Ko-fi",
-                        style = typography.l.copy(
-                            fontWeight = FontWeight.Bold
-                        )
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(24.dp))
-
-                // Thank You Message
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = colorPalette.background2
-                    )
-                ) {
-                    Column(
-                        modifier = Modifier.padding(20.dp),
-                        horizontalAlignment = Alignment.CenterHorizontally
-                    ) {
-                        Text(
-                            text = "Thank You! ",
-                            style = typography.xl.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = colorPalette.accent
-                        )
-                        
-                        Spacer(modifier = Modifier.height(12.dp))
-                        
-                        Text(
-                            text = "Your support motivates me. Every contribution, no matter how small, is greatly appreciated!",
-                            style = typography.s,
-                            color = colorPalette.textSecondary,
-                            textAlign = TextAlign.Center,
-                            lineHeight = 22.sp
-                        )
-                        
-                        Spacer(modifier = Modifier.height(16.dp))
-                        
-                        Row(
-                            horizontalArrangement = Arrangement.Center
-                        ) {
-                            repeat(3) {
-                                Text(
-                                    "❤️",
-                                    fontSize = 24.sp,
-                                    modifier = Modifier.padding(horizontal = 2.dp)
-                                )
-                            }
-                        }
-                    }
-                }
-
-                Spacer(modifier = Modifier.height(32.dp))
-            }
+        item {
+            HorizontalDivider(color = colors.background3)
+            Text(
+                text = "Thank you for helping Cubic Music stay independent and actively maintained.",
+                style = typography.s,
+                color = colors.textSecondary,
+                modifier = Modifier.padding(vertical = 20.dp)
+            )
+            Spacer(Modifier.height(24.dp))
         }
     }
 }
 
 @Composable
-private fun PaymentMethod(
-    icon: String,
-    name: String,
-    colorPalette: ColorPalette
+private fun DonationMethod(
+    title: String,
+    subtitle: String,
+    detail: String,
+    icon: @Composable () -> Unit,
+    onClick: () -> Unit
 ) {
-    Column(
-        horizontalAlignment = Alignment.CenterHorizontally
+    val appearance = LocalAppearance.current
+    val colors = appearance.colorPalette
+    val typography = appearance.typography
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(colors.background1, RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Surface(
+        Box(
             modifier = Modifier
-                .size(48.dp)
-                .clip(CircleShape)
-                .background(colorPalette.background3)
-                .border(
-                    width = 1.dp,
-                    color = colorPalette.accent.copy(alpha = 0.3f),
-                    shape = CircleShape
-                ),
-            color = colorPalette.background3,
-            shape = CircleShape
+                .size(44.dp)
+                .background(colors.background3, RoundedCornerShape(8.dp)),
+            contentAlignment = Alignment.Center
         ) {
-            Box(
-                contentAlignment = Alignment.Center,
-                modifier = Modifier.fillMaxSize()
-            ) {
-                Text(
-                    text = icon,
-                    fontSize = 20.sp
-                )
-            }
+            icon()
         }
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(
-            text = name,
-            style = LocalAppearance.current.typography.xxs,
-            color = colorPalette.textSecondary
-        )
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .padding(horizontal = 14.dp)
+        ) {
+            Text(
+                text = title,
+                style = typography.m.copy(fontWeight = FontWeight.SemiBold),
+                color = colors.text
+            )
+            Text(text = subtitle, style = typography.xs, color = colors.textSecondary)
+            Text(
+                text = detail,
+                style = typography.xxs,
+                color = colors.accent,
+                modifier = Modifier.padding(top = 3.dp)
+            )
+        }
+        Icon(Icons.Outlined.OpenInNew, contentDescription = "Open", tint = colors.textSecondary)
     }
 }

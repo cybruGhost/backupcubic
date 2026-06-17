@@ -87,7 +87,7 @@ class MainApplication : Application(), SingletonImageLoader.Factory {
                 withContext(Dispatchers.IO) {
                     val sessionId = Store.getIosVisitorData()
                         .ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
-                    PoTokenGenerator().getWebClientPoToken("", sessionId)
+                    PoTokenGenerator.shared.getWebClientPoToken("", sessionId)
                 }
             }.onSuccess {
                 Timber.d("PoToken pre-warmed")
