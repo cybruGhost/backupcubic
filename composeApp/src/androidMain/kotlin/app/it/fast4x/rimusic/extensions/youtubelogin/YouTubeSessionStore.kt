@@ -165,6 +165,18 @@ object YouTubeSessionStore {
             applyToInnertube(it)
         }
 
+    fun applyPlaybackNoAuth(visitorData: String? = null) {
+        val visitor = visitorData?.trim()?.takeIf { it.isNotBlank() } ?: Innertube.DEFAULT_VISITOR_DATA
+        Innertube.cookie = null
+        Innertube.visitorData = visitor
+        Innertube.dataSyncId = null
+        YoutubePreferences.preference = YoutubePreferenceItem(
+            cookie = null,
+            visitordata = visitor,
+            dataSyncId = null
+        )
+    }
+
     fun hasAuthCookies(cookie: String?): Boolean {
         val normalized = normalizeCookieString(cookie)
         if (normalized.isBlank()) return false

@@ -385,6 +385,15 @@ private suspend fun syncSessionPlaylists(scope: SessionLibraryScope): Boolean =
                 val remoteSongs = if (!shouldFetchSongs) emptyList()
                 else fetchRemotePlaylistSongs(sessionScope = scope, playlistId = remotePlaylist.playlistId, browseId = remoteBrowseId)
 
+                if (localPlaylist == null && remoteSongs.isEmpty()) {
+                    Timber.w(
+                        "Skipping empty YTM playlist import title=%s browseId=%s because no songs were returned",
+                        remotePlaylist.title,
+                        remoteBrowseId
+                    )
+                    return@forEachIndexed
+                }
+
                 Database.asyncTransaction {
                     val playlistId = if (playlist.id > 0) { playlistTable.update(playlist); playlist.id } else playlistTable.insert(playlist)
                     if (remoteSongs.isNotEmpty()) {

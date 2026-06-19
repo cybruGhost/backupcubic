@@ -546,7 +546,7 @@ fun HomeSongs(
 
         itemsIndexed(
             items = itemsOnDisplay,
-            key = { index, song -> song.id.ifBlank { "home_song_$index" } }
+            key = { index, song -> "${song.id.ifBlank { "home_song" }}_$index" }
         ) { index, song ->
             val mediaItem = song.asMediaItem
 

@@ -69,7 +69,7 @@ object ImageCacheFactory {
     val DISK_CACHE: DiskCache by lazy {
         val preferences = appContext().preferences
         val diskSize = preferences.getEnum(coilDiskCacheMaxSizeKey, CoilDiskCacheMaxSize.`128MB`)
-        val cacheLocation = preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)
+        val cacheLocation = preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.Private)
         val cacheDir = when (cacheLocation) {
             ExoPlayerCacheLocation.System -> appContext().cacheDir
             ExoPlayerCacheLocation.Private -> appContext().filesDir

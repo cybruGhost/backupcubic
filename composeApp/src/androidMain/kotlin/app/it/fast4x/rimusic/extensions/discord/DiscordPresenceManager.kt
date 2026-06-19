@@ -40,6 +40,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.jetbrains.annotations.Contract
 import timber.log.Timber
+import java.util.concurrent.ConcurrentHashMap
 
 /**
      * THIS IS STILL IN BETA AND MAY NOT WORK AS EXPECTED AND CAUSE CRASH
@@ -60,19 +61,32 @@ class DiscordPresenceManager(
         private const val TEMP_FILE_HOST = "https://litterbox.catbox.moe/resources/internals/api.php"
         private const val MAX_DIMENSION = 1024                           // Per Discord's guidelines
         private const val MAX_FILE_SIZE_BYTES = 2L * 1024 * 1024     // 2 MB in bytes
+        private const val MIN_UPDATE_INTERVAL_MS = 8_000L
+        private const val POSITION_ONLY_UPDATE_INTERVAL_MS = 60_000L
+        private const val PAUSED_UPDATE_DEBOUNCE_MS = 2_500L
+        private const val PRESENCE_REFRESH_INTERVAL_MS = 60_000L
+        private const val TOKEN_VALIDATION_TTL_MS = 15 * 60_000L
     }
 
     private var rpc: KizzyRPC? = null
     private var lastToken: String? = null
     private var lastMediaItem: MediaItem? = null
     private var lastPosition: Long = 0L
+    private var lastPresenceSignature: String? = null
+    private var lastPresenceMediaId: String? = null
+    private var lastPresenceSentAtMs: Long = 0L
+    private var lastValidatedToken: String? = null
+    private var lastTokenValidationAtMs: Long = 0L
+    private var lastTokenValidationResult: Boolean? = null
     private var isStopped = false
     private val discordScope = externalScope
     private var refreshJob: Job? = null
+    private var pendingPresenceJob: Job? = null
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .build()
+    private val assetCache = ConcurrentHashMap<String, String>()
     @Volatile
     private var smallImage: String? = null
     @Volatile
@@ -113,6 +127,7 @@ class DiscordPresenceManager(
 
     private suspend fun getDiscordAssetUri( imageUrl: String ): String? {
         if ( imageUrl.startsWith( "mp:" ) ) return imageUrl
+        assetCache[imageUrl]?.let { return it }
 
         val token = rpc?.token ?: return null
         return runCatching {
@@ -133,6 +148,7 @@ class DiscordPresenceManager(
                 ?.jsonPrimitive
                 ?.content
                 ?.let { "mp:$it" }
+                ?.also { assetCache[imageUrl] = it }
         }.onFailure { exception ->
             // Handle rate limiting (429) silently to avoid disturbing the user
             if (exception.message?.contains("429") == true || exception.message?.contains("Too Many Requests") == true) {
@@ -178,6 +194,14 @@ class DiscordPresenceManager(
      */
 
      internal suspend fun validateToken(token: String): Boolean? = withContext(Dispatchers.IO) {
+        val now = System.currentTimeMillis()
+        if (
+            token == lastValidatedToken &&
+            lastTokenValidationResult == true &&
+            now - lastTokenValidationAtMs < TOKEN_VALIDATION_TTL_MS
+        ) {
+            return@withContext true
+        }
         if (!isNetworkAvailable(context)) return@withContext null
         val request = Request.Builder()
             .url("https://discord.com/api/v9/users/@me")
@@ -187,7 +211,11 @@ class DiscordPresenceManager(
 
         runCatching {
             client.newCall(request).execute().use { response ->
-                response.isSuccessful
+                response.isSuccessful.also {
+                    lastValidatedToken = token
+                    lastTokenValidationResult = it
+                    lastTokenValidationAtMs = now
+                }
             }
         }.getOrElse { exception ->
             // Handle rate limiting and network errors silently
@@ -215,48 +243,71 @@ class DiscordPresenceManager(
             return
         }
 
-        refreshJob?.cancel()
-        refreshJob = null
-
-        if (token != lastToken) {
-            rpc?.closeRPC()
-            rpc = KizzyRPC(token)
-            lastToken = token
-        }
-
         lastMediaItem = mediaItem
         lastPosition = position
-        if (mediaItem == null) {
-            sendPausedPresence(duration, now, position)
-            return
+        val signature = presenceSignature(mediaItem, isPlaying, duration)
+        val mediaId = mediaItem?.mediaId.orEmpty()
+        val onlyPositionChanged = signature == lastPresenceSignature
+        val elapsed = now - lastPresenceSentAtMs
+        val minInterval = if (onlyPositionChanged) POSITION_ONLY_UPDATE_INTERVAL_MS else MIN_UPDATE_INTERVAL_MS
+        if (elapsed < minInterval) return
+
+        pendingPresenceJob?.cancel()
+        val debounceMs = if (!isPlaying) PAUSED_UPDATE_DEBOUNCE_MS else 350L
+        pendingPresenceJob = discordScope.launch {
+            delay(debounceMs)
+            if (isStopped || !isNetworkAvailable(context)) return@launch
+            val resolvedIsPlaying = isPlayingProvider?.invoke() ?: isPlaying
+            val resolvedPosition = getCurrentPosition?.invoke() ?: position
+            val resolvedNow = System.currentTimeMillis()
+            val resolvedSignature = presenceSignature(mediaItem, resolvedIsPlaying, duration)
+            if (
+                resolvedSignature == lastPresenceSignature &&
+                resolvedNow - lastPresenceSentAtMs < POSITION_ONLY_UPDATE_INTERVAL_MS
+            ) return@launch
+
+            ensureRpc(token)
+            lastPresenceSignature = resolvedSignature
+            lastPresenceMediaId = mediaId
+            lastPresenceSentAtMs = resolvedNow
+
+            if (mediaItem == null || !resolvedIsPlaying) {
+                sendPausedPresence(duration, resolvedNow, resolvedPosition)
+            } else {
+                sendPlayingPresence(mediaItem, resolvedPosition, duration, resolvedNow)
+            }
+
+            if (mediaItem != null) {
+                startRefreshJob(
+                    isPlayingProvider = isPlayingProvider ?: { resolvedIsPlaying },
+                    mediaItem = mediaItem,
+                    getCurrentPosition = getCurrentPosition ?: { resolvedPosition },
+                    pausedPosition = resolvedPosition,
+                    duration = duration,
+                    startTime = resolvedNow - resolvedPosition
+                )
+            }
         }
-        if (isPlaying) {
-            sendPlayingPresence(mediaItem, position, duration, now)
-            // Store current values to avoid calling lambdas later
-            val currentIsPlaying = isPlaying
-            val currentPosition = position
-            startRefreshJob(
-                isPlayingProvider = { currentIsPlaying },
-                mediaItem = mediaItem,
-                getCurrentPosition = { currentPosition },
-                pausedPosition = position,
-                duration = duration,
-                startTime = now // Store the original start time
-            )
-        } else {
-            sendPausedPresence(duration, now, position)
-            // Store current values to avoid calling lambdas later
-            val currentIsPlaying = isPlaying
-            val currentPosition = position
-            startRefreshJob(
-                isPlayingProvider = { currentIsPlaying },
-                mediaItem = mediaItem,
-                getCurrentPosition = { currentPosition },
-                pausedPosition = position,
-                duration = duration,
-                startTime = now
-            )
-        }
+    }
+
+    private fun presenceSignature(mediaItem: MediaItem?, isPlaying: Boolean, duration: Long): String {
+        val metadata = mediaItem?.mediaMetadata
+        return listOf(
+            mediaItem?.mediaId.orEmpty(),
+            metadata?.title?.toString().orEmpty(),
+            metadata?.artist?.toString().orEmpty(),
+            isPlaying.toString(),
+            duration.toString()
+        ).joinToString("|")
+    }
+
+    private fun ensureRpc(token: String) {
+        if (token == lastToken && rpc != null) return
+        runCatching { rpc?.closeRPC() }
+        rpc = KizzyRPC(token)
+        lastToken = token
+        lastPresenceSignature = null
+        assetCache.clear()
     }
 
     /**
@@ -310,11 +361,7 @@ class DiscordPresenceManager(
             true -> { /* Token is valid, continue */ }
         }
 
-        if (token != lastToken) {
-            rpc?.closeRPC()
-            rpc = KizzyRPC(token)
-            lastToken = token
-        }
+        ensureRpc(token)
         val largeImageUrl = getLargeImageUrl(mediaItem.mediaMetadata.artworkUri)
         val smallImageUrl = getSmallImageUrl()
         val largeTextValue = if (state.isNotBlank()) "$details - $state" else details
@@ -358,6 +405,7 @@ class DiscordPresenceManager(
      */
     fun onStop() {
         isStopped = true
+        pendingPresenceJob?.cancel()
         refreshJob?.cancel()
         rpc?.closeRPC()
         discordScope.cancel()
@@ -421,14 +469,14 @@ class DiscordPresenceManager(
     ) {
         refreshJob = discordScope.launch {
             while (isActive && !isStopped) {
-                delay(15_000L)
+                delay(PRESENCE_REFRESH_INTERVAL_MS)
                 if (!isNetworkAvailable(context)) {
                     continue
                 }
                 val isPlaying = isPlayingProvider()
                 if (isPlaying) {
                     val pos = getCurrentPosition()
-                    sendPlayingPresence(mediaItem, pos, duration, startTime)
+                    sendPlayingPresence(mediaItem, pos, duration, System.currentTimeMillis())
                 } else {
                     sendPausedPresence(duration, System.currentTimeMillis(), pausedPosition)
                 }

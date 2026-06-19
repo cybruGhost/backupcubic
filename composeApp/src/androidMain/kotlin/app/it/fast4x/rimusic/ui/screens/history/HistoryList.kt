@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.only
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -40,6 +41,7 @@ import androidx.media3.common.util.UnstableApi
 import androidx.navigation.NavController
 import app.kreate.android.R
 import app.it.fast4x.compose.persist.persist
+import app.it.fast4x.compose.persist.persistList
 import it.fast4x.innertube.YtMusic
 import it.fast4x.innertube.requests.HistoryPage
 import app.it.fast4x.rimusic.Database
@@ -50,6 +52,7 @@ import app.it.fast4x.rimusic.colorPalette
 import app.it.fast4x.rimusic.enums.HistoryType
 import app.it.fast4x.rimusic.enums.NavigationBarPosition
 import app.it.fast4x.rimusic.models.Event
+import app.it.fast4x.rimusic.models.Song
 import app.it.fast4x.rimusic.thumbnailShape
 import app.it.fast4x.rimusic.ui.components.ButtonsRow
 import app.it.fast4x.rimusic.ui.components.LocalMenuState
@@ -150,6 +153,8 @@ fun HistoryList(
     var isYTMLoading by remember { mutableStateOf(false) }
     var ytmHistoryLoadError by remember { mutableStateOf<String?>(null) }
     var ytmHistorySongs by remember { mutableStateOf<List<androidx.media3.common.MediaItem>>(emptyList()) }
+    var ytmHistoryCachedSongs by persistList<Song>("home/history/ytmHistorySongs")
+    var ytmHistoryCachedIdentity by persist("home/history/ytmHistoryIdentity", "")
 
     LaunchedEffect(events) {
         if (events.isNotEmpty()) {
@@ -165,10 +170,18 @@ fun HistoryList(
     var historyPage by persist<Result<HistoryPage>>("home/history/pageResult")
     LaunchedEffect(historyType, activeYouTubeCookie, activeYouTubeAccountIdentity) {
         if (historyType == HistoryType.YTMHistory && isYouTubeLoggedIn()) {
-            isYTMLoading = true
             ytmHistoryLoadError = null
-            ytmHistorySongs = emptyList()
-            historyPage = null
+            if (ytmHistoryCachedIdentity == activeYouTubeAccountIdentity && ytmHistoryCachedSongs.isNotEmpty()) {
+                ytmHistorySongs = ytmHistoryCachedSongs.map(Song::asMediaItem)
+                isYTMLoading = false
+                return@LaunchedEffect
+            }
+
+            isYTMLoading = true
+            if (ytmHistoryCachedIdentity != activeYouTubeAccountIdentity) {
+                ytmHistorySongs = emptyList()
+                historyPage = null
+            }
             val currentSession = YouTubeSessionStore.applyCurrentSession(context)
                 ?.let { YtmSessionApi.ensureScopedSession(it) }
             val requiresScopedSessionHistory = !currentSession?.pageId.isNullOrBlank()
@@ -188,19 +201,22 @@ fun HistoryList(
                 }
 
             if (!sessionHistory.isNullOrEmpty()) {
-                ytmHistorySongs = sessionHistory
+                val normalizedHistorySongs = sessionHistory
                     .filter { it.videoId.isNotBlank() && it.title.isNotBlank() }
                     .map { remoteSong ->
-                        app.it.fast4x.rimusic.models.Song(
+                        Song(
                             id = remoteSong.id.ifBlank { remoteSong.videoId },
                             title = remoteSong.title,
                             artistsText = remoteSong.artistsText.ifBlank { remoteSong.artist },
                             thumbnailUrl = remoteSong.thumbnailUrl.ifBlank { remoteSong.thumbnail },
                             durationText = remoteSong.durationText.ifBlank { remoteSong.duration }
-                        ).asMediaItem
+                        )
                     }
-                    .filter { it.mediaId.isNotBlank() }
-                    .distinctBy { it.mediaId }
+                    .filter { it.id.isNotBlank() }
+                    .distinctBy { it.id }
+                ytmHistoryCachedIdentity = activeYouTubeAccountIdentity
+                ytmHistoryCachedSongs = normalizedHistorySongs
+                ytmHistorySongs = normalizedHistorySongs.map(Song::asMediaItem)
             } else if (requiresScopedSessionHistory) {
                 ytmHistorySongs = emptyList()
                 ytmHistoryLoadError = "No history returned for the selected YouTube account."
@@ -350,13 +366,13 @@ fun HistoryList(
                             )
                         }
 
-                        items(
+                        itemsIndexed(
                             items = ytmHistorySongs.filter { mediaItem ->
                                 (mediaItem.mediaMetadata.title ?: "").contains(search.inputValue, ignoreCase = true) ||
                                     (mediaItem.mediaMetadata.artist ?: "").contains(search.inputValue, ignoreCase = true)
                             },
-                            key = { it.mediaId }
-                        ) { mediaItem ->
+                            key = { index, mediaItem -> "${mediaItem.mediaId.ifBlank { "ytm_history" }}_$index" }
+                        ) { _, mediaItem ->
                             SwipeablePlaylistItem(
                                 mediaItem = mediaItem,
                                 onPlayNext = { binder?.player?.addNext(mediaItem) },
@@ -406,10 +422,10 @@ fun HistoryList(
                             )
                         }
 
-                        items(
+                        itemsIndexed(
                             items = historyItems,
-                            key = { it.mediaId }
-                        ) { mediaItem ->
+                            key = { index, mediaItem -> "${mediaItem.mediaId.ifBlank { "ytm_history_section" }}_$index" }
+                        ) { _, mediaItem ->
                             SwipeablePlaylistItem(
                                 mediaItem = mediaItem,
                                 onPlayNext = {

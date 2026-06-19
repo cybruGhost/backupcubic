@@ -76,6 +76,43 @@ data class AlbumPage(
             return header
         }
 
+        private fun Innertube.SongItem.albumTrackKey(): String =
+            listOf(
+                title.orEmpty().trim().lowercase(),
+                authors.orEmpty()
+                    .mapNotNull { it.name?.trim()?.lowercase()?.takeIf(String::isNotBlank) }
+                    .joinToString("|"),
+                durationText.orEmpty().trim()
+            ).joinToString("::")
+
+        private fun Innertube.SongItem.albumTrackRank(): Int =
+            when (
+                info
+                    ?.endpoint
+                    ?.watchEndpointMusicSupportedConfigs
+                    ?.watchEndpointMusicConfig
+                    ?.musicVideoType
+            ) {
+                "MUSIC_VIDEO_TYPE_ATV" -> 0
+                "MUSIC_VIDEO_TYPE_OMV", "MUSIC_VIDEO_TYPE_UGC" -> 2
+                else -> 1
+            }
+
+        private fun List<Innertube.SongItem>.dedupeAlbumMusicTrackList(): List<Innertube.SongItem> {
+            val bestByTrack = LinkedHashMap<String, Innertube.SongItem>()
+            forEach { song ->
+                val key = song.albumTrackKey().takeIf { it.isNotBlank() } ?: song.key
+                val current = bestByTrack[key]
+                if (current == null || song.albumTrackRank() < current.albumTrackRank()) {
+                    bestByTrack[key] = song
+                }
+            }
+            return bestByTrack.values.toList()
+        }
+
+        fun dedupeAlbumMusicTracks(items: List<Innertube.SongItem>): List<Innertube.SongItem> =
+            items.dedupeAlbumMusicTrackList()
+
         fun getSongs(response: BrowseResponse, album: Innertube.AlbumItem): List<Innertube.SongItem> {
             val tabs = response.contents?.singleColumnBrowseResultsRenderer?.tabs ?: response.contents?.twoColumnBrowseResultsRenderer?.tabs
             val shelfRenderer = tabs?.firstOrNull()?.tabRenderer?.content?.sectionListRenderer?.contents?.firstOrNull()?.musicShelfRenderer ?:
@@ -84,7 +121,7 @@ data class AlbumPage(
             val songs = shelfRenderer?.contents?.mapNotNull {
                 it.musicResponsiveListItemRenderer?.let { it1 -> getSong(it1, album) }
             }
-            return songs ?: emptyList()
+            return songs?.dedupeAlbumMusicTrackList() ?: emptyList()
         }
 
         fun getSong(renderer: MusicResponsiveListItemRenderer, album: Innertube.AlbumItem? = null): Innertube.SongItem {
@@ -162,7 +199,7 @@ suspend fun Innertube.albumPage(body: BrowseBody) = playlistPage(body)?.map { al
 
         album.copy(
             songsPage = album.songsPage?.copy(
-                items = album.songsPage.items?.map { song ->
+                items = album.songsPage.items?.let(AlbumPage::dedupeAlbumMusicTracks)?.map { song ->
                     song.copy(
                         authors = song.authors ?: album.authors,
                         album = albumInfo,

@@ -37,10 +37,10 @@ object PlayerInitializer {
             .setLoadControl(
                 DefaultLoadControl.Builder()
                     .setBufferDurationsMs(
-                        5_000,
-                        30_000,
-                        250,
-                        1_000
+                        8_000,
+                        50_000,
+                        500,
+                        2_000
                     )
                     .setBackBuffer(5_000, true)
                     .setPrioritizeTimeOverSizeThresholds(false)

@@ -179,6 +179,7 @@ import app.it.fast4x.rimusic.ui.components.themed.LazyMenu
 import coil.request.ImageRequest
 // checkupdate
 import app.kreate.android.BuildConfig
+import app.kreate.android.me.knighthat.coil.ImageCacheFactory
 
 //rewind
 import androidx.compose.foundation.layout.Box
@@ -256,10 +257,8 @@ private fun YtmHomeCard(
             .padding(horizontal = 10.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        AsyncImage(
-            model = ImageRequest.Builder(LocalContext.current)
-                .data(thumbnailUrl)
-                .build(),
+        ImageCacheFactory.AsyncImage(
+            thumbnailUrl = thumbnailUrl,
             contentDescription = title,
             contentScale = ContentScale.Crop,
             modifier = Modifier
@@ -866,7 +865,13 @@ fun HomeQuickPicks(
             }
 
             val likedSongsDeferred = async(Dispatchers.IO) {
-                if (isYouTubeLoggedIn()) currentAccountLikedSongs() else emptyList()
+                if (isYouTubeLoggedIn() && (forceReload || sessionLikedSongsPreview.isEmpty())) {
+                    currentAccountLikedSongs()
+                } else if (isYouTubeLoggedIn()) {
+                    sessionLikedSongsPreview
+                } else {
+                    emptyList()
+                }
             }
 
             chartsPageResult = chartsDeferred.await()
@@ -1012,6 +1017,8 @@ fun HomeQuickPicks(
     }
 
     LaunchedEffect(playEventType) {
+        if (loadedData && trendingList.isNotEmpty() && relatedPageResult != null) return@LaunchedEffect
+
         // Only reset trending-related data
         trendingList = emptyList()
         trending = null
@@ -1139,7 +1146,7 @@ fun HomeQuickPicks(
     }
 
     LaunchedEffect(selectedCountryCode) {
-        if (showCharts) {
+        if (showCharts && chartsPageResult == null && chartsPageInit == null) {
             chartsPageResult = Innertube.chartsPageComplete(
                 countryCode = selectedCountryCode.name
             )
@@ -1161,9 +1168,13 @@ fun HomeQuickPicks(
     }
 
     var refreshing by remember { mutableStateOf(false) }
+    var lastManualRefreshMs by remember { mutableStateOf(0L) }
 
     fun refresh() {
         if (refreshing || appRunningInBackground) return
+        val now = System.currentTimeMillis()
+        if (now - lastManualRefreshMs < 30_000L) return
+        lastManualRefreshMs = now
 
         refreshScope.launch(Dispatchers.IO) {
             if (appRunningInBackground) return@launch
@@ -2326,11 +2337,8 @@ fun HomeQuickPicks(
                         ) {
                             val sectionLabel = it.label
                             it.thumbnail?.takeIf { thumbnail -> thumbnail.isNotBlank() }?.let { thumbnail ->
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(thumbnail)
-                                        .crossfade(true)
-                                        .build(),
+                                ImageCacheFactory.AsyncImage(
+                                    thumbnailUrl = thumbnail,
                                     contentDescription = null,
                                     modifier = Modifier
                                         .size(40.dp)
@@ -2550,11 +2558,8 @@ private fun RemoteConfigQuickPicksCard(
         ) {
             if (notification.showImage) {
                 notification.image_url?.takeIf { it.isNotBlank() }?.let { image_url ->
-                    AsyncImage(
-                        model = ImageRequest.Builder(context)
-                            .data(image_url)
-                            .crossfade(true)
-                            .build(),
+                    ImageCacheFactory.AsyncImage(
+                        thumbnailUrl = image_url,
                         contentDescription = notification.title,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier

@@ -241,6 +241,8 @@ private fun filteredVideoAuthorNames(authors: List<Innertube.Info<*>>?): List<St
             val name = author.name?.trim().orEmpty()
             when {
                 name.isBlank() -> null
+                name.equals("null", ignoreCase = true) -> null
+                name.matches(Regex("\\s*([,&])\\s*")) -> null
                 author.endpoint != null -> name
                 name.contains(" views", ignoreCase = true) -> null
                 name.contains(" view", ignoreCase = true) -> null
@@ -359,15 +361,14 @@ val Innertube.SongItem.asMediaItem: MediaItem
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(info?.name)
-                .setArtist(authors?.filter {it.name?.matches(Regex("\\s*([,&])\\s*")) == false }?.joinToString(", ") { it.name ?: "" })
+                .setArtist(filteredVideoAuthorNames(authors).joinToString(", ").takeIf { it.isNotBlank() })
                 .setAlbumTitle(album?.name)
                 .setArtworkUri(thumbnail?.url?.toUri())
                 .setExtras(
                     bundleOf(
                         "albumId" to album?.endpoint?.browseId,
                         "durationText" to durationText,
-                        "artistNames" to authors?.filter { it.endpoint != null }
-                            ?.mapNotNull { it.name },
+                        "artistNames" to filteredVideoAuthorNames(authors),
                         "artistIds" to authors?.mapNotNull { it.endpoint?.browseId },
                         EXPLICIT_BUNDLE_TAG to explicit,
                         EXTRAS_KEY_IS_EXPLICIT to explicit,
@@ -382,7 +383,7 @@ val Innertube.SongItem.asSong: Song
     get() = Song (
         id = key,
         title = (if( explicit ) EXPLICIT_PREFIX else "").plus( info?.name ?: "" ),
-        artistsText = authors?.joinToString(", ") { it.name ?: "" },
+        artistsText = filteredVideoAuthorNames(authors).joinToString(", ").takeIf { it.isNotBlank() },
         durationText = durationText,
         thumbnailUrl = thumbnail?.url
     )

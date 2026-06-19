@@ -2,6 +2,7 @@ package app.it.fast4x.rimusic.ui.screens.player
 
 import android.annotation.SuppressLint
 import android.graphics.RenderEffect
+import android.os.SystemClock
 import androidx.compose.animation.ExperimentalAnimationApi
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.core.Animatable
@@ -504,9 +505,20 @@ private fun PlayerContent(
     var retryWithAlternateSourcesNonce by remember { mutableIntStateOf(0) }
     var lastSearchFallbackMediaId by remember { mutableStateOf<String?>(null) }
     var playbackErrorMessage by remember { mutableStateOf<String?>(null) }
+    var lastPlaybackErrorBannerKey by remember { mutableStateOf<String?>(null) }
+    var lastPlaybackErrorBannerMs by remember { mutableStateOf(0L) }
     val hasNetworkConnection = isNetworkAvailable(context)
     val currentErrorItem = binder.displayedMediaItem ?: binder.player.currentMediaItem
     val isCurrentSongDownloaded = currentSongDownloadState == Download.STATE_COMPLETED
+
+    fun shouldShowPlaybackErrorBanner(mediaId: String?, message: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val key = "${mediaId.orEmpty()}|$message"
+        if (key == lastPlaybackErrorBannerKey && now - lastPlaybackErrorBannerMs < 12_000L) return false
+        lastPlaybackErrorBannerKey = key
+        lastPlaybackErrorBannerMs = now
+        return true
+    }
 
     fun PagerState.offsetForPage(page: Int) = (currentPage - page) + currentPageOffsetFraction
 
@@ -539,6 +551,8 @@ private fun PlayerContent(
         object : Player.Listener {
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
                 playbackErrorMessage = null
+                lastPlaybackErrorBannerKey = null
+                lastPlaybackErrorBannerMs = 0L
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
@@ -555,13 +569,18 @@ private fun PlayerContent(
             override fun onPlayerError(playbackException: PlaybackException) {
                 playerError = playbackException
                 // Surface the error gracefully — never crash, just show the banner.
-                playbackErrorMessage = playbackExceptionMessage(
+                val message = playbackExceptionMessage(
                     context = context,
                     error = playbackException,
                     isLocal = binder.player.currentWindow?.mediaItem?.isLocal == true,
                     isDownloaded = isCurrentSongDownloaded,
                     isNetworkAvailable = hasNetworkConnection,
                 )
+                if (shouldShowPlaybackErrorBanner(binder.player.currentMediaItem?.mediaId, message)) {
+                    playbackErrorMessage = message
+                } else {
+                    Timber.d("Playback error banner suppressed for mediaId=%s", binder.player.currentMediaItem?.mediaId)
+                }
                 // If the error is a network error and we were mid-stream, ExoPlayer
                 // will retry automatically when the network comes back. We don't
                 // need to do anything here except show the error UI.

@@ -80,6 +80,7 @@ class PoTokenGenerator {
         // 8s leaves slack for a slow device without making the user wait too long before the
         // fallback chain (ANDROID_VR, etc.) takes over when the WebView hangs.
         private const val POTOKEN_TIMEOUT_MS = 8_000L
+        private const val MIN_HEALTHY_POTOKEN_LENGTH = 100
     }
 
     /**
@@ -129,6 +130,18 @@ class PoTokenGenerator {
                 Timber.tag(TAG).e(throwable, "Failed to obtain poToken, retrying")
                 return getWebClientPoToken(videoId = videoId, sessionId = sessionId, forceRecreate = true)
             }
+        }
+
+        if (playerPot.length < MIN_HEALTHY_POTOKEN_LENGTH || streamingPot.length < MIN_HEALTHY_POTOKEN_LENGTH) {
+            Timber.tag(TAG).w(
+                "Discarding undersized poToken: player=%d streaming=%d",
+                playerPot.length,
+                streamingPot.length
+            )
+            if (!hasBeenRecreated) {
+                return getWebClientPoToken(videoId = videoId, sessionId = sessionId, forceRecreate = true)
+            }
+            throw PoTokenException("Undersized poToken after WebView recreation")
         }
 
         Timber.tag(TAG).d("poToken generated successfully: player=${playerPot.take(20)}..., streaming=${streamingPot.take(20)}...")

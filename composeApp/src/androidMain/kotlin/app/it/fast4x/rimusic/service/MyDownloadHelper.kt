@@ -12,7 +12,6 @@ import androidx.media3.database.DatabaseProvider
 import androidx.media3.database.StandaloneDatabaseProvider
 import androidx.media3.datasource.cache.Cache
 import androidx.media3.datasource.cache.CacheSpan
-import androidx.media3.datasource.cache.LeastRecentlyUsedCacheEvictor
 import androidx.media3.datasource.cache.NoOpCacheEvictor
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.media3.exoplayer.offline.Download
@@ -40,7 +39,6 @@ import app.it.fast4x.rimusic.utils.autoDownloadSongWhenLikedKey
 import app.it.fast4x.rimusic.utils.download
 import app.it.fast4x.rimusic.utils.downloadSyncedLyrics
 import app.it.fast4x.rimusic.utils.exoPlayerCacheLocationKey
-import app.it.fast4x.rimusic.utils.exoPlayerCustomCacheKey
 import app.it.fast4x.rimusic.utils.exoPlayerDiskDownloadCacheMaxSizeKey
 import app.it.fast4x.rimusic.utils.getEnum
 import app.it.fast4x.rimusic.utils.isNetworkConnected
@@ -147,14 +145,10 @@ object MyDownloadHelper {
     private fun initDownloadCache(context: Context): SimpleCache {
         val cacheSize = context.preferences.getEnum(exoPlayerDiskDownloadCacheMaxSizeKey, ExoPlayerDiskCacheMaxSize.`2GB`)
 
-        val cacheEvictor = when(cacheSize) {
-            ExoPlayerDiskCacheMaxSize.Unlimited -> NoOpCacheEvictor()
-            ExoPlayerDiskCacheMaxSize.Custom -> {
-                val customCacheSize = context.preferences.getInt(exoPlayerCustomCacheKey, 32) * 1000 * 1000L
-                LeastRecentlyUsedCacheEvictor(customCacheSize)
-            }
-            else -> LeastRecentlyUsedCacheEvictor(cacheSize.bytes)
-        }
+        // Downloads are user-owned offline media, not disposable playback cache. Do not evict
+        // completed download spans on cache pressure; that leaves records marked downloaded while
+        // the underlying audio is partial/corrupt.
+        val cacheEvictor = NoOpCacheEvictor()
 
         val cacheDir = when(cacheSize) {
             ExoPlayerDiskCacheMaxSize.Disabled -> createTempDirectory(CACHE_DIRNAME).toFile()
@@ -196,7 +190,7 @@ object MyDownloadHelper {
         context.preferences.getString(CUSTOM_DOWNLOAD_PATH_KEY, "").orEmpty()
 
 private fun defaultDownloadRootDirectory(context: Context): File {
-    val selectedLocation = context.preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)
+    val selectedLocation = context.preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.Private)
     val preferredDir = when (selectedLocation) {
         ExoPlayerCacheLocation.System -> context.getExternalFilesDir(Environment.DIRECTORY_MUSIC) ?: context.filesDir
         ExoPlayerCacheLocation.Private -> context.filesDir

@@ -10,6 +10,7 @@ import android.os.Looper
 import androidx.annotation.DrawableRes
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -61,7 +62,7 @@ object ImageCacheFactory {
     val DISK_CACHE: DiskCache by lazy {
         val preferences = appContext().preferences
         val diskSize = preferences.getEnum(coilDiskCacheMaxSizeKey, CoilDiskCacheMaxSize.`128MB`)
-        val cacheLocation = preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.System)
+        val cacheLocation = preferences.getEnum(exoPlayerCacheLocationKey, ExoPlayerCacheLocation.Private)
         val cacheDir = when (cacheLocation) {
             ExoPlayerCacheLocation.System -> appContext().cacheDir
             ExoPlayerCacheLocation.Private -> appContext().filesDir
@@ -93,6 +94,8 @@ object ImageCacheFactory {
     private val cacheKeyMap = ConcurrentHashMap<String, String>()
     private val storeVersion = kotlinx.coroutines.flow.MutableStateFlow(0)
     private val mainHandler = Handler(Looper.getMainLooper())
+    @Volatile
+    private var connectivityRefreshScheduled = false
 
     internal object PlaylistThumbnailStore {
         private const val PREFS_NAME = "playlist_thumbnail_store"
@@ -399,6 +402,24 @@ object ImageCacheFactory {
         )
     }
 
+    private fun scheduleConnectivityRefresh() {
+        if (connectivityRefreshScheduled) return
+        connectivityRefreshScheduled = true
+        mainHandler.postDelayed(
+            {
+                connectivityRefreshScheduled = false
+                if (isNetworkConnected()) {
+                    cooldownMap.clear()
+                    retryScheduleMap.clear()
+                    storeVersion.value++
+                } else {
+                    scheduleConnectivityRefresh()
+                }
+            },
+            5_000L
+        )
+    }
+
     private fun markImageLoaded(thumbnailUrl: String?) {
         thumbnailUrl?.let {
             retryScheduleMap.remove(it)
@@ -423,6 +444,12 @@ object ImageCacheFactory {
             mutableStateOf(initialSource.first)
         }
         var currentQuality by remember(validUrl, version) { mutableStateOf(initialSource.second) }
+
+        LaunchedEffect(validUrl, decision.useNetwork, initialSource.first) {
+            if (validUrl != null && !decision.useNetwork && initialSource.first == null) {
+                scheduleConnectivityRefresh()
+            }
+        }
         
         
         val request = ImageRequest.Builder(appContext())
@@ -503,6 +530,12 @@ object ImageCacheFactory {
             mutableStateOf(initialSource.first)
         }
         var currentQuality by remember(validUrl, version) { mutableStateOf(initialSource.second) }
+
+        LaunchedEffect(validUrl, decision.useNetwork, initialSource.first) {
+            if (validUrl != null && !decision.useNetwork && initialSource.first == null) {
+                scheduleConnectivityRefresh()
+            }
+        }
         
         
         val request = ImageRequest.Builder(appContext())
@@ -583,6 +616,12 @@ object ImageCacheFactory {
             mutableStateOf(initialSource.first)
         }
         var currentQuality by remember(validUrl, version) { mutableStateOf(initialSource.second) }
+
+        LaunchedEffect(validUrl, decision.useNetwork, initialSource.first) {
+            if (validUrl != null && !decision.useNetwork && initialSource.first == null) {
+                scheduleConnectivityRefresh()
+            }
+        }
         
         val request = ImageRequest.Builder(appContext())
             .data(currentUrl)

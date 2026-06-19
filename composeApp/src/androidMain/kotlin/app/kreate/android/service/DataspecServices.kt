@@ -16,6 +16,8 @@ import app.kreate.android.utils.CharUtils
 import com.google.gson.Gson
 import com.grack.nanojson.JsonObject
 import io.ktor.client.statement.bodyAsText
+import io.ktor.client.plugins.ClientRequestException
+import io.ktor.client.plugins.ServerResponseException
 import it.fast4x.innertube.Innertube
 import it.fast4x.innertube.clients.YouTubeClient
 import it.fast4x.innertube.clients.YouTubeLocale
@@ -92,6 +94,10 @@ private const val LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY = "last_successful_yt_cli
 
 private val formatCache = mutableMapOf<String, Uri>()
 private val formatCacheLock = Any()
+private val forceFormatResolveIds = mutableSetOf<String>()
+private val sessionRecoveryLock = Any()
+private var lastSessionRecoveryMs = 0L
+private var playbackAuthQuarantinedUntilMs = 0L
 
 private val FALLBACK_CLIENTS = listOf(
     YouTubeClient.ANDROID_VR_1_43_32,
@@ -465,7 +471,7 @@ suspend fun getIosFormatUrl(
     connectionMetered: Boolean
 ): Uri {
     if (isYouTubeLoggedIn()) {
-        YouTubeSessionStore.applyCurrentSession()
+        applyPlaybackSessionForResolver()
         val authenticated = runCatching {
             val poToken = PoTokenGenerator.shared
                 .getWebClientPoToken(videoId, Store.getIosVisitorData())
@@ -502,14 +508,14 @@ suspend fun getInnertubePlayerFormatUrl(
     audioQualityFormat: AudioQualityFormat,
     connectionMetered: Boolean
 ): Uri {
-    YouTubeSessionStore.applyCurrentSession()
+    applyPlaybackSessionForResolver()
 
     val locale = YouTubeLocale(
         gl = java.util.Locale.getDefault().country.takeIf { it.isNotEmpty() } ?: "US",
         hl = java.util.Locale.getDefault().language.takeIf { it.isNotEmpty() } ?: "en"
     )
-    val visitorData = Store.getIosVisitorData().ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
-    val isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
+    var visitorData = Store.getIosVisitorData().ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
+    var isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
     val prefs = appContext().preferences
     val rememberedClientKey = if (isLoggedIn) LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY else LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY
     val rememberedClientName = prefs.getString(rememberedClientKey, null)
@@ -589,6 +595,13 @@ suspend fun getInnertubePlayerFormatUrl(
             if (firstError == null) firstError = error
             lastFailureReason = "${ytClient.clientName}: ${error::class.simpleName}: ${error.message}"
             Timber.w(error, "Innertube client %s failed for %s", ytClient.clientName, videoId)
+            if (isLoggedIn && error.looksLikeBrokenYouTubeSession()) {
+                invalidateYouTubePlaybackSession(videoId, ytClient.clientName, error)
+                isLoggedIn = false
+                visitorData = Store.getIosVisitorData().ifBlank { Innertube.DEFAULT_VISITOR_DATA }
+                poToken = null
+                poTokenAttempted = false
+            }
         }.getOrNull() ?: return@forEachIndexed
 
         Timber.d(
@@ -663,15 +676,15 @@ suspend fun getInnertubePlayerFormatUrl(
 
 @UnstableApi
 suspend fun getInnertubeVideoStream(videoId: String): ResolvedVideoStream {
-    YouTubeSessionStore.applyCurrentSession()
+    applyPlaybackSessionForResolver()
 
     val locale = YouTubeLocale(
         gl = java.util.Locale.getDefault().country.takeIf { it.isNotEmpty() } ?: "US",
         hl = java.util.Locale.getDefault().language.takeIf { it.isNotEmpty() } ?: "en"
     )
-    val visitorData = Store.getIosVisitorData()
+    var visitorData = Store.getIosVisitorData()
         .ifBlank { Innertube.visitorData.ifBlank { Innertube.DEFAULT_VISITOR_DATA } }
-    val isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
+    var isLoggedIn = !Innertube.cookie.isNullOrBlank() && Innertube.cookie?.contains("SAPISID") == true
     val prefs = appContext().preferences
     val rememberedClientKey =
         if (isLoggedIn) LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY else LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY
@@ -739,10 +752,17 @@ suspend fun getInnertubeVideoStream(videoId: String): ResolvedVideoStream {
                     )
                 }?.getOrThrow() ?: throw IllegalStateException("Null Innertube video response")
             }
-        }.onFailure {
-            if (firstError == null) firstError = it
-            lastFailureReason = "${ytClient.clientName}: ${it.message}"
-            Timber.w(it, "Video Innertube client %s failed for %s", ytClient.clientName, videoId)
+        }.onFailure { error ->
+            if (firstError == null) firstError = error
+            lastFailureReason = "${ytClient.clientName}: ${error.message}"
+            Timber.w(error, "Video Innertube client %s failed for %s", ytClient.clientName, videoId)
+            if (isLoggedIn && error.looksLikeBrokenYouTubeSession()) {
+                invalidateYouTubePlaybackSession(videoId, ytClient.clientName, error)
+                isLoggedIn = false
+                visitorData = Store.getIosVisitorData().ifBlank { Innertube.DEFAULT_VISITOR_DATA }
+                poToken = null
+                poTokenAttempted = false
+            }
         }.getOrNull() ?: return@forEachIndexed
 
         if (playerResponse.playabilityStatus?.status != "OK" || !playerResponse.hasPlayableVideoFormats()) {
@@ -1047,6 +1067,86 @@ private fun formatCacheKey(
     connectionMetered: Boolean
 ): String = "$videoId:${audioQualityFormat.name}:$connectionMetered"
 
+fun invalidateFormatCache(videoId: String? = null) {
+    synchronized(formatCacheLock) {
+        if (videoId.isNullOrBlank()) {
+            val count = formatCache.size
+            formatCache.clear()
+            forceFormatResolveIds.clear()
+            Timber.w("Cleared all cached stream URLs (%d entries)", count)
+        } else {
+            val prefix = "$videoId:"
+            val removed = formatCache.keys
+                .filter { it.startsWith(prefix) }
+                .onEach { formatCache.remove(it) }
+                .size
+            forceFormatResolveIds.add(videoId)
+            if (removed > 0) {
+                Timber.w("Cleared %d cached stream URL(s) for %s", removed, videoId)
+            }
+        }
+    }
+}
+
+private fun consumeForceFormatResolve(videoId: String): Boolean =
+    synchronized(formatCacheLock) {
+        forceFormatResolveIds.remove(videoId)
+    }
+
+private fun Throwable.httpStatusCode(): Int? = when (this) {
+    is ClientRequestException -> response.status.value
+    is ServerResponseException -> response.status.value
+    else -> cause?.httpStatusCode()
+}
+
+private fun Throwable.looksLikeBrokenYouTubeSession(): Boolean {
+    val status = httpStatusCode() ?: return false
+    val text = buildString {
+        append(message.orEmpty())
+        append(' ')
+        append(cause?.message.orEmpty())
+    }
+    return status == 400 ||
+        status == 401 ||
+        status == 403 ||
+        (status in 500..599 && text.contains("backendError", ignoreCase = true))
+}
+
+private fun applyPlaybackSessionForResolver() {
+    if (System.currentTimeMillis() < playbackAuthQuarantinedUntilMs) {
+        YouTubeSessionStore.applyPlaybackNoAuth(Store.getIosVisitorData().ifBlank { Innertube.DEFAULT_VISITOR_DATA })
+    } else {
+        YouTubeSessionStore.applyCurrentSession()
+    }
+}
+
+private fun invalidateYouTubePlaybackSession(videoId: String, clientName: String, cause: Throwable) {
+    val now = System.currentTimeMillis()
+    synchronized(sessionRecoveryLock) {
+        if (now - lastSessionRecoveryMs < 120_000L) {
+            Timber.w(cause, "YouTube session already invalidated recently; skipping duplicate reset for %s", videoId)
+            return
+        }
+        lastSessionRecoveryMs = now
+    }
+
+    Timber.w(
+        cause,
+        "Invalidating YouTube playback session after %s failed for %s with HTTP %s",
+        clientName,
+        videoId,
+        cause.httpStatusCode()
+    )
+    playbackAuthQuarantinedUntilMs = System.currentTimeMillis() + 30 * 60 * 1000L
+    invalidateFormatCache(videoId)
+    Store.invalidatePlaybackIdentity()
+    YouTubeSessionStore.applyPlaybackNoAuth(Store.getIosVisitorData().ifBlank { Innertube.DEFAULT_VISITOR_DATA })
+    appContext().preferences.edit()
+        .remove(LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY)
+        .remove(LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY)
+        .apply()
+}
+
 private fun Uri.isExpiredSoon(): Boolean {
     val expiresAt = getQueryParameter("expire")?.toLongOrNull()?.times(1000) ?: return false
     return System.currentTimeMillis() >= expiresAt - FORMAT_CACHE_EXPIRY_SAFETY_MS
@@ -1063,13 +1163,20 @@ fun DataSpec.process(
     }
 
     val cacheKey = formatCacheKey(videoId, audioQualityFormat, connectionMetered)
+    val forceNetwork = consumeForceFormatResolve(videoId)
     var formatUri = synchronized(formatCacheLock) {
-        formatCache[cacheKey]?.takeUnless { cachedUri ->
+        if (forceNetwork) {
+            formatCache.remove(cacheKey)
+            Timber.w("Forcing fresh stream URL resolution for %s", videoId)
+            null
+        } else {
+            formatCache[cacheKey]?.takeUnless { cachedUri ->
             cachedUri.isExpiredSoon().also { expired ->
                 if (expired) {
                     Timber.d("Cached stream URL expired/near-expired for %s; resolving again", videoId)
                     formatCache.remove(cacheKey)
                 }
+            }
             }
         }
     }

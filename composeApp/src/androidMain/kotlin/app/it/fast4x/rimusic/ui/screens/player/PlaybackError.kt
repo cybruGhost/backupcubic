@@ -56,6 +56,7 @@ import timber.log.Timber
 import android.content.Context
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.os.SystemClock
 import java.io.InterruptedIOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -84,6 +85,19 @@ private fun Throwable.isNetworkFailure(): Boolean =
             cause.message?.contains("ENETUNREACH", ignoreCase = true) == true ||
             cause.message?.contains("EAI_NODATA", ignoreCase = true) == true
     }
+
+private object PlaybackErrorToastGate {
+    private var lastMessage: String? = null
+    private var lastShownMs: Long = 0L
+
+    fun shouldShow(message: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        if (message == lastMessage && now - lastShownMs < 12_000L) return false
+        lastMessage = message
+        lastShownMs = now
+        return true
+    }
+}
 
 fun playbackExceptionMessage(
     context: Context,
@@ -144,8 +158,12 @@ fun PlayerError(error: PlaybackException) {
     )
 
     LaunchedEffect(error, message) {
-        Timber.w("Playback error shown: ${error.cause?.cause?.javaClass?.simpleName ?: error.errorCodeName}")
-        Toaster.w(message)
+        if (PlaybackErrorToastGate.shouldShow(message)) {
+            Timber.w("Playback error shown: ${error.cause?.cause?.javaClass?.simpleName ?: error.errorCodeName}")
+            Toaster.w(message)
+        } else {
+            Timber.d("Playback error toast suppressed: %s", message)
+        }
     }
 
 }

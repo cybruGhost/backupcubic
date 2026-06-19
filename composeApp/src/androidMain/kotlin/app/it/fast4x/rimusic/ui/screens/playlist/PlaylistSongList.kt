@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBars
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.text.BasicText
 import androidx.compose.foundation.text.BasicTextField
@@ -985,10 +986,10 @@ fun PlaylistSongList(
                     }
                 }
 
-                items(
+                itemsIndexed(
                     items = playlistSongs,
-                    key = Innertube.SongItem::key
-                ) { ytSong ->
+                    key = { index, ytSong -> "${ytSong.key.ifBlank { "song" }}_$index" }
+                ) { _, ytSong ->
                     val isLocal by remember { derivedStateOf { ytSong.asMediaItem.isLocal } }
                     val isDownloaded = !isLocal && isDownloadedSong( ytSong.key )
 

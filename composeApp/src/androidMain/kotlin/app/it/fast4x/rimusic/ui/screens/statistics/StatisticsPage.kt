@@ -92,6 +92,7 @@ import app.it.fast4x.rimusic.ui.styling.px
 import app.it.fast4x.rimusic.ui.styling.shimmer
 import app.it.fast4x.rimusic.utils.UpdateYoutubeAlbum
 import app.it.fast4x.rimusic.utils.UpdateYoutubeArtist
+import app.it.fast4x.rimusic.utils.PlaybackContextStore
 import app.it.fast4x.rimusic.utils.asMediaItem
 import app.it.fast4x.rimusic.utils.center
 import app.it.fast4x.rimusic.utils.color
@@ -235,6 +236,7 @@ fun StatisticsPage(
         StatisticsCategory.Albums to StatisticsCategory.Albums.text,
         StatisticsCategory.Playlists to StatisticsCategory.Playlists.text
     )
+    val statisticsPeriodText = statisticsType.text
 
     // Calcul of real listening time for the selected period (Songs category)
     var totalPlayTimesSongs by remember { mutableLongStateOf(0L) }
@@ -277,7 +279,7 @@ fun StatisticsPage(
                     span = { GridItemSpan(maxLineSpan) }
                 ) {
                     HeaderWithIcon(
-                        title = statisticsType.text,
+                        title = statisticsPeriodText,
                         iconId = statisticsType.iconId,
                         enabled = true,
                         showIcon = true,
@@ -307,7 +309,7 @@ fun StatisticsPage(
                             StatisticsCategory.Playlists -> emptyList()
                         },
                         totalTimeText = formatAsTime(totalPlayTimes),
-                        periodText = statisticsType.text
+                        periodText = statisticsPeriodText
                     )
                 }
 
@@ -417,6 +419,10 @@ fun StatisticsPage(
                                         },
                                         onClick = {
                                             binder?.stopRadio()
+                                            PlaybackContextStore.set(
+                                                "Playing from Statistics",
+                                                statisticsPeriodText
+                                            )
                                             binder?.player?.forcePlayAtIndex(
                                                 songs.map(Song::asMediaItem),
                                                 it

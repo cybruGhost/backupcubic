@@ -406,6 +406,7 @@ fun DataSettings() {
                         CacheSpaceIndicator(cacheType = CacheType.DownloadedSongs, horizontalPadding = 20.dp)
                         
                         SettingsDescription(text = "${Formatter.formatShortFileSize(context, diskDownloadCacheSize)} ${stringResource(R.string.used)} (${if (exoPlayerDiskDownloadCacheMaxSize.bytes > 0) "${diskDownloadCacheSize * 100 / exoPlayerDiskDownloadCacheMaxSize.bytes}%" else stringResource(R.string.unlimited)})")
+                        SettingsDescription(text = "Downloaded songs are protected offline media. Cubic will not auto-delete completed downloads when storage is low.")
                         }
                     }
 
