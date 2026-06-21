@@ -8,7 +8,6 @@ import androidx.compose.ui.util.fastMap
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.offline.Download
 import androidx.media3.session.LibraryResult
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaLibraryService.MediaLibrarySession
@@ -150,7 +149,7 @@ override fun onSearch(
                 downloadHelper.getDownloadManager(context)
                 val downloads = downloadHelper.downloads.value
                 database.songTable.all(excludeHidden = false).map { fl ->
-                    fl.fastFilter { s -> downloads[s.id]?.state == Download.STATE_COMPLETED }
+                    fl.fastFilter { s -> downloadHelper.isSongDownloaded(s.id) }
                         .sortedByDescending { s -> downloads[s.id]?.updateTimeMs ?: 0L }
                 }.first()
             }
@@ -428,7 +427,7 @@ override fun onConnect(
                     val shuffleItem = MediaSessionConstants.shuffleItem(context, MediaSessionConstants.ID_SONGS_DOWNLOADED_SHUFFLE)
                     downloadHelper.getDownloadManager(context)
                     val downloads = downloadHelper.downloads.value
-                    val songs = database.songTable.all(excludeHidden = false).first().fastFilter { song -> downloads[song.id]?.state == Download.STATE_COMPLETED }.sortedByDescending { song -> downloads[song.id]?.updateTimeMs ?: 0L }.map { song -> MediaItemMapper.mapSongToMediaItem(song, parentId) }
+                    val songs = database.songTable.all(excludeHidden = false).first().fastFilter { song -> downloadHelper.isSongDownloaded(song.id) }.sortedByDescending { song -> downloads[song.id]?.updateTimeMs ?: 0L }.map { song -> MediaItemMapper.mapSongToMediaItem(song, parentId) }
                     listOf(shuffleItem) + songs
                 }
                 MediaSessionConstants.ID_SONGS_ONDEVICE -> {
@@ -776,7 +775,7 @@ override fun onConnect(
             }
             if (mediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_SONGS_DOWNLOADED_SHUFFLE) {
                 val downloads = downloadHelper.downloads.value
-                val allSongs = database.songTable.all(excludeHidden = false).first().fastFilter { song -> downloads[song.id]?.state == Download.STATE_COMPLETED }.shuffled()
+                val allSongs = database.songTable.all(excludeHidden = false).first().fastFilter { song -> downloadHelper.isSongDownloaded(song.id) }.shuffled()
                 if (allSongs.isNotEmpty()) return@future MediaSession.MediaItemsWithStartPosition(allSongs.map { song -> MediaItemMapper.mapSongToMediaItem(song) }, 0, 0)
             }
             if (mediaItems.firstOrNull()?.mediaId == MediaSessionConstants.ID_SONGS_ONDEVICE_SHUFFLE) {
@@ -852,7 +851,7 @@ override fun onConnect(
                     MediaSessionConstants.ID_SONGS_FAVORITES -> { songId = paths.getOrNull(1).orEmpty(); queryList = database.songTable.allFavorites().first().reversed() }
                     MediaSessionConstants.ID_SONGS_DOWNLOADED -> {
                         val downloads = downloadHelper.downloads.value
-                        queryList = database.songTable.all(excludeHidden = false).first().fastFilter { song -> downloads[song.id]?.state == Download.STATE_COMPLETED }.sortedByDescending { song -> downloads[song.id]?.updateTimeMs ?: 0L }
+                        queryList = database.songTable.all(excludeHidden = false).first().fastFilter { song -> downloadHelper.isSongDownloaded(song.id) }.sortedByDescending { song -> downloads[song.id]?.updateTimeMs ?: 0L }
                         songId = paths.getOrNull(1).orEmpty()
                     }
                     MediaSessionConstants.ID_SONGS_ONDEVICE -> { songId = paths.getOrNull(1).orEmpty(); queryList = database.songTable.allOnDevice().first() }
@@ -957,6 +956,6 @@ override fun onConnect(
     }
     private fun getCountDownloadedSongs(): Flow<Int> {
         downloadHelper.getDownloadManager(context)
-        return downloadHelper.downloads.map { dm -> dm.filter { ite -> ite.value.state == Download.STATE_COMPLETED }.size }
+        return downloadHelper.downloads.map { dm -> dm.filter { ite -> downloadHelper.isSongDownloaded(ite.key) }.size }
     }
 }

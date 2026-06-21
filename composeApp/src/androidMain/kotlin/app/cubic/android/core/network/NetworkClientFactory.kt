@@ -143,64 +143,71 @@ object NetworkClientFactory {
     ): Boolean {
         fun Request.Builder.applyPlaybackHeaders(): Request.Builder = apply {
             header("User-Agent", userAgent)
+            header("Accept", "*/*")
+            header("Accept-Encoding", "identity")
             origin?.let { header("Origin", it) }
             referer?.let { header("Referer", it) }
         }
 
         fun responseIsUsable(response: okhttp3.Response): Boolean {
-                val contentType = response.header("Content-Type").orEmpty()
-                val contentTypeMatches = expectedContentTypePrefix.isNullOrBlank() ||
-                    contentType.isBlank() ||
-                    contentType.startsWith(expectedContentTypePrefix, ignoreCase = true) ||
-                    (expectedContentTypePrefix == "audio/" && contentType.contains("audio", ignoreCase = true))
-            return response.code in 200..299 && contentTypeMatches
+            if (response.code == 416) return true
+            if (response.code !in 200..399) return false
+
+            val contentType = response.header("Content-Type").orEmpty()
+            val contentTypeMatches = expectedContentTypePrefix.isNullOrBlank() ||
+                contentType.isBlank() ||
+                contentType.startsWith(expectedContentTypePrefix, ignoreCase = true) ||
+                contentType.startsWith("application/octet-stream", ignoreCase = true) ||
+                (expectedContentTypePrefix == "audio/" && contentType.contains("audio", ignoreCase = true)) ||
+                (expectedContentTypePrefix == "video/" && contentType.contains("video", ignoreCase = true))
+            return contentTypeMatches
+        }
+
+        fun queryParameter(name: String): String =
+            runCatching {
+                URI(streamUrl).rawQuery
+                    ?.split("&")
+                    ?.firstOrNull { it.substringBefore("=").equals(name, ignoreCase = true) }
+                    ?.substringAfter("=", "")
+                    .orEmpty()
+            }.getOrDefault("")
+
+        fun probeRanges(): List<String> {
+            val clientName = queryParameter("c").uppercase()
+            return if (clientName.startsWith("WEB")) {
+                listOf("bytes=0-0", "bytes=262144-262145", "bytes=1048576-1048577")
+            } else {
+                listOf("bytes=0-0")
+            }
         }
 
         return try {
             val client = getClientWithTimeout(3, 4)
-            val headRequest = Request.Builder()
-                .url(streamUrl)
-                .head()
-                .applyPlaybackHeaders()
-                .build()
+            for (range in probeRanges()) {
+                val rangeRequest = Request.Builder()
+                    .url(streamUrl)
+                    .get()
+                    .header("Range", range)
+                    .applyPlaybackHeaders()
+                    .build()
 
-            val headResult = client.newCall(headRequest).execute().use { response ->
-                if (responseIsUsable(response)) {
-                    true
-                } else {
-                    Timber.w(
-                        "Stream HEAD validation returned code=%d contentType=%s expected=%s for URL: %s",
-                        response.code,
-                        response.header("Content-Type").orEmpty(),
-                        expectedContentTypePrefix,
-                        streamUrl.redactedUrl()
-                    )
-                    false
+                val isUsable = client.newCall(rangeRequest).execute().use { response ->
+                    val usable = responseIsUsable(response)
+                    if (!usable) {
+                        Timber.w(
+                            "Stream range validation failed code=%d contentType=%s expected=%s range=%s for URL: %s",
+                            response.code,
+                            response.header("Content-Type").orEmpty(),
+                            expectedContentTypePrefix,
+                            range,
+                            streamUrl.redactedUrl()
+                        )
+                    }
+                    usable
                 }
+                if (!isUsable) return false
             }
-            if (headResult) return true
-
-            // Some googlevideo hosts reject HEAD while accepting normal range requests.
-            val rangeRequest = Request.Builder()
-                .url(streamUrl)
-                .get()
-                .header("Range", "bytes=0-1")
-                .applyPlaybackHeaders()
-                .build()
-
-            client.newCall(rangeRequest).execute().use { response ->
-                val isUsable = responseIsUsable(response)
-                if (!isUsable) {
-                    Timber.w(
-                        "Stream range validation failed code=%d contentType=%s expected=%s for URL: %s",
-                        response.code,
-                        response.header("Content-Type").orEmpty(),
-                        expectedContentTypePrefix,
-                        streamUrl.redactedUrl()
-                    )
-                }
-                isUsable
-            }
+            true
         } catch (e: Exception) {
             Timber.e(e, "validateStreamUrl exception for URL: %s", streamUrl.redactedUrl())
             false

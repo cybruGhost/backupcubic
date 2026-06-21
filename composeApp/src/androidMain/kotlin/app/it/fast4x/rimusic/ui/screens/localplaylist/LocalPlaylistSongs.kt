@@ -206,7 +206,7 @@ fun LocalPlaylistSongs(
 
     val itemSelector = ItemSelector<Song>()
 
-    fun getSongs() = itemSelector.ifEmpty { itemsOnDisplay }
+    fun getSongs() = if (itemSelector.isActive) itemSelector.toList() else itemsOnDisplay
     fun getMediaItems() = getSongs().map( Song::asMediaItem )
 
     val search = Search(lazyListState)

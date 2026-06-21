@@ -46,8 +46,8 @@ fun downloadedStateMedia(mediaId: String): DownloadedStateMedia {
     }
 
     val isDownloaded by remember(mediaId) {
-        MyDownloadHelper.getDownload(mediaId).map { download ->
-            download?.state == Download.STATE_COMPLETED
+        MyDownloadHelper.getDownload(mediaId).map {
+            MyDownloadHelper.isSongDownloaded(mediaId)
         }
     }.collectAsState(initial = false, context = Dispatchers.IO)
     val isDownloadCached = remember(mediaId, binder?.downloadCache?.cacheSpace) {
@@ -82,7 +82,7 @@ fun getDownloadStateMedia(
 
     val isDownloaded by remember(songId) {
         MyDownloadHelper.getDownload(songId)
-            .map { download -> download?.state == Download.STATE_COMPLETED }
+            .map { MyDownloadHelper.isSongDownloaded(songId) }
     }.collectAsState(initial = false, context = Dispatchers.IO)
     val isDownloadCached = remember(songId, binder.downloadCache.cacheSpace) {
         MyDownloadHelper.isDownloadCached(songId)

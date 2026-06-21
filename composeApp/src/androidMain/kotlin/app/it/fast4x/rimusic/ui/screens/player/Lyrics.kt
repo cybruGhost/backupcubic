@@ -1855,7 +1855,7 @@ fun SelectLyricFromTrack(
                             if (showSecondLine || translateEnabled || romanization != Romanization.Off) {
                                 val mutState = remember { mutableStateOf("") }
                                 translateLyricsWithRomanization(mutState, trimmedSentence, true, languageDestination)()
-                                translatedText = mutState.value
+                                translatedText = mutState.value.takeIf { it.isNotBlank() } ?: trimmedSentence
                             } else {
                                     translatedText = trimmedSentence
                             }
@@ -2398,7 +2398,7 @@ fun SelectLyricFromTrack(
                     if (showSecondLine || translateEnabled || romanization != Romanization.Off) {
                         val mutState = remember { mutableStateOf("") }
                         translateLyricsWithRomanization(mutState, text, false, languageDestination)()
-                        translatedText = mutState.value
+                        translatedText = mutState.value.takeIf { it.isNotBlank() } ?: text
                     } else {
                         translatedText = text
                     }
@@ -2637,7 +2637,7 @@ fun SelectLyricFromTrack(
                 }
             }
 
-            if ((text == null && !isError) || showPlaceholder) {
+            if (text == null && !isError) {
                 Column(
                     horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier

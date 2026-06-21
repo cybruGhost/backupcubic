@@ -219,6 +219,7 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import app.kreate.android.me.knighthat.utils.Toaster
 import timber.log.Timber
+import java.io.EOFException
 import java.io.InterruptedIOException
 import java.io.File
 import java.io.FileOutputStream
@@ -329,6 +330,9 @@ class PlayerServiceModern : MediaLibraryService(),
     private var lastEndedRecoveryMs = 0L
     private var lastStreamRefreshMediaId: String? = null
     private var lastStreamRefreshMs = 0L
+    private var pendingStreamRefreshValidationMediaId: String? = null
+    private var refreshValidatedPlayingMediaId: String? = null
+    private val streamRecoveryState = mutableMapOf<String, Pair<Int, Long>>()
     private var currentSongRetryCount = 0
     private var resumeOnNetworkRestore = false
     private var pauseTriggeredByNetworkWait = false
@@ -443,12 +447,14 @@ class PlayerServiceModern : MediaLibraryService(),
 
         coroutineScope.launch {
             connectivityObserver.networkStatus.collect { isAvailable ->
-                isNetworkAvailable.value = isAvailable
-                Timber.d("PlayerServiceModern network status: $isAvailable")
-                if (isAvailable && waitingForNetwork.value) {
-                    applyRecoveryDecision(
-                        playbackRecoveryHelper.onNetworkRestored(recoverySnapshot())
-                    )
+                withContext(Dispatchers.Main.immediate) {
+                    isNetworkAvailable.value = isAvailable
+                    Timber.d("PlayerServiceModern network status: $isAvailable")
+                    if (isAvailable && waitingForNetwork.value) {
+                        applyRecoveryDecision(
+                            playbackRecoveryHelper.onNetworkRestored(recoverySnapshot())
+                        )
+                    }
                 }
             }
         }
@@ -730,8 +736,8 @@ class PlayerServiceModern : MediaLibraryService(),
             releasePlaybackWakeLock()
             if (waitingForNetwork.value) {
                 // Keep restoration armed. Network-recovery pauses also trigger this callback;
-                // clearing the flags here makes playback stay paused after the stream returns.
-                pauseTriggeredByNetworkWait = false
+                // clearing this guard here makes playback stay paused after the stream returns.
+                pauseTriggeredByNetworkWait = true
             }
         }
     } catch (e: Exception) {
@@ -1053,10 +1059,16 @@ private fun syncPlaybackWakeLockState() {
         if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
             consecutiveErrorSkipCount = 0
         }
-        waitingForNetwork.value = false
-        resumeOnNetworkRestore = false
-        pauseTriggeredByNetworkWait = false
-        networkRecoveryMediaId = null
+        val transitionMediaId = mediaItem?.mediaId
+        val keepNetworkRecovery = waitingForNetwork.value &&
+            !networkRecoveryMediaId.isNullOrBlank() &&
+            transitionMediaId == networkRecoveryMediaId
+        if (!keepNetworkRecovery) {
+            waitingForNetwork.value = false
+            resumeOnNetworkRestore = false
+            pauseTriggeredByNetworkWait = false
+            networkRecoveryMediaId = null
+        }
         lastStreamRefreshMediaId = null
         lastStreamRefreshMs = 0L
         capturePlaybackSnapshot()
@@ -1078,9 +1090,7 @@ private fun syncPlaybackWakeLockState() {
                     presenceSnapshot.isPlaying,
                     presenceSnapshot.position,
                     presenceSnapshot.duration,
-                    now,
-                    getCurrentPosition = { currentPresenceSnapshot().position },
-                    isPlayingProvider = { currentPresenceSnapshot().isPlaying }
+                    now
                 )
             }
         }
@@ -1130,9 +1140,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 presenceSnapshot.isPlaying,
                 presenceSnapshot.position,
                 presenceSnapshot.duration,
-                now,
-                getCurrentPosition = { currentPresenceSnapshot().position },
-                isPlayingProvider = { currentPresenceSnapshot().isPlaying }
+                now
             )
         }
     }
@@ -1152,8 +1160,11 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         val isInvalidResponse =
             invalidResponseCodes.isNotEmpty() ||
                 errorCauses.any { it.javaClass.simpleName == "InvalidResponseCodeException" }
+        val isUnexpectedStreamEnd = error.isUnexpectedStreamEnd()
         val isRefreshableStreamFailure =
             isInvalidResponse ||
+                isUnexpectedStreamEnd ||
+                shouldRecoverCurrentSong(error, deepestCause) ||
                 error.errorCode == PlaybackException.ERROR_CODE_IO_UNSPECIFIED ||
                 error.errorCode == PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED
         val isPlayableFormatMissing = errorCauses.any { it is PlayableFormatNotFoundException }
@@ -1208,19 +1219,28 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             val failedSource = PlaybackSourceMonitor.status.value
                 .takeIf { it.videoId == currentMediaId }
                 ?.source
-            if (invalidResponseCodes.any { it == 403 || it == 410 || it == 416 }) {
-                invalidateFormatCache(currentMediaId)
-            }
+            invalidateFormatCache(currentMediaId)
+            pendingStreamRefreshValidationMediaId = currentMediaId
             Timber.w(
-                "Refreshable stream failure for %s from source=%s - retrying Innertube resolver",
+                "Refreshable stream failure for %s from source=%s unexpectedEnd=%s http=%s - retrying Innertube resolver",
                 currentMediaId,
-                failedSource?.label
+                failedSource?.label,
+                isUnexpectedStreamEnd,
+                invalidResponseCodes.joinToString(",").ifBlank { "none" }
             )
         }
 
         if (isRefreshableStreamFailure && currentMediaId.isNotBlank() && currentSongRetryCount < maxCurrentSongRetries) {
             val shouldAutoResume = player.playWhenReady || player.isPlaying || player.playbackState == Player.STATE_BUFFERING
+            if (!markAndCheckStreamRecoveryAllowance(currentMediaId)) {
+                Timber.w("Stream refresh allowance exhausted for %s", currentMediaId)
+                currentSongRetryCount = maxCurrentSongRetries
+            } else {
             currentSongRetryCount++
+            val resumePositionMs = maxOf(
+                lastPlaybackPositionMs,
+                runCatching { player.currentPosition }.getOrDefault(0L)
+            ).coerceAtLeast(0L)
             val now = SystemClock.elapsedRealtime()
             val cooldownMs =
                 if (lastStreamRefreshMediaId == currentMediaId) {
@@ -1239,7 +1259,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 delayMs
             )
             showSmartMessage("Refreshing stream link...")
-            runCatching { player.pause() }
+            pendingStreamRefreshValidationMediaId = currentMediaId
             player.playWhenReady = shouldAutoResume
             val prepared = player.safePrepare()
             player.playWhenReady = shouldAutoResume
@@ -1250,7 +1270,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             handler.postDelayed({
                 if (!isServiceReady) return@postDelayed
                 if (player.currentMediaItem?.mediaId != currentMediaId) return@postDelayed
-                player.safeSeekTo(lastPlaybackPositionMs.coerceAtLeast(0L))
+                player.safeSeekTo(resumePositionMs)
                 val stillWantsResume = player.playWhenReady || player.isPlaying
                 if (shouldAutoResume && stillWantsResume) {
                     player.playWhenReady = true
@@ -1259,6 +1279,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
                 }
             }, delayMs)
             return
+            }
         }
 
         if (isRefreshableStreamFailure || isPlayableFormatMissing) {
@@ -1325,7 +1346,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         val skipped = player.skipBrokenMediaItem("onPlayerError ${error.errorCodeName}")
         if (skipped && prev != null) {
             showSmartMessage(
-                getString(R.string.skip_media_on_error_message, prev.mediaMetadata.title)
+                skipMediaOnErrorMessage(prev.mediaMetadata.title)
             )
         } else if (!skipped) {
             applyRecoveryDecision(
@@ -1347,6 +1368,16 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
         return positionMs >= 30_000L && remainingMs <= 12_000L
     }
 
+    private fun skipMediaOnErrorMessage(title: CharSequence?): String {
+        val safeTitle = title?.toString()?.takeIf { it.isNotBlank() } ?: "Unknown song"
+        return runCatching {
+            getString(R.string.skip_media_on_error_message, safeTitle)
+        }.getOrElse { error ->
+            Timber.w(error, "Invalid skip_media_on_error_message format for title=%s", safeTitle)
+            "An error occurred while playing $safeTitle"
+        }
+    }
+
     private fun skipOrPause(reason: String) {
         if (!preferences.getBoolean(skipMediaOnErrorKey, true)) {
             applyRecoveryDecision(PlaybackRecoveryHelper.Decision.Pause(reason))
@@ -1354,7 +1385,7 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             val prev = player.currentMediaItem
             val skipped = player.skipBrokenMediaItem(reason)
             if (skipped && prev != null) {
-                showSmartMessage(getString(R.string.skip_media_on_error_message, prev.mediaMetadata.title))
+                showSmartMessage(skipMediaOnErrorMessage(prev.mediaMetadata.title))
             }
         } else {
             applyRecoveryDecision(PlaybackRecoveryHelper.Decision.Pause(reason))
@@ -1409,14 +1440,55 @@ override fun onIsPlayingChanged(isPlaying: Boolean) {
             messageBlob.contains("Broken pipe", ignoreCase = true)
     }
 
+    private fun Throwable.isUnexpectedStreamEnd(): Boolean =
+        generateSequence(this) { it.cause }.any { cause ->
+            cause is EOFException ||
+                cause.javaClass.simpleName.equals("EOFException", ignoreCase = true) ||
+                cause.message?.contains("EOF", ignoreCase = true) == true ||
+                cause.message?.contains("end of file", ignoreCase = true) == true ||
+                cause.message?.contains("unexpected end", ignoreCase = true) == true
+        }
+
+    private fun markAndCheckStreamRecoveryAllowance(mediaId: String): Boolean {
+        val now = SystemClock.elapsedRealtime()
+        val (count, lastAt) = streamRecoveryState[mediaId] ?: (0 to 0L)
+        val nextCount = if (now - lastAt > 45_000L) 1 else count + 1
+        if (nextCount > maxCurrentSongRetries) return false
+        streamRecoveryState[mediaId] = nextCount to now
+        return true
+    }
+
+    private fun clearStreamRefreshGuards(activeMediaId: String? = null) {
+        val normalizedActiveMediaId = activeMediaId?.trim()?.takeIf { it.isNotBlank() }
+        if (normalizedActiveMediaId == null || refreshValidatedPlayingMediaId != normalizedActiveMediaId) {
+            refreshValidatedPlayingMediaId = null
+        }
+        if (normalizedActiveMediaId == null || pendingStreamRefreshValidationMediaId != normalizedActiveMediaId) {
+            pendingStreamRefreshValidationMediaId = null
+        }
+    }
+
 override fun onPlaybackStateChanged(playbackState: Int) {
     if (!isServiceReady) return
     try {
         capturePlaybackSnapshot()
+        val activeMediaId = player.currentMediaItem?.mediaId
+        clearStreamRefreshGuards(activeMediaId)
         when (playbackState) {
             Player.STATE_READY -> {
                 waitingForNetwork.value = false
                 consecutiveErrorSkipCount = 0
+                if (
+                    player.playWhenReady &&
+                    activeMediaId != null &&
+                    pendingStreamRefreshValidationMediaId == activeMediaId
+                ) {
+                    refreshValidatedPlayingMediaId = activeMediaId
+                    pendingStreamRefreshValidationMediaId = null
+                    streamRecoveryState.remove(activeMediaId)
+                    currentSongRetryCount = 0
+                    Timber.i("Stream refresh validated and playback resumed for %s", activeMediaId)
+                }
                 syncPlaybackWakeLockState()
             }
             Player.STATE_BUFFERING -> {
@@ -2261,9 +2333,7 @@ override fun onPlaybackStateChanged(playbackState: Int) {
                         presenceSnapshot.isPlaying,
                         presenceSnapshot.position,
                         presenceSnapshot.duration,
-                        now,
-                        getCurrentPosition = { currentPresenceSnapshot().position },
-                        isPlayingProvider = { currentPresenceSnapshot().isPlaying }
+                        now
                     )
                 }
             }

@@ -9,6 +9,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.CacheDataSource
 import androidx.media3.datasource.cache.CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR
+import androidx.media3.datasource.cache.ContentMetadata
 import app.kreate.android.R
 import app.kreate.android.Threads
 import app.cubic.android.core.network.Store
@@ -100,9 +101,9 @@ private var lastSessionRecoveryMs = 0L
 private var playbackAuthQuarantinedUntilMs = 0L
 
 private val FALLBACK_CLIENTS = listOf(
-    YouTubeClient.ANDROID_VR_1_43_32,
-    YouTubeClient.ANDROID_VR_1_61_48,
     YouTubeClient.ANDROID_VR_NO_AUTH,
+    YouTubeClient.ANDROID_VR_1_61_48,
+    YouTubeClient.ANDROID_VR_1_43_32,
     YouTubeClient.IOS,
     YouTubeClient.MOBILE,
     YouTubeClient.ANDROID_CREATOR,
@@ -364,9 +365,19 @@ private fun extractVideoFormat(
         .firstOrNull()
 }
 
+private suspend fun finalizePlaybackUrl(url: String, client: YouTubeClient? = null): String {
+    val transformedUrl = CipherDeobfuscator.transformNParamInUrl(url)
+    if (client == null || !transformedUrl.contains("cver=")) return transformedUrl
+
+    return transformedUrl.replace(Regex("([?&]cver=)[^&]+")) { match ->
+        "${match.groupValues[1]}${client.clientVersion}"
+    }
+}
+
 private suspend fun resolveFormatStreamUrl(
     videoId: String,
-    format: PlayerResponse.StreamingData.Format
+    format: PlayerResponse.StreamingData.Format,
+    client: YouTubeClient? = null
 ): String? {
     val rawUrl = format.signatureCipher
         ?.takeIf { it.isNotBlank() }
@@ -378,7 +389,7 @@ private suspend fun resolveFormatStreamUrl(
             .onFailure { Timber.w(it, "Failed to resolve YouTube stream URL for %s", videoId) }
             .getOrNull()
 
-    return rawUrl?.let { CipherDeobfuscator.transformNParamInUrl(it) }
+    return rawUrl?.let { finalizePlaybackUrl(it, client) }
 }
 
 private fun YouTubeClient.playbackOrigin(): String? = when {
@@ -402,6 +413,7 @@ private fun getFormatUrl(
     connectionMetered: Boolean,
     streamingDataPoToken: String? = null,
     appendPlaybackParameters: Boolean = true,
+    ytClient: YouTubeClient? = null,
 ): Uri {
     val jsonString = normalizePlayerResponseJson(Gson().toJson(responseJson))
     val playerResponse = jsonParser.decodeFromString<PlayerResponse>( jsonString )
@@ -417,7 +429,8 @@ private fun getFormatUrl(
         } ?: NewPipeUtils.getStreamUrl(format, videoId)
             .onFailure { Timber.w(it, "Failed to resolve YouTube stream URL for %s", videoId) }
             .getOrNull()
-    } ?: throw PlayableFormatNotFoundException()
+    }?.let { runBlocking(Dispatchers.IO) { finalizePlaybackUrl(it, ytClient) } }
+        ?: throw PlayableFormatNotFoundException()
 
     Timber.d("Resolved audio stream for %s: itag=%s mime=%s bitrate=%s contentLength=%s isAudio=%s", videoId, format.itagValue, format.mimeType, format.bitrateValue, format.contentLengthValue, format.isAudio)
     CoroutineScope( Threads.DATASPEC_DISPATCHER ).launch { upsertSongFormat( videoId, format ) }
@@ -485,7 +498,8 @@ suspend fun getIosFormatUrl(
                 cpn = CharUtils.randomString(16),
                 responseJson = Gson().fromJson(jsonString, JsonObject::class.java),
                 audioQualityFormat = audioQualityFormat,
-                connectionMetered = connectionMetered
+                connectionMetered = connectionMetered,
+                ytClient = YouTubeClient.IOS
             )
         }
 
@@ -499,7 +513,7 @@ suspend fun getIosFormatUrl(
     val playerRequestToken = generateIosPoToken().orEmpty()
     val poTokenResult = PoTokenResult(visitorData, playerRequestToken, null )
     val response = YoutubeStreamHelper.getIosPlayerResponse( ContentCountry.DEFAULT, Localization.DEFAULT, videoId, cpn, poTokenResult )
-    return getFormatUrl( videoId, cpn, response, audioQualityFormat, connectionMetered )
+    return getFormatUrl( videoId, cpn, response, audioQualityFormat, connectionMetered, ytClient = YouTubeClient.IOS )
 }
 
 @UnstableApi
@@ -633,7 +647,8 @@ suspend fun getInnertubePlayerFormatUrl(
                     audioQualityFormat = audioQualityFormat,
                     connectionMetered = connectionMetered,
                     streamingDataPoToken = clientPoToken?.streamingDataPoToken,
-                    appendPlaybackParameters = false
+                    appendPlaybackParameters = false,
+                    ytClient = ytClient
                 )
             }
         }.onFailure { error ->
@@ -774,7 +789,7 @@ suspend fun getInnertubeVideoStream(videoId: String): ResolvedVideoStream {
         val format = extractVideoFormat(playerResponse.streamingData) ?: return@forEachIndexed
         val rawUrl = runCatching {
             withTimeout(INNERTUBE_CLIENT_TIMEOUT_MS) {
-                resolveFormatStreamUrl(videoId, format)
+                resolveFormatStreamUrl(videoId, format, ytClient)
             }
         }.onFailure {
             if (firstError == null) firstError = it
@@ -1084,6 +1099,10 @@ fun invalidateFormatCache(videoId: String? = null) {
             if (removed > 0) {
                 Timber.w("Cleared %d cached stream URL(s) for %s", removed, videoId)
             }
+            appContext().preferences.edit()
+                .remove(LAST_SUCCESSFUL_YT_CLIENT_AUTH_KEY)
+                .remove(LAST_SUCCESSFUL_YT_CLIENT_NOAUTH_KEY)
+                .apply()
         }
     }
 }
@@ -1156,7 +1175,9 @@ private fun Uri.isExpiredSoon(): Boolean {
 fun DataSpec.process(
     videoId: String,
     audioQualityFormat: AudioQualityFormat,
-    connectionMetered: Boolean
+    connectionMetered: Boolean,
+    chunkedPlayback: Boolean = true,
+    useCachedFormatUrl: Boolean = true
 ): DataSpec = runBlocking( Dispatchers.IO ) {
     if (!isNetworkConnected(appContext())) {
         throw NoInternetException()
@@ -1165,9 +1186,13 @@ fun DataSpec.process(
     val cacheKey = formatCacheKey(videoId, audioQualityFormat, connectionMetered)
     val forceNetwork = consumeForceFormatResolve(videoId)
     var formatUri = synchronized(formatCacheLock) {
-        if (forceNetwork) {
+        if (forceNetwork || !useCachedFormatUrl) {
             formatCache.remove(cacheKey)
-            Timber.w("Forcing fresh stream URL resolution for %s", videoId)
+            if (forceNetwork) {
+                Timber.w("Forcing fresh stream URL resolution for %s", videoId)
+            } else {
+                Timber.d("Bypassing cached stream URL for %s", videoId)
+            }
             null
         } else {
             formatCache[cacheKey]?.takeUnless { cachedUri ->
@@ -1208,7 +1233,17 @@ fun DataSpec.process(
     }
 
     val resolvedFormatUri = formatUri ?: throw UnplayableException()
-    withUri( resolvedFormatUri ).subrange( uriPositionOffset )
+    val resolvedSpec = withUri(resolvedFormatUri)
+    if (!chunkedPlayback) {
+        return@runBlocking if (length >= 0L) {
+            resolvedSpec.subrange(uriPositionOffset, length)
+        } else {
+            resolvedSpec.subrange(uriPositionOffset)
+        }
+    }
+
+    val resolvedLength = if (length >= 0) minOf(length, CHUNK_LENGTH) else CHUNK_LENGTH
+    resolvedSpec.subrange(uriPositionOffset, resolvedLength)
 }
 
 //<editor-fold defaultstate="collapsed" desc="Data source factories">
@@ -1216,14 +1251,55 @@ fun DataSpec.process(
 fun PlayerServiceModern.createDataSourceFactory(): DataSource.Factory {
     val upstreamFactory = appContext().okHttpDataSourceFactory
 
-    // This factory resolves the Video ID to a real URL when needed (cache miss)
-    val resolvingDataSourceFactory = ResolvingDataSource.Factory(upstreamFactory) { dataSpec ->
-        val videoId = dataSpec.uri.toString().substringAfter("watch?v=")
+    val lruCacheFactory = CacheDataSource.Factory()
+        .setCache(cache)
+        .setUpstreamDataSourceFactory(upstreamFactory)
+        .setFlags(FLAG_IGNORE_CACHE_ON_ERROR)
+
+    val cacheDataSourceFactory = CacheDataSource.Factory()
+        .setCache(downloadCache)
+        .setUpstreamDataSourceFactory(lruCacheFactory)
+        .setCacheWriteDataSinkFactory(null)
+        .setFlags(FLAG_IGNORE_CACHE_ON_ERROR)
+
+    // Resolve before the cache layer, like OpenTune. This prevents a partial cached span
+    // from being treated as the whole stream and surfacing as mid-song EOF.
+    return ResolvingDataSource.Factory(cacheDataSourceFactory) { dataSpec ->
+        val videoId = dataSpec.key
+            ?: dataSpec.uri.toString().substringAfter("watch?v=")
         val isLocal = dataSpec.uri.scheme == ContentResolver.SCHEME_CONTENT || dataSpec.uri.scheme == ContentResolver.SCHEME_FILE
 
         if (isLocal) {
             PlaybackSourceMonitor.report(PlaybackSourceKind.Local, videoId)
             return@Factory dataSpec
+        }
+
+        val requiredCachedLength =
+            if (dataSpec.length >= 0L) {
+                dataSpec.length
+            } else {
+                val contentLength =
+                    runBlocking(Dispatchers.IO) {
+                        Database.formatTable.findContentLengthOf(videoId).first()
+                    } ?: runCatching {
+                        downloadCache.getContentMetadata(videoId)
+                            .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+                    }.getOrNull()?.takeIf { it > 0L } ?: runCatching {
+                        cache.getContentMetadata(videoId)
+                            .get(ContentMetadata.KEY_CONTENT_LENGTH, -1L)
+                    }.getOrNull()?.takeIf { it > 0L }
+
+                contentLength?.let { (it - dataSpec.position).takeIf { remaining -> remaining > 0L } }
+            }
+
+        if (requiredCachedLength != null) {
+            val isFullyCached =
+                downloadCache.isCached(videoId, dataSpec.position, requiredCachedLength) ||
+                    cache.isCached(videoId, dataSpec.position, requiredCachedLength)
+            if (isFullyCached) {
+                PlaybackSourceMonitor.report(PlaybackSourceKind.Local, videoId)
+                return@Factory dataSpec
+            }
         }
 
         // Only upsert info if we are actually resolving (cache miss)
@@ -1240,18 +1316,6 @@ fun PlayerServiceModern.createDataSourceFactory(): DataSource.Factory {
             Timber.e(it, "Failed to resolve playback DataSpec for %s.", videoId)
         }.getOrThrow()
     }
-
-    // LRU Cache (Writable) - Upstream is the Resolver
-    val lruCacheFactory = CacheDataSource.Factory()
-        .setCache(cache)
-        .setUpstreamDataSourceFactory(resolvingDataSourceFactory)
-
-    // Download Cache (Read-Only during playback) - Upstream is LRU Cache
-    return CacheDataSource.Factory()
-        .setCache(downloadCache)
-        .setUpstreamDataSourceFactory(lruCacheFactory)
-        .setCacheWriteDataSinkFactory(null)
-        .setFlags(FLAG_IGNORE_CACHE_ON_ERROR)
 }
 
 @UnstableApi
@@ -1264,7 +1328,13 @@ fun MyDownloadHelper.createDataSourceFactory(): DataSource.Factory {
         CoroutineScope(Threads.DATASPEC_DISPATCHER).launch { upsertSongInfo(videoId) }
 
         runCatching {
-            dataSpec.process(videoId, audioQualityFormat, appContext().isConnectionMetered())
+            dataSpec.process(
+                videoId = videoId,
+                audioQualityFormat = audioQualityFormat,
+                connectionMetered = appContext().isConnectionMetered(),
+                chunkedPlayback = false,
+                useCachedFormatUrl = false
+            )
                 .buildUpon()
                 .setKey(videoId)
                 .build()
@@ -1273,11 +1343,8 @@ fun MyDownloadHelper.createDataSourceFactory(): DataSource.Factory {
         }.getOrThrow()
     }
 
-    // Download Cache (Writable for downloads? No, CacheWriter handles writing)
-    // We expose it as a source that can read from cache if available, or resolve upstream.
-    return CacheDataSource.Factory()
-        .setCache(getDownloadCache(appContext()))
-        .setUpstreamDataSourceFactory(resolvingDataSourceFactory)
-        .setCacheWriteDataSinkFactory(null)
+    // DownloadManager owns the writable download cache. Returning only the resolver here
+    // prevents partial cached playback chunks from being mistaken for completed downloads.
+    return resolvingDataSourceFactory
 }
 //</editor-fold>

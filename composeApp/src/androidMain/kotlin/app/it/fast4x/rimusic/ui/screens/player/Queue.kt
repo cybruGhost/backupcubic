@@ -205,7 +205,7 @@ fun Queue(
                 positionLock.isFirstIcon = true
         }
 
-        fun getSongs() = itemSelector.ifEmpty { items }
+        fun getSongs() = if (itemSelector.isActive) itemSelector.toList() else items
 
         val search = Search(lazyListState)
         LaunchedEffect( items, currentMediaId, search.inputValue ) {

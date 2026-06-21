@@ -99,6 +99,7 @@ object MyDownloadHelper {
     val bulkDownloadIds = mutableBulkDownloadIds.asStateFlow()
     private var progressLoopStarted = false
     private val mirrorJobs = mutableSetOf<String>()
+    private const val MIN_VALID_DOWNLOAD_BYTES = 1024L * 1024L
 
     fun getDownload(songId: String): Flow<Download?> {
         return downloads.map { it[songId] }
@@ -248,8 +249,7 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
 
     // FIXED: Proper URI handling for downloaded content
     fun getDownloadedSongUri(context: Context, songId: String): Uri? {
-        val download = downloads.value[songId]
-        return if (download?.state == Download.STATE_COMPLETED) {
+        return if (isSongDownloaded(songId)) {
             // ExoPlayer handles cached content automatically - return original URI
             Uri.parse("https://music.youtube.com/watch?v=$songId")
         } else {
@@ -335,7 +335,14 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
                         ) = run {
                             syncDownloads(download)
                             if (download.state == Download.STATE_COMPLETED) {
-                                maybeMirrorCompletedDownload(context, download)
+                                if (isDownloadCompleteAndPlayable(download.request.id, download)) {
+                                    maybeMirrorCompletedDownload(context, download)
+                                } else {
+                                    Timber.w(
+                                        "Completed download %s failed integrity check; leaving it in Corrupt songs",
+                                        download.request.id
+                                    )
+                                }
                             }
                         }
 
@@ -380,9 +387,10 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
         val spans = getDownloadCache(context)
             .getCachedSpans(songId)
             .sortedBy(CacheSpan::position)
-            .mapNotNull(CacheSpan::file)
+            .filter { it.length > 0L && it.file != null }
 
         if (spans.isEmpty()) return@withContext false
+        if (!hasContiguousDownloadSpans(songId, spans)) return@withContext false
 
         val outputName = buildMirroredDownloadFileName(songId, fallbackName)
         root.findFile(outputName)?.delete()
@@ -390,7 +398,8 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
             ?: return@withContext false
 
         context.contentResolver.openOutputStream(outputFile.uri, "w")?.use { outputStream ->
-            spans.forEach { cacheFile ->
+            spans.forEach { span ->
+                val cacheFile = span.file ?: return@withContext false
                 cacheFile.inputStream().use { inputStream ->
                     inputStream.copyTo(outputStream)
                 }
@@ -455,6 +464,16 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
         return databaseProvider
     }
 
+    private fun purgeCorruptDownload(context: Context, videoId: String) {
+        runCatching { getDownloadManager(context).removeDownload(videoId) }
+            .onFailure { Timber.w(it, "Failed removing corrupt download record for %s", videoId) }
+        runCatching { getDownloadCache(context).removeResource(videoId) }
+            .onFailure { Timber.w(it, "Failed clearing corrupt cached download for %s", videoId) }
+        downloads.update { it - videoId }
+        mutableProgresses.update { it - videoId }
+        mutableBulkDownloadIds.update { it - videoId }
+    }
+
     fun addDownload(context: Context, mediaItem: MediaItem) {
         if (mediaItem.isLocal) return
 
@@ -491,8 +510,12 @@ private fun File.looksLikeExoCacheDirectory(): Boolean =
 
          val imageUrl = mediaItem.mediaMetadata.artworkUri?.toString()?.thumbnail(1000)?.toUri()
 
-coroutineScope.launch {
+coroutineScope.launch(Dispatchers.IO) {
     // 1. Enqueue the download (non‑blocking)
+    if (isDownloadCorrupt(videoId)) {
+        purgeCorruptDownload(context, videoId)
+        delay(500)
+    }
     context.download<MyDownloadService>(downloadRequest).exceptionOrNull()?.let {
         if (it is CancellationException) throw it
         Timber.e("MyDownloadHelper scheduleDownload exception ${it.stackTraceToString()}")
@@ -526,20 +549,14 @@ coroutineScope.launch {
             return
         }
 
-        coroutineScope.launch {
-            runCatching { getDownloadCache(context).removeResource(mediaItem.mediaId) }
-                .onFailure { Timber.w(it, "Failed clearing corrupt cache for %s", mediaItem.mediaId) }
+        coroutineScope.launch(Dispatchers.IO) {
+            purgeCorruptDownload(context, mediaItem.mediaId)
 
             Database.asyncTransaction {
                 formatTable.deleteBySongId(mediaItem.mediaId)
             }
 
-            context.removeDownload<MyDownloadService>(mediaItem.mediaId).exceptionOrNull()?.let {
-                if (it is CancellationException) throw it
-                Timber.w(it, "Failed removing old download before re-download for %s", mediaItem.mediaId)
-            }
-
-            delay(350)
+            delay(500)
             addDownload(context, mediaItem)
         }
     }
@@ -554,7 +571,7 @@ coroutineScope.launch {
 
     fun autoDownload(context: Context, mediaItem: MediaItem) {
         if (context.preferences.getBoolean(autoDownloadSongKey, false)) {
-            if (downloads.value[mediaItem.mediaId]?.state != Download.STATE_COMPLETED)
+            if (!isSongDownloaded(mediaItem.mediaId))
                 addDownload(context, mediaItem)
         }
     }
@@ -594,8 +611,7 @@ coroutineScope.launch {
     fun handleDownload(context: Context, song: Song, removeIfDownloaded: Boolean = false) {
         if(song.isLocal) return
 
-        val isDownloaded =
-            downloads.value.values.any{ it.state == Download.STATE_COMPLETED && it.request.id == song.id }
+        val isDownloaded = isSongDownloaded(song.id)
 
         if(isDownloaded && removeIfDownloaded)
             removeDownload(context, song.asMediaItem)
@@ -605,19 +621,79 @@ coroutineScope.launch {
 
     fun isSongDownloaded(songId: String): Boolean {
         val download = downloads.value[songId]
-        return download?.state == Download.STATE_COMPLETED
+        return isDownloadCompleteAndPlayable(songId, download)
     }
 
     fun isDownloadCached(songId: String): Boolean {
+        return isDownloadCompleteAndPlayable(songId, downloads.value[songId])
+    }
+
+    fun isDownloadCorrupt(songId: String): Boolean {
+        val download = downloads.value[songId] ?: return false
+        return download.state == Download.STATE_FAILED ||
+            (download.state == Download.STATE_COMPLETED && !isDownloadCompleteAndPlayable(songId, download))
+    }
+
+    fun getCorruptDownloadedSongIds(): Set<String> =
+        downloads.value.keys.filterTo(mutableSetOf()) { isDownloadCorrupt(it) }
+
+    fun getDownloadedBytes(songId: String): Long =
+        cachedDownloadBytes(songId).takeIf { it > 0L }
+            ?: downloads.value[songId]?.bytesDownloaded
+            ?: 0L
+
+    private fun isDownloadCompleteAndPlayable(songId: String, download: Download? = downloads.value[songId]): Boolean {
+        if (download?.state != Download.STATE_COMPLETED) return false
         if (!MyDownloadHelper::downloadCache.isInitialized) return false
-        return runCatching { downloadCache.getCachedSpans(songId).isNotEmpty() }.getOrDefault(false)
+        val spans = runCatching { downloadCache.getCachedSpans(songId) }.getOrDefault(emptySet<CacheSpan>())
+        if (spans.isEmpty()) return false
+
+        val cachedBytes = cachedDownloadBytes(songId)
+        if (cachedBytes <= 0L) return false
+
+        val expectedBytes = expectedDownloadBytes(songId, download)
+        return if (expectedBytes != null && expectedBytes > 0L) {
+            cachedBytes >= expectedBytes && download.bytesDownloaded >= expectedBytes
+        } else {
+            cachedBytes >= MIN_VALID_DOWNLOAD_BYTES && download.bytesDownloaded >= MIN_VALID_DOWNLOAD_BYTES
+        }
+    }
+
+    private fun expectedDownloadBytes(songId: String, download: Download?): Long? {
+        val storedLength = runCatching {
+            runBlocking(Dispatchers.IO) {
+                Database.formatTable.findContentLengthOf(songId).first().takeIf { it > 0L }
+            }
+        }.getOrNull()
+        if (storedLength != null) return storedLength
+
+        // Older bad downloads were created from one 512 KB playback chunk. Do not let that
+        // poisoned contentLength make a partial file look complete.
+        return download?.contentLength?.takeIf { it >= MIN_VALID_DOWNLOAD_BYTES }
+    }
+
+    private fun cachedDownloadBytes(songId: String): Long {
+        if (!MyDownloadHelper::downloadCache.isInitialized) return 0L
+        return runCatching { downloadCache.getCachedBytes(songId, 0L, -1L) }
+            .getOrDefault(0L)
+    }
+
+    private fun hasContiguousDownloadSpans(songId: String, spans: List<CacheSpan>): Boolean {
+        var nextPosition = 0L
+        spans.forEach { span ->
+            if (span.position > nextPosition) return false
+            nextPosition = maxOf(nextPosition, span.position + span.length)
+        }
+
+        val expectedBytes = expectedDownloadBytes(songId, downloads.value[songId])
+        return expectedBytes == null || nextPosition >= expectedBytes
     }
 
     fun getDownloadedSongsCount(): Int {
-        return downloads.value.count { it.value.state == Download.STATE_COMPLETED }
+        return downloads.value.keys.count { isSongDownloaded(it) }
     }
 
     fun getDownloadedSongIds(): List<String> {
-        return downloads.value.filter { it.value.state == Download.STATE_COMPLETED }.keys.toList()
+        return downloads.value.keys.filter { isSongDownloaded(it) }
     }
 }

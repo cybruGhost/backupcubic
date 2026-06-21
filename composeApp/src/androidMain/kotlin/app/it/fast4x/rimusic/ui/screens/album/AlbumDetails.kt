@@ -161,7 +161,7 @@ fun AlbumDetails(
 
     val itemSelector = ItemSelector<Song>()
 
-    fun getSongs() = itemSelector.ifEmpty { items }
+    fun getSongs() = if (itemSelector.isActive) itemSelector.toList() else items
     fun getMediaItems() = getSongs().map( Song::asMediaItem )
 
     val bookmark = AlbumBookmark( browseId )

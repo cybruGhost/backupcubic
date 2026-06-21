@@ -166,7 +166,7 @@ fun HomeSongsScreen(navController: NavController) {
     val itemsOnDisplayState = remember { mutableStateListOf<Song>() }
 
     val itemSelector = ItemSelector<Song>()
-    fun getSongs() = itemSelector.ifEmpty { itemsOnDisplayState }.toList()
+    fun getSongs() = if (itemSelector.isActive) itemSelector.toList() else itemsOnDisplayState.toList()
     fun getMediaItems() = getSongs().map(Song::asMediaItem)
 
     val search = Search(lazyListState)

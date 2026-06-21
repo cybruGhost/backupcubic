@@ -200,9 +200,11 @@ fun HomeSongs(
         }
     }
 
+    val homeDownloadStates by MyDownloadHelper.downloads.collectAsState()
+
     // This phrase loads all songs across types into [items]
     // No filtration applied to this stage, only sort
-    LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon, customFolderSongs ) {
+    LaunchedEffect( builtInPlaylist, topPlaylists.period, songSort.sortBy, songSort.sortOrder, hiddenSongs.isFirstIcon, customFolderSongs, homeDownloadStates ) {
         isLoading = true
 
         val retrievedSongs = when( builtInPlaylist ) {
@@ -218,13 +220,9 @@ fun HomeSongs(
             BuiltInPlaylist.Downloaded -> {
                 // [MyDownloadHelper] provide a list of downloaded songs, which is faster to retrieve
                 // than using `Cache.isCached()` call
-                val downloaded: Set<String> = MyDownloadHelper.downloads
-                                                               .value
+                val downloaded: Set<String> = homeDownloadStates
                                                                .values
-                                                               .filter {
-                                                                   it.state == Download.STATE_COMPLETED &&
-                                                                       MyDownloadHelper.isDownloadCached(it.request.id)
-                                                               }
+                                                               .filter { MyDownloadHelper.isSongDownloaded(it.request.id) }
                                                                .fastMap { it.request.id }
                                                                .toSet()
                 val customFolderSongsSnapshot = customFolderSongs
@@ -238,18 +236,7 @@ fun HomeSongs(
             }
 
             BuiltInPlaylist.CorruptDownloads -> {
-                val corruptDownloaded: Set<String> = MyDownloadHelper.downloads
-                    .value
-                    .values
-                    .filter {
-                        it.state == Download.STATE_FAILED ||
-                            (
-                                it.state == Download.STATE_COMPLETED &&
-                                    !MyDownloadHelper.isDownloadCached(it.request.id)
-                                )
-                    }
-                    .fastMap { it.request.id }
-                    .toSet()
+                val corruptDownloaded: Set<String> = MyDownloadHelper.getCorruptDownloadedSongIds()
                 Database.songTable
                     .sortAll(songSort.sortBy, songSort.sortOrder)
                     .map { list ->
@@ -428,7 +415,7 @@ fun HomeSongs(
 
     val bulkDownloadIds by MyDownloadHelper.bulkDownloadIds.collectAsState()
     val downloadProgresses by MyDownloadHelper.progresses.collectAsState()
-    val downloadStates by MyDownloadHelper.downloads.collectAsState()
+    val downloadStates = homeDownloadStates
 
     val visibleBulkDownloadSongs = remember(items, bulkDownloadIds, downloadStates) {
         val songsById = items.associateBy { it.id }
@@ -437,9 +424,8 @@ fun HomeSongs(
                 downloadStates[song.id]?.state in setOf(
                     Download.STATE_DOWNLOADING,
                     Download.STATE_QUEUED,
-                    Download.STATE_RESTARTING,
-                    Download.STATE_COMPLETED
-                )
+                    Download.STATE_RESTARTING
+                ) || MyDownloadHelper.isSongDownloaded(song.id)
             }
         }
     }
@@ -466,7 +452,7 @@ fun HomeSongs(
         if (visibleBulkDownloadSongs.isNotEmpty()) {
             val total = visibleBulkDownloadSongs.size
             val completed = visibleBulkDownloadSongs.count { song ->
-                downloadStates[song.id]?.state == Download.STATE_COMPLETED
+                MyDownloadHelper.isSongDownloaded(song.id)
             }
             val active = visibleBulkDownloadSongs.count { song ->
                 downloadStates[song.id]?.state in setOf(
@@ -478,7 +464,7 @@ fun HomeSongs(
             val progress = (
                 visibleBulkDownloadSongs.sumOf { song ->
                     when (downloadStates[song.id]?.state) {
-                        Download.STATE_COMPLETED -> 1.0
+                        Download.STATE_COMPLETED -> if (MyDownloadHelper.isSongDownloaded(song.id)) 1.0 else 0.0
                         Download.STATE_DOWNLOADING -> downloadProgresses[song.id]?.toDouble() ?: 0.0
                         else -> 0.0
                     }

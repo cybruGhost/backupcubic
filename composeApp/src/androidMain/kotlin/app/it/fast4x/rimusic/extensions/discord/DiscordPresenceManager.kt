@@ -61,11 +61,12 @@ class DiscordPresenceManager(
         private const val TEMP_FILE_HOST = "https://litterbox.catbox.moe/resources/internals/api.php"
         private const val MAX_DIMENSION = 1024                           // Per Discord's guidelines
         private const val MAX_FILE_SIZE_BYTES = 2L * 1024 * 1024     // 2 MB in bytes
-        private const val MIN_UPDATE_INTERVAL_MS = 8_000L
-        private const val POSITION_ONLY_UPDATE_INTERVAL_MS = 60_000L
-        private const val PAUSED_UPDATE_DEBOUNCE_MS = 2_500L
-        private const val PRESENCE_REFRESH_INTERVAL_MS = 60_000L
+        private const val MIN_UPDATE_INTERVAL_MS = 20_000L
+        private const val POSITION_ONLY_UPDATE_INTERVAL_MS = 180_000L
+        private const val PAUSED_UPDATE_DEBOUNCE_MS = 4_000L
+        private const val PRESENCE_REFRESH_INTERVAL_MS = 300_000L
         private const val TOKEN_VALIDATION_TTL_MS = 15 * 60_000L
+        private const val MAX_RPC_FAILURES = 3
     }
 
     private var rpc: KizzyRPC? = null
@@ -82,6 +83,9 @@ class DiscordPresenceManager(
     private val discordScope = externalScope
     private var refreshJob: Job? = null
     private var pendingPresenceJob: Job? = null
+    @Volatile
+    private var isSendingActivity = false
+    private var consecutiveRpcFailures = 0
     private val client = OkHttpClient.Builder()
         .connectTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
@@ -255,37 +259,45 @@ class DiscordPresenceManager(
         pendingPresenceJob?.cancel()
         val debounceMs = if (!isPlaying) PAUSED_UPDATE_DEBOUNCE_MS else 350L
         pendingPresenceJob = discordScope.launch {
-            delay(debounceMs)
-            if (isStopped || !isNetworkAvailable(context)) return@launch
-            val resolvedIsPlaying = isPlayingProvider?.invoke() ?: isPlaying
-            val resolvedPosition = getCurrentPosition?.invoke() ?: position
-            val resolvedNow = System.currentTimeMillis()
-            val resolvedSignature = presenceSignature(mediaItem, resolvedIsPlaying, duration)
-            if (
-                resolvedSignature == lastPresenceSignature &&
-                resolvedNow - lastPresenceSentAtMs < POSITION_ONLY_UPDATE_INTERVAL_MS
-            ) return@launch
+            runCatching {
+                delay(debounceMs)
+                if (isStopped || !isNetworkAvailable(context)) return@launch
+                val resolvedIsPlaying = isPlayingProvider?.let {
+                    withContext(Dispatchers.Main.immediate) { it() }
+                } ?: isPlaying
+                val resolvedPosition = getCurrentPosition?.let {
+                    withContext(Dispatchers.Main.immediate) { it() }
+                } ?: position
+                val resolvedNow = System.currentTimeMillis()
+                val resolvedSignature = presenceSignature(mediaItem, resolvedIsPlaying, duration)
+                if (
+                    resolvedSignature == lastPresenceSignature &&
+                    resolvedNow - lastPresenceSentAtMs < POSITION_ONLY_UPDATE_INTERVAL_MS
+                ) return@launch
 
-            ensureRpc(token)
-            lastPresenceSignature = resolvedSignature
-            lastPresenceMediaId = mediaId
-            lastPresenceSentAtMs = resolvedNow
+                ensureRpc(token)
+                lastPresenceSignature = resolvedSignature
+                lastPresenceMediaId = mediaId
+                lastPresenceSentAtMs = resolvedNow
 
-            if (mediaItem == null || !resolvedIsPlaying) {
-                sendPausedPresence(duration, resolvedNow, resolvedPosition)
-            } else {
-                sendPlayingPresence(mediaItem, resolvedPosition, duration, resolvedNow)
-            }
+                if (mediaItem == null || !resolvedIsPlaying) {
+                    sendPausedPresence(duration, resolvedNow, resolvedPosition)
+                } else {
+                    sendPlayingPresence(mediaItem, resolvedPosition, duration, resolvedNow)
+                }
 
-            if (mediaItem != null) {
-                startRefreshJob(
-                    isPlayingProvider = isPlayingProvider ?: { resolvedIsPlaying },
-                    mediaItem = mediaItem,
-                    getCurrentPosition = getCurrentPosition ?: { resolvedPosition },
-                    pausedPosition = resolvedPosition,
-                    duration = duration,
-                    startTime = resolvedNow - resolvedPosition
-                )
+                if (mediaItem != null) {
+                    startRefreshJob(
+                        isPlayingProvider = isPlayingProvider ?: { resolvedIsPlaying },
+                        mediaItem = mediaItem,
+                        getCurrentPosition = getCurrentPosition ?: { resolvedPosition },
+                        pausedPosition = resolvedPosition,
+                        duration = duration,
+                        startTime = resolvedNow - resolvedPosition
+                    )
+                }
+            }.onFailure {
+                Timber.tag("DiscordPresence").w(it, "Presence update skipped after RPC/player-state failure")
             }
         }
     }
@@ -345,10 +357,12 @@ class DiscordPresenceManager(
         status: String,
         paused: Boolean
     ) {
-        if (isStopped) return
+        if (isStopped || isSendingActivity) return
         val token = getToken() ?: return
         if (token.isEmpty()) return
 
+        isSendingActivity = true
+        try {
         when (validateToken(token)) {
             false -> {
                 Timber.tag("DiscordPresence").e("Invalid token, stopping presence updates")
@@ -394,9 +408,18 @@ class DiscordPresenceManager(
                 status = status,
                 since = System.currentTimeMillis()
             )
+        }.onSuccess {
+            consecutiveRpcFailures = 0
         }.onFailure {
-            // Log the error but don't show it to the user to avoid disturbance
+            consecutiveRpcFailures++
             Timber.tag("DiscordPresence").w("Error setting Discord activity: ${it.message}")
+            if (consecutiveRpcFailures >= MAX_RPC_FAILURES) {
+                Timber.tag("DiscordPresence").w("Stopping Discord RPC session after repeated failures")
+                stopRpcSession()
+            }
+        }
+        } finally {
+            isSendingActivity = false
         }
     }
 
@@ -409,6 +432,16 @@ class DiscordPresenceManager(
         refreshJob?.cancel()
         rpc?.closeRPC()
         discordScope.cancel()
+    }
+
+    private fun stopRpcSession() {
+        pendingPresenceJob?.cancel()
+        refreshJob?.cancel()
+        runCatching { rpc?.closeRPC() }
+        rpc = null
+        lastToken = null
+        lastPresenceSignature = null
+        consecutiveRpcFailures = 0
     }
 
     /**
@@ -467,18 +500,23 @@ class DiscordPresenceManager(
         duration: Long,
         startTime: Long
     ) {
+        refreshJob?.cancel()
         refreshJob = discordScope.launch {
             while (isActive && !isStopped) {
                 delay(PRESENCE_REFRESH_INTERVAL_MS)
                 if (!isNetworkAvailable(context)) {
                     continue
                 }
-                val isPlaying = isPlayingProvider()
-                if (isPlaying) {
-                    val pos = getCurrentPosition()
-                    sendPlayingPresence(mediaItem, pos, duration, System.currentTimeMillis())
-                } else {
-                    sendPausedPresence(duration, System.currentTimeMillis(), pausedPosition)
+                runCatching {
+                    val isPlaying = withContext(Dispatchers.Main.immediate) { isPlayingProvider() }
+                    if (isPlaying) {
+                        val pos = withContext(Dispatchers.Main.immediate) { getCurrentPosition() }
+                        sendPlayingPresence(mediaItem, pos, duration, System.currentTimeMillis())
+                    } else {
+                        sendPausedPresence(duration, System.currentTimeMillis(), pausedPosition)
+                    }
+                }.onFailure {
+                    Timber.tag("DiscordPresence").w(it, "Presence refresh skipped after RPC/player-state failure")
                 }
             }
         }

@@ -88,7 +88,7 @@ val Context.okHttpDataSourceFactory
                 .newBuilder()
                 .addInterceptor { chain ->
                     val request = chain.request()
-                    if (!request.url.host.endsWith("googlevideo.com")) {
+                    if (!request.url.isYouTubePlaybackHost()) {
                         return@addInterceptor chain.proceed(request)
                     }
 
@@ -138,6 +138,15 @@ private fun okhttp3.HttpUrl.youtubeStreamClient(): YouTubeClient? {
         clientName.startsWith("ANDROID") -> YouTubeClient.MOBILE
         else -> null
     }
+}
+
+private fun okhttp3.HttpUrl.isYouTubePlaybackHost(): Boolean {
+    val host = host
+    return host.endsWith("googlevideo.com") ||
+        host.endsWith("googleusercontent.com") ||
+        host.endsWith("youtube.com") ||
+        host.endsWith("youtube-nocookie.com") ||
+        host.endsWith("ytimg.com")
 }
 
 private val streamingRequestHeaders = mapOf(

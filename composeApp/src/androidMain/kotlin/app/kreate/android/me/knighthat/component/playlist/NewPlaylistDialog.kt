@@ -81,29 +81,26 @@ class NewPlaylistDialog private constructor(
         super.onSet( newValue )
         if( errorMessage.isNotEmpty() ) return
 
-        var playlist: Playlist? = null
-
         if (isYouTubeSyncEnabled()) {
             CoroutineScope(Dispatchers.IO).launch {
-                YtMusic.createPlaylist(newValue)
-                       .getOrNull()
-                       .also {
-                           playlist = Playlist(
-                               name = newValue,
-                               browseId = it,
-                               isYoutubePlaylist = true,
-                               isEditable = true
-                           )
-                           println("Innertube YtMusic createPlaylist: $it")
-                       }
+                val browseId = runCatching {
+                    YtMusic.createPlaylist(newValue).getOrNull()
+                }.getOrNull()
+
+                Database.asyncTransaction {
+                    playlistTable.insert(
+                        Playlist(
+                            name = newValue,
+                            browseId = browseId,
+                            isYoutubePlaylist = browseId != null,
+                            isEditable = true
+                        )
+                    )
+                }
             }
         } else {
-            playlist = Playlist(name = newValue)
-        }
-
-        playlist?.let {
             Database.asyncTransaction {
-                playlistTable.insert( it )
+                playlistTable.insert( Playlist(name = newValue) )
             }
         }
 

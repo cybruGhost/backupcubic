@@ -30,6 +30,7 @@ class ApkInstallWorker {
         private const val CHANNEL_ID = "apk_download_channel"
         private const val NOTIFICATION_ID = 1001
         private const val MIN_VALID_APK_SIZE_BYTES = 32 * 1024L
+        private const val DIRECT_DOWNLOAD_URL = "https://thecub.netlify.app/cubicmusic"
         private var progressUpdateJob: Job? = null
         private var currentDownloadId: Long = -1
         private var currentContext: Context? = null
@@ -278,7 +279,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                     e.message ?: context.getString(R.string.apk_unknown_error)
                 )
                 onError(errorMessage)
-                Toast.makeText(context, errorMessage, Toast.LENGTH_LONG).show()
+                openDirectDownloadFallback(context, errorMessage)
                 cleanup()
             }
         }
@@ -346,7 +347,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                         if (!isValidApkFile(downloadedFile)) {
                             downloadedFile?.delete()
                             onError(context.getString(R.string.apk_download_invalid_file))
-                            Toast.makeText(context, context.getString(R.string.apk_download_invalid_file), Toast.LENGTH_LONG).show()
+                            openDirectDownloadFallback(context, context.getString(R.string.apk_download_invalid_file))
                             cleanup()
                             cursor.close()
                             return
@@ -384,7 +385,7 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                         }
                         currentTargetFile?.delete()
                         onError(errorMsg)
-                        Toast.makeText(context, errorMsg, Toast.LENGTH_LONG).show()
+                        openDirectDownloadFallback(context, errorMsg)
                     }
                 }
             }
@@ -649,15 +650,30 @@ fun deleteDownloadedApk(fileName: String): Boolean {
                 true
             } catch (e: Exception) {
                 e.printStackTrace()
-                Toast.makeText(
+                openDirectDownloadFallback(
                     context,
                     context.getString(
                         R.string.apk_install_failed_with_reason,
                         e.message ?: context.getString(R.string.apk_download_failed)
-                    ),
-                    Toast.LENGTH_LONG
-                ).show()
+                    )
+                )
                 false
+            }
+        }
+
+        private fun openDirectDownloadFallback(context: Context, message: String) {
+            Toast.makeText(
+                context,
+                "$message\nOpening direct download page.",
+                Toast.LENGTH_LONG
+            ).show()
+
+            runCatching {
+                context.startActivity(
+                    Intent(Intent.ACTION_VIEW, Uri.parse(DIRECT_DOWNLOAD_URL)).apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                )
             }
         }
         
